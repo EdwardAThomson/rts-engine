@@ -25,6 +25,7 @@ node tools/cli.ts --seed 1 --ticks 9000 --every 1500     # a 10-minute game in a
 | `tools/cli.ts` | Headless run printing JSON lines. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. |
 
+How the engine works, and how setting packs keep the code generic, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 ## Verified
