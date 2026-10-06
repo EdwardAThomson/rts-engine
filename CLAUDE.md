@@ -1,6 +1,6 @@
-# rts-engine
+# Classic RTS Engine
 
-A generic real-time strategy engine. The engine knows mechanics, never a story: every world (names, factions, art,
+An engine for classic, 1990s-style real-time strategy games (see the scope in `docs/ARCHITECTURE.md`). The engine knows mechanics, never a story: every world (names, factions, art,
 audio, campaign, UI theme, tuning) comes from a data-only setting pack. Read `docs/ARCHITECTURE.md` first. Design docs live in the project's
 playbooks repository under `plans/rts/` (start with `settings.md`, `engineering.md` and the four `rules-*.md`).
 
@@ -26,6 +26,8 @@ node tools/cli.ts --seed 1 --ticks 9000 --every 1500
 - **Determinism.** Everything under `src/sim` uses integer maths (`src/sim/imath.ts`), the one seeded RNG held in
   the game state, and entities in id order. Never `Math.random()`, the clock, `Math.sqrt`/trig, or iteration
   over unordered collections. `hashState` throws on any fractional number.
+- **Mechanics are modules.** Never assume three factions, one resource or land-only movement; counts and kinds come
+  from data, and new mechanics are new modules.
 - **Effects are observers.** Rendering, audio and logs read `events`; nothing in `events` feeds back into the state.
 - **Balance numbers are ours.** They come from our own simulation runs, never from the original's tables.
 - **Tests prove it.** New rules come with a scenario test; determinism and replay tests must keep passing.
