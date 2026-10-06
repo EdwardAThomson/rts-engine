@@ -1,0 +1,15 @@
+{
+  "name": "rts-engine",
+  "private": true,
+  "type": "module",
+  "description": "A generic real-time strategy engine with a headless, deterministic simulation. Settings (names, art, audio) load from data-only setting packs.",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "node node_modules/typescript/bin/tsc -p .",
+    "run": "node tools/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "5.9"
+  }
+}
