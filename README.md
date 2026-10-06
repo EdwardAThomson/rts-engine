@@ -1,6 +1,6 @@
-# rts-engine
+# Classic RTS Engine
 
-A generic real-time strategy engine in TypeScript. The simulation runs headless, deterministic and testable, and
+An engine for classic, 1990s-style real-time strategy games, in TypeScript. The simulation runs headless, deterministic and testable, and
 every world it plays (names, factions, art, audio, campaign, UI theme) will come from a data-only **setting pack**.
 TypeScript is run directly by Node 22; there is no build step.
 

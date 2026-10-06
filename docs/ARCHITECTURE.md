@@ -32,6 +32,37 @@ swaps the world. No code changes.
                └──────────────────────────────────────────────┘
 ```
 
+## Scope: classic RTS games
+
+This is the **Classic RTS Engine**: one engine for the family of base-building real-time strategy games
+that took shape in the 1990s. Their shared core is a flat tile grid seen from above, a harvest economy that turns
+a resource into credits, bases built next to your own buildings, factories with build queues, power, fog of war,
+and pre-rendered 2D sprites. The first setting pack is a private one, but the engine admits the
+mechanics the rest of that family added, such as naval units, engineers that capture buildings, regrowing
+resource fields, freely placed walls, a tabbed build sidebar, more factions and superweapons. We provide no
+data for those games; the engine just doesn't rule their mechanics out.
+
+**Out of scope:** games built on a different core, such as true 3D terrain with heights and line of sight,
+ballistic projectiles, continuous metal-and-energy economies, or armies of thousands in a free 3D camera. Those would replace the simulation, renderer and art pipeline, so they belong in a
+sibling engine. That sibling could reuse the parts here that aren't tied to the genre: deterministic stepping,
+command logs and replays, lockstep networking, the AI framework, the test harness and setting packs.
+
+## Mechanics are modules
+
+Each mechanic is a self-contained system in `src/sim` with its own state, its own place in the fixed tick
+order, its own events and its own tests: harvesting, power, placement, production, combat, the hazard, blooms,
+the starport, superpowers, decay and so on. Later ones (naval movement, capture, regrowth, walls) are added the
+same way. A setting pack switches modules on or off in `setting.json`, and the rules data says which entities
+each module needs. A switched-off module costs nothing and changes nothing, and the tests check that turning
+off one module leaves the others' results unchanged.
+
+Two rules keep this honest:
+
+- **No module assumes a setting.** Nothing in code may assume exactly three factions, one resource type or
+  land-only movement. Counts and kinds come from data.
+- **New mechanics come as modules, not special cases.** If a future pack needs something new, it is written as
+  a module with a generic id, and every pack can then use it.
+
 ## The parts
 
 | Part | Folder | Does | Status |
@@ -69,7 +100,7 @@ or in a browser with graphics, and give the same result.
 
 ```
 settings/<pack-id>/
-  setting.json      title, three factions (display name, colour ramp, advisor), feature switches, presets
+  setting.json      title, factions (display name, colour ramp, advisor), modules switched on, rule switches, presets
   names.json        display name for each generic id
   tuning.json       number overrides, within the ranges in data/rules (optional)
   lines.json        advisor and unit lines, notifications, briefings
@@ -84,7 +115,8 @@ settings/<pack-id>/
 **What a pack may do:**
 
 - Name everything, draw everything, voice everything, and restyle the UI through CSS variables.
-- Turn whole mechanics on or off (`hazard`, `blooms`, `starport`, `superpowers`, `decay`) and leave out entities.
+- Turn whole mechanics (modules) on or off (`hazard`, `blooms`, `starport`, `superpowers`, `decay`, ...) and leave out entities.
+- Choose how many factions there are and which faction-specific entities each one gets.
 - Change numbers, within each number's allowed range.
 - Provide its own maps and campaign.
 
@@ -93,7 +125,6 @@ settings/<pack-id>/
 - Contain code. The loader rejects anything that isn't JSON, CSS or an asset.
 - Invent ids. A new kind of unit or mechanic is an engine change first, with its own generic id; then any pack
   can name and draw it.
-- Change the faction count (three for now).
 
 **The rule that makes it work:** if a word only makes sense in one story, it belongs in a pack, not here. The code
 says `hazard`; a pack says what the hazard is.

@@ -1,8 +1,8 @@
 {
-  "name": "rts-engine",
+  "name": "classic-rts-engine",
   "private": true,
   "type": "module",
-  "description": "A generic real-time strategy engine with a headless, deterministic simulation. Settings (names, art, audio) load from data-only setting packs.",
+  "description": "An engine for classic, 1990s-style real-time strategy games, with a headless, deterministic simulation. Settings (names, art, audio) load from data-only setting packs.",
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "node node_modules/typescript/bin/tsc -p .",
