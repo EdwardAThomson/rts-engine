@@ -1,7 +1,7 @@
 # rts-engine
 
 A generic real-time strategy engine. The engine knows mechanics, never a story: every world (names, factions, art,
-audio, campaign, UI theme, tuning) comes from a data-only setting pack. Design docs live in the project's
+audio, campaign, UI theme, tuning) comes from a data-only setting pack. Read `docs/ARCHITECTURE.md` first. Design docs live in the project's
 playbooks repository under `plans/rts/` (start with `settings.md`, `engineering.md` and the four `rules-*.md`).
 
 ## Commands
