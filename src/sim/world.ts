@@ -62,6 +62,9 @@ export function spawn(state: GameState, type: UnitType, owner: number, tx: numbe
   const e: Entity = {
     id: state.nextId++, type, owner, x: centre(tx), y: centre(ty), health: UnitTypes[type].maxHealth,
     path: [], order: "idle",
+    // Every entity gets every field, so all share one hidden class and the hot loops stay monomorphic in V8.
+    // An undefined field is left out of the hash, so this changes no hash.
+    task: undefined, cargo: undefined, homeId: undefined,
   };
   if (type === "harvester") {
     e.order = "harvest";

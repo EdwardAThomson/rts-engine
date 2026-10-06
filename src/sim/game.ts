@@ -83,27 +83,84 @@ export type Game = ReturnType<typeof createGame>;
  * because one would mean floating-point maths has leaked into the sim.
  */
 export function hashState(state: GameState): string {
-  const text = canonical(state);
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
+  // Streams the canonical text straight into FNV-1a instead of building it as one string. The text, and so the
+  // hash, is exactly what the earlier string-building version produced; the path of a value is only worked out
+  // when a fractional number has to be reported.
+  h = 0x811c9dc5;
+  trail.length = 0;
+  feedValue(state);
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-function canonical(value: unknown, path = "state"): string {
-  if (value === null || value === undefined) return "null";
-  if (typeof value === "number") {
-    if (!Number.isSafeInteger(value)) throw new Error(`${path} is ${value}; the sim must hold integers only`);
-    return String(value);
+let h = 0x811c9dc5;
+const trail: (string | number)[] = [];
+const quoted = new Map<string, string>();
+
+function feed(text: string) {
+  let x = h;
+  for (let i = 0; i < text.length; i++) {
+    x ^= text.charCodeAt(i);
+    x = Math.imul(x, 0x01000193);
   }
-  if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((v, i) => canonical(v, `${path}[${i}]`)).join(",")}]`;
+  h = x;
+}
+const feedChar = (c: number) => { h = Math.imul(h ^ c, 0x01000193); };
+
+function where(): string {
+  return "state" + trail.map((k) => (typeof k === "number" ? `[${k}]` : `.${k}`)).join("");
+}
+
+function feedValue(value: unknown) {
+  if (value === null || value === undefined) { feed("null"); return; }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) throw new Error(`${where()} is ${value}; the sim must hold integers only`);
+    feed(String(value));
+    return;
+  }
+  if (typeof value === "string") {
+    let q = quoted.get(value);
+    if (q === undefined) { q = JSON.stringify(value); if (quoted.size < 4096) quoted.set(value, q); }
+    feed(q);
+    return;
+  }
+  if (typeof value === "boolean") { feed(value ? "true" : "false"); return; }
+  if (Array.isArray(value)) {
+    feedChar(91);                                  // [
+    for (let i = 0; i < value.length; i++) {
+      if (i > 0) feedChar(44);                     // ,
+      trail.push(i);
+      feedValue(value[i]);
+      trail.pop();
+    }
+    feedChar(93);                                  // ]
+    return;
+  }
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(obj[k], `${path}.${k}`)}`).join(",")}}`;
+    // Own keys with a value, in sorted order (the same order Array.prototype.sort gives for strings), by an
+    // insertion sort into a reused array: the objects here have a handful of keys.
+    const keys: string[] = [];
+    for (const k of Object.keys(obj)) {
+      if (obj[k] === undefined) continue;
+      let j = keys.length;
+      keys.push(k);
+      while (j > 0 && keys[j - 1] > k) { keys[j] = keys[j - 1]; j--; }
+      keys[j] = k;
+    }
+    feedChar(123);                                 // {
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (i > 0) feedChar(44);
+      let q = quoted.get(k);
+      if (q === undefined) { q = JSON.stringify(k); if (quoted.size < 4096) quoted.set(k, q); }
+      feed(q);
+      feedChar(58);                                // :
+      trail.push(k);
+      feedValue(obj[k]);
+      trail.pop();
+    }
+    feedChar(125);                                 // }
+    return;
   }
-  throw new Error(`${path} has unsupported type ${typeof value}`);
+  throw new Error(`${where()} has unsupported type ${typeof value}`);
 }
