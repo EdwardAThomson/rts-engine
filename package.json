@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "node node_modules/typescript/bin/tsc -p .",
-    "run": "node tools/cli.ts"
+    "run": "node tools/cli.ts",
+    "bench": "node --expose-gc tools/bench.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
