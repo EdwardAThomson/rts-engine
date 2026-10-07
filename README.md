@@ -8,7 +8,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 ```bash
 cargo test                                                    # 80 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
-cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
+cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo run --release --bin play                                # play on the desktop: drag to select, right-click to order
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
