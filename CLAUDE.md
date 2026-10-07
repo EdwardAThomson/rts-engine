@@ -18,9 +18,9 @@ cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node we
 The toolchain is pinned in `rust-toolchain.toml`. The workspace has no third-party dependencies; add one only
 when it clearly pays for itself.
 
-The shared core lives in the private `rts-core` repository and is pinned by commit (`Cargo.toml`,
+The shared core lives in the public `rts-core` repository and is pinned by commit (`Cargo.toml`,
 `[workspace.dependencies]`). Changes to it go there, not here; moving the pin forward must keep the golden tests
-passing. Cargo fetches it with the git command line (`.cargo/config.toml`), so git needs access to it.
+passing.
 
 ## Rules
 
