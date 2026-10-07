@@ -8,6 +8,7 @@ use rts_core::rng::seed_state;
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
+use crate::power::Power;
 use crate::units::{Kind, Rules};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
@@ -50,6 +51,8 @@ pub struct EntityView {
 pub struct Snapshot {
     pub tick: u32,
     pub players: Vec<Player>,
+    /// Each player's power, in player order.
+    pub power: Vec<Power>,
     pub entities: Vec<EntityView>,
     pub resource_left: i64,
 }
@@ -115,6 +118,11 @@ impl Game {
         self.rules.kind_id(id)
     }
 
+    /// A player's power now.
+    pub fn power(&self, player: u32) -> Power {
+        Power::of(&self.state, &self.rules, player)
+    }
+
     /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
     pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
@@ -126,6 +134,7 @@ impl Game {
         Snapshot {
             tick: s.tick,
             players: s.players.clone(),
+            power: Power::all(s, &self.rules),
             entities: s
                 .entities
                 .iter()
