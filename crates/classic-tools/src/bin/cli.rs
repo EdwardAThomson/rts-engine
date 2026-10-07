@@ -2,7 +2,8 @@
 //!   cargo run --release --bin cli -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
 //! Prints the setting pack in use, one JSON line every --every ticks and the event counts at the end. No window, no
 //! graphics. `--setting` (or the SETTING environment variable) takes a pack folder, a name under `settings/`, or
-//! `private` for the git-ignored `settings-private/`; the default is `generic`.
+//! a pack in the git-ignored `settings-private/` by its folder name under `packs/` or its id (`private` picks the
+//! first); the default is `generic`.
 
 use std::collections::HashMap;
 use std::time::Instant;

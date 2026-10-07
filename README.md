@@ -6,10 +6,11 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 75 checks, about 1 s after the first build
+cargo test                                                    # 80 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
-cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
+cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
+cargo run --release --bin play                                # play on the desktop: drag to select, right-click to order
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
 ```
@@ -29,6 +30,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
+| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `platform/` is the genre-neutral part (GPU, textures, sprite batcher). |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. |
@@ -80,6 +82,10 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   tanks meeting head-on in a corridor get past each other; twelve tanks squeeze through a one-tile gap with none
   stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a factory's new
   units drive clear of its exit; collision replays from the command log.
+- Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
+  colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same
+  frame twice gives the same pixels and drawing never changes the game's hash; shots and explosions appear from
+  events; recolouring swaps exact remap pixels only. The desktop player opens, selects and orders under Xvfb.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
@@ -90,6 +96,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - No AI; no storage cap, tech levels, factory upgrades or starport.
-- No real renderer, UI or audio yet. The web viewer draws plain shapes on a 2D canvas, for watching and debugging
-  games; it has no sprites, camera, sidebar or sound, and its smoothness has only been checked in headless Chromium.
+- The renderer is desktop only so far, with no sidebar, minimap, menus, audio or computer opponent; cliffs are
+  plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
+  with a software GPU, not on a real desktop GPU.
+- The web viewer (`web/viewer/`) is the debug view: plain shapes on a 2D canvas, checked in headless Chromium.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

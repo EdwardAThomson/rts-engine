@@ -53,13 +53,18 @@ fn the_generic_pack_names_every_id_and_loads_cleanly() {
 }
 
 #[test]
-fn the_private_pack_loads_when_it_is_cloned_in() {
-    if !setting::root().join("settings-private/setting.json").is_file() {
+fn the_private_packs_load_when_they_are_cloned_in() {
+    let packs = setting::private_packs();
+    if packs.is_empty() {
         eprintln!("settings-private/ is not cloned here; skipping");
         return;
     }
-    let pack = setting::load("private").unwrap_or_else(|e| panic!("{e}"));
-    assert!(pack.warnings.is_empty(), "{:?}", pack.warnings);
+    for dir in &packs {
+        let pack = setting::load(dir.to_str().unwrap()).unwrap_or_else(|e| panic!("{e}"));
+        assert!(pack.warnings.is_empty(), "{}: {:?}", dir.display(), pack.warnings);
+        assert_eq!(setting::find(&pack.id).unwrap(), *dir, "{} is found by its id", pack.id);
+    }
+    assert_eq!(setting::find("private").unwrap(), packs[0]);
 }
 
 #[test]

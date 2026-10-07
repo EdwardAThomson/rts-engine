@@ -9,27 +9,52 @@ pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Where a pack is: a folder holding `setting.json`, a name under `settings/`, or `settings-private/` when the name
-/// is `private` or matches the id in its `setting.json`.
+/// Where a pack is: a folder holding `setting.json`, a name under `settings/`, or a pack in the git-ignored
+/// `settings-private/` (see [`private_packs`]) when the name is `private`, its folder name or the id in its
+/// `setting.json`. `private` picks the first private pack.
 pub fn find(name: &str) -> Result<PathBuf, String> {
     let direct = PathBuf::from(name);
     if direct.join("setting.json").is_file() {
         return Ok(direct);
     }
-    let root = root();
-    let public = root.join("settings").join(name);
+    let public = root().join("settings").join(name);
     if public.join("setting.json").is_file() {
         return Ok(public);
     }
-    let private = root.join("settings-private");
-    let private_id = std::fs::read_to_string(private.join("setting.json"))
-        .ok()
-        .and_then(|t| classic_data::json::parse(&t).ok())
-        .and_then(|v| v.get("id").and_then(|s| s.as_str()).map(String::from));
-    if private_id.is_some() && (name == "private" || private_id.as_deref() == Some(name)) {
-        return Ok(private);
+    let packs = private_packs();
+    if name == "private" {
+        if let Some(first) = packs.into_iter().next() {
+            return Ok(first);
+        }
+    } else if let Some(dir) =
+        packs.into_iter().find(|d| d.file_name().is_some_and(|f| f == name) || pack_id(d).as_deref() == Some(name))
+    {
+        return Ok(dir);
     }
-    Err(format!("no setting pack \"{name}\": not a folder with setting.json, not in settings/, not settings-private/"))
+    Err(format!(
+        "no setting pack \"{name}\": not a folder with setting.json, not in settings/, not in settings-private/"
+    ))
+}
+
+/// The packs in `settings-private/`: each `packs/<name>/` holding `setting.json`, in name order, then the folder
+/// itself if it holds one (the older one-pack layout). Empty when the private repository is not cloned in.
+pub fn private_packs() -> Vec<PathBuf> {
+    let private = root().join("settings-private");
+    let mut packs: Vec<PathBuf> = std::fs::read_dir(private.join("packs"))
+        .map(|dir| dir.filter_map(|e| e.ok()).map(|e| e.path()).filter(|d| d.join("setting.json").is_file()).collect())
+        .unwrap_or_default();
+    packs.sort();
+    if private.join("setting.json").is_file() {
+        packs.push(private);
+    }
+    packs
+}
+
+/// The `id` in a pack folder's `setting.json`.
+fn pack_id(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join("setting.json")).ok()?;
+    let doc = classic_data::json::parse(&text).ok()?;
+    doc.get("id").and_then(|s| s.as_str()).map(String::from)
 }
 
 /// Find and load a pack against the engine's rules, with every problem in one message.
