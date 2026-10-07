@@ -3,7 +3,12 @@
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
-    "power": { "status": "planned" },
+    "power": {
+      "status": "built",
+      "numbers": {
+        "min_factor": { "default": 25, "min": 0, "max": 100 }
+      }
+    },
     "placement": {
       "status": "built",
       "numbers": {

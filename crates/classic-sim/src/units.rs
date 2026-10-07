@@ -38,6 +38,8 @@ pub struct KindRules {
     pub refinery: bool,
     /// Kinds with the `wall` role block movement but don't extend their owner's building area.
     pub wall: bool,
+    /// Added to the owner's power supply when positive, drawn from it when negative; zero for units.
+    pub power: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,12 +57,19 @@ pub struct Placement {
     pub rock_only: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PowerRules {
+    /// The lowest power factor, in percent, however short a player is.
+    pub min_factor: i64,
+}
+
 /// Every number the tick reads, built once from a rules table before the game starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rules {
     pub kinds: Vec<KindRules>,
     pub regrowth: Regrowth,
     pub placement: Placement,
+    pub power: PowerRules,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -96,6 +105,7 @@ impl Rules {
                 harvester,
                 refinery: role("refinery"),
                 wall: role("wall"),
+                power: if building { num("power")? } else { 0 },
             });
         }
         if kinds.len() > u16::MAX as usize {
@@ -117,6 +127,7 @@ impl Rules {
                 max_gap: module("placement", "max_gap")? as i32,
                 rock_only: module("placement", "rock_only")? != 0,
             },
+            power: PowerRules { min_factor: module("power", "min_factor")? },
             hash: t.hash(),
         })
     }

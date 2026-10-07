@@ -11,6 +11,7 @@ use rts_core::rng::random_int;
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
+use crate::power::Power;
 use crate::units::{Kind, Rules};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,11 +194,47 @@ pub enum IdleReason {
 /// What happened, for logs and cosmetics. Events never feed back into the state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    HarvesterIdle { tick: u32, unit: u32, reason: IdleReason },
-    Delivered { tick: u32, unit: u32, player: u32, credits: i64 },
-    Regrowth { tick: u32, x: i32, y: i32, amount: i64 },
-    BuildingPlaced { tick: u32, entity: u32, kind: Kind, owner: u32, x: i32, y: i32 },
-    PlacementRejected { tick: u32, player: u32, kind: Kind, x: i32, y: i32, reason: PlaceError },
+    HarvesterIdle {
+        tick: u32,
+        unit: u32,
+        reason: IdleReason,
+    },
+    Delivered {
+        tick: u32,
+        unit: u32,
+        player: u32,
+        credits: i64,
+    },
+    Regrowth {
+        tick: u32,
+        x: i32,
+        y: i32,
+        amount: i64,
+    },
+    BuildingPlaced {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
+        x: i32,
+        y: i32,
+    },
+    PlacementRejected {
+        tick: u32,
+        player: u32,
+        kind: Kind,
+        x: i32,
+        y: i32,
+        reason: PlaceError,
+    },
+    /// A player's power supply, demand or shortfall differs from the previous tick's.
+    PowerChanged {
+        tick: u32,
+        player: u32,
+        supply: i64,
+        demand: i64,
+        shortfall: i64,
+    },
 }
 
 impl Event {
@@ -208,6 +245,7 @@ impl Event {
             Event::Regrowth { .. } => "regrowth",
             Event::BuildingPlaced { .. } => "building_placed",
             Event::PlacementRejected { .. } => "placement_rejected",
+            Event::PowerChanged { .. } => "power_changed",
         }
     }
 
@@ -217,7 +255,8 @@ impl Event {
             | Event::Delivered { tick, .. }
             | Event::Regrowth { tick, .. }
             | Event::BuildingPlaced { tick, .. }
-            | Event::PlacementRejected { tick, .. } => tick,
+            | Event::PlacementRejected { tick, .. }
+            | Event::PowerChanged { tick, .. } => tick,
         }
     }
 }
@@ -333,13 +372,25 @@ pub fn step(
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
     // commands, combat (not built yet), movement, crush (not built yet), economy, world.
+    let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
     movement(state, rules);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
+    report_power(state, rules, &power_before, events);
     state.tick += 1;
+}
+
+/// Report each player whose supply, demand or shortfall differs from the previous tick's.
+fn report_power(state: &GameState, rules: &Rules, before: &[Power], events: &mut Vec<Event>) {
+    for ((player, now), was) in state.players.iter().zip(Power::all(state, rules)).zip(before) {
+        if now != *was {
+            let (supply, demand, shortfall) = (now.supply, now.demand, now.shortfall());
+            events.push(Event::PowerChanged { tick: state.tick, player: player.id, supply, demand, shortfall });
+        }
+    }
 }
 
 /// Every ground unit with a path moves along it. A harvester on its loop moves only while travelling.
