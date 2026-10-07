@@ -1,0 +1,10 @@
+[package]
+name = "classic-tools"
+version = "0.1.0"
+description = "Headless tools for the Classic engine: the command-line runner, the bench and the shared bench scene."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+classic-sim = { path = "../classic-sim" }

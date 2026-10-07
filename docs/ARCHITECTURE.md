@@ -19,7 +19,7 @@ swaps the world. No code changes.
 ```
                ┌──────────────────────── engine (this repo) ────────────────────────┐
                │                                                                     │
- data/rules ──►│  sim (src/sim)  ──events──►  renderer, audio, UI  ──►  screen/speakers │
+ data/rules ──►│  sim (crates)   ──events──►  renderer, audio, UI  ──►  screen/speakers │
  (generic ids, │    ▲   pure, deterministic,      read-only observers                 │
   default      │    │   integer maths                ▲                                │
   numbers)     │    │                                │                                │
@@ -49,7 +49,7 @@ command logs and replays, lockstep networking, the AI framework, the test harnes
 
 ## Mechanics are modules
 
-Each mechanic is a self-contained system in `src/sim` with its own state, its own place in the fixed tick
+Each mechanic is a self-contained system in `crates/classic-sim` with its own state, its own place in the fixed tick
 order, its own events and its own tests: harvesting, power, placement, production, combat, the hazard, blooms,
 the starport, superpowers, decay and so on. Later ones (naval movement, capture, regrowth, walls) are added the
 same way. A setting pack switches modules on or off in `setting.json`, and the rules data says which entities
@@ -67,15 +67,30 @@ Two rules keep this honest:
 
 | Part | Folder | Does | Status |
 |---|---|---|---|
-| Simulation | `src/sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, harvesting, movement, regrowth |
-| Debug API | `src/sim/game.ts` | `step`, `order`, `spawn`, `snapshot`, `hash`, `commandLog`. Tests, the CLI, the AI and (later) the browser all drive the game through it | Built |
-| Rules data | `data/rules/` | Every entity's generic id, footprint, prerequisites and default numbers, with an allowed range for each tunable number | Planned; numbers sit in `src/sim/units.ts` for now |
-| Setting loader | `src/settings/` | Reads a pack, checks it against the rules, merges names, tuning and asset paths | Planned |
-| Computer opponent | `src/ai` | Issues the same commands a player would; never reads hidden state | Planned |
-| Renderer | `src/render` | WebGL2 sprite batcher. Reads a per-tick view of the state; never changes it | Planned |
-| Audio | `src/audio` | Plays sounds for sim events; never changes the state | Planned |
-| UI | `src/ui` | HTML and CSS over the canvas: production rail, minimap, selection, menus. Styled by the pack's theme | Planned |
-| Tools | `tools/` | Headless CLI, later AI-vs-AI batch runs, benchmarks, pack and asset checks | CLI built |
+| Shared core | `crates/engine-core` | Genre-neutral parts: integer maths, the seeded generator, the canonical state hash, the command queue and log. Knows nothing about tiles or units, so the 3D sibling engine can build on it too | Built |
+| Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, harvesting, movement, regrowth |
+| Game API | `crates/classic-sim/src/game.rs` | `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. Tests, the tools, the AI and the front ends all drive the game through it | Built |
+| Web build | `crates/classic-wasm` | The same simulation compiled to WebAssembly, with a plain function interface for JavaScript. `web/check.mjs` proves it gives the native build's hashes | Built: step, orders, hash |
+| Rules data | `data/rules/` | Every entity's generic id, footprint, prerequisites and default numbers, with an allowed range for each tunable number | Planned; numbers sit in `units.rs` for now |
+| Setting loader | `crates/` (new crate) | Reads a pack, checks it against the rules, merges names, tuning and asset paths | Planned |
+| Computer opponent | `crates/` (new crate) | Issues the same commands a player would; never reads hidden state | Planned |
+| Renderer | `crates/` (new crate) | Sprite batcher reading a per-tick view of the state; never changes it. wgpu, which runs natively and on WebGPU, is the leading choice, so desktop and web share it | Planned |
+| Audio | `crates/` (new crate) | Plays sounds for sim events; never changes the state | Planned |
+| UI | `crates/` (new crate) | Production rail, minimap, selection, menus, styled by the pack's theme | Planned |
+| Tools | `crates/classic-tools` | Headless CLI and the bench; later AI-vs-AI batch runs, pack and asset checks | CLI and bench built |
+
+## Language and builds
+
+Everything is Rust, in one Cargo workspace. One simulation builds two ways:
+
+- **Desktop:** native code, the fast build for large games, and the one free to use threads around the sim.
+- **Web:** the same code compiled to WebAssembly, for sharing a match or a replay from a link.
+
+Both builds run the identical simulation, so they give the same state hashes, and replays and matches work
+across them. The tick itself stays on one thread on every platform; `plans/rts/performance.md` in the playbooks
+repository says where threads and the GPU are used instead. The engine was first written in TypeScript; the
+Rust port was checked against that version's hashes, paths and node counts tick for tick
+(`crates/classic-tools/tests/golden.rs`).
 
 ## How a game runs
 
@@ -91,8 +106,8 @@ Two rules keep this honest:
 5. **Replays and saves** are just the map, seed, setting, tuning and command log. Re-running them reproduces the
    game exactly, which the tests check by comparing state hashes.
 
-Because steps 3 and 4 are separate, the same game can run headless in Node (tests, AI training, balance runs)
-or in a browser with graphics, and give the same result.
+Because steps 3 and 4 are separate, the same game can run headless (tests, AI training, balance runs), as a
+desktop program or in a browser, and give the same result.
 
 ## Keeping the code generic
 
@@ -148,7 +163,7 @@ says `hazard`; a pack says what the hazard is.
 
 ## Order of work
 
-1. Move unit numbers from `src/sim/units.ts` into `data/rules/`, with ranges.
+1. Move unit numbers from `crates/classic-sim/src/units.rs` into `data/rules/`, with ranges.
 2. The setting loader and the `generic` pack, with the checks above.
 3. Core rules: base building and power, production, combat (tests first, as in `CLAUDE.md`).
-4. Renderer and UI with the browser debug API, then the computer opponent, then the hazard, fog and campaign.
+4. Renderer and UI for the desktop and web builds, then the computer opponent, then the hazard, fog and campaign.

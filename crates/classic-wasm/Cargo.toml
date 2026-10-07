@@ -1,0 +1,13 @@
+[package]
+name = "classic-wasm"
+version = "0.1.0"
+description = "The Classic engine compiled to WebAssembly, for the browser build. A plain C-style interface, no dependencies."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+classic-sim = { path = "../classic-sim" }
