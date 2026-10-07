@@ -32,6 +32,8 @@ pub enum PlaceError {
     TooFar,
     /// The building's exit (a refinery's dock) would be off the map or on a cliff.
     BadExit,
+    /// The player has no finished building of this kind waiting at a yard.
+    NotReady,
 }
 
 impl PlaceError {
@@ -44,6 +46,7 @@ impl PlaceError {
             PlaceError::Blocked { .. } => "blocked",
             PlaceError::TooFar => "too_far",
             PlaceError::BadExit => "bad_exit",
+            PlaceError::NotReady => "not_ready",
         }
     }
 }

@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 40 checks, about 1 s after the first build
+cargo test                                                    # 51 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
@@ -58,13 +58,21 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Power adds up from the buildings standing, a damaged plant gives less, the power factor stops at its 25%
   floor, `power_changed` reports supply, demand and shortfall only when they change, and a pack's tuning changes
   the numbers and the floor.
+- Production: each factory queues up to five items and builds the head one, paying as it goes (a 600-credit,
+  450-tick tank costs 300 by tick 225 and exactly 600 at the end); a power shortfall slows it to the power factor;
+  it pauses without losing progress when credits run out and resumes by itself; cancelling refunds exactly what
+  was paid; a finished building waits at the yard until placed, and only a ready building can be placed; a
+  finished unit leaves by the exit tile or waits until one frees up; prerequisites, the primary factory and replay
+  from the command log all hold.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 ## Not verified / not built yet
 
 - Units pass through each other; there's no collision or tile reservation yet.
-- No buildings beyond a 1×1 refinery, no building placement, power, combat or AI.
-- No setting pack loader yet; names in code are the generic ids.
+- The skirmish start is still a refinery, a harvester and a tank, with no construction yard and no starting
+  credits, so default games build nothing yet. The design's start (a yard, a power plant and a refinery, 1,200
+  credits) needs bigger start plateaus than `maps/test-01.txt` has.
+- No combat or AI; no storage cap, tech levels, factory upgrades or starport.
 - No renderer, UI or audio yet, on desktop or web.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

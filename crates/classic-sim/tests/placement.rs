@@ -7,7 +7,7 @@
 
 use classic_data::{RulesTable, json};
 use classic_sim::world::Event;
-use classic_sim::{CommandOrder, Game, GameOptions, Kind, PlaceError, Rules, Tile};
+use classic_sim::{CommandOrder, EntryState, Game, GameOptions, Kind, PlaceError, QueueEntry, Rules, Tile};
 
 const BASE: &str = "\
 ################....
@@ -41,8 +41,21 @@ fn tuned(tuning: &str) -> Rules {
     Rules::from_table(&t).unwrap()
 }
 
-/// Order a placement, run the tick, and return what happened to it.
+/// Put a finished `id` at `player`'s construction yard, ready to place, as production would. The yard is spawned
+/// in the map's bottom-right corner if the player has none, clear of everything these tests place.
+fn give_ready(g: &mut Game, player: u32, id: &str) {
+    let (yard, item) = (kind(g, "construction_yard"), kind(g, id));
+    if !g.state.entities.iter().any(|e| e.owner == player && e.kind == yard) {
+        let (w, h) = (g.map.width, g.map.height);
+        g.spawn(yard, player, w - 2, h - 2);
+    }
+    let y = g.state.entities.iter_mut().find(|e| e.owner == player && e.kind == yard).unwrap();
+    y.queue.push(QueueEntry { item, state: EntryState::Ready, progress: 0, paid: 0 });
+}
+
+/// Order a placement of a ready building, run the tick, and return what happened to it.
 fn place(g: &mut Game, player: u32, id: &str, x: i32, y: i32) -> Result<u32, PlaceError> {
+    give_ready(g, player, id);
     let k = kind(g, id);
     g.order(player, &[], CommandOrder::Place { kind: k, x, y });
     let from = g.events.len();
@@ -112,6 +125,18 @@ fn every_placement_rule_refuses_with_its_reason() {
 }
 
 #[test]
+fn only_a_finished_building_waiting_at_a_yard_can_be_placed() {
+    let mut g = base(None);
+    let plant = kind(&g, "power_plant");
+    g.order(0, &[], CommandOrder::Place { kind: plant, x: 5, y: 2 });
+    g.step(1);
+    assert!(g.events.iter().any(|e| matches!(e, Event::PlacementRejected { reason: PlaceError::NotReady, .. })));
+    assert_eq!(place(&mut g, 0, "power_plant", 5, 2).map(|_| ()), Ok(()));
+    let yard = g.state.entities.iter().find(|e| g.rules.kind(e.kind).id == "construction_yard").unwrap();
+    assert!(yard.queue.is_empty(), "placing takes the building off the yard's queue");
+}
+
+#[test]
 fn walls_do_not_extend_the_building_area() {
     let mut g = base(None);
     place(&mut g, 0, "wall", 5, 2).expect("a wall touching the refinery");
@@ -125,6 +150,7 @@ fn refused_placements_change_nothing_but_the_events() {
     let mut a = base(None);
     let mut b = base(None);
     assert_eq!(place(&mut a, 0, "power_plant", 7, 2), Err(PlaceError::TooFar));
+    give_ready(&mut b, 0, "power_plant");
     b.step(1);
     assert_eq!(a.hash(), b.hash());
 }
@@ -145,6 +171,7 @@ fn a_unit_already_moving_goes_round_a_building_placed_on_its_path() {
     let tank = unit(&g, 0, "battle_tank");
     // Both in the same tick: the move plans a path, then the placement drops a building across it.
     g.order(0, &[tank], CommandOrder::Move { x: 20, y: 9 });
+    give_ready(&mut g, 0, "power_plant");
     let plant = kind(&g, "power_plant");
     g.order(0, &[], CommandOrder::Place { kind: plant, x: 7, y: 4 });
     let footprint = [(7, 4), (8, 4), (7, 5), (8, 5)];
@@ -177,13 +204,17 @@ fn a_refinery_tuned_smaller_moves_its_dock_and_harvesters_still_deliver() {
 #[test]
 fn placements_replay_from_the_command_log() {
     let mut live = base(None);
+    give_ready(&mut live, 0, "power_plant");
     let plant = kind(&live, "power_plant");
     live.order(0, &[], CommandOrder::Place { kind: plant, x: 5, y: 2 });
     live.step(300);
+    give_ready(&mut live, 0, "power_plant");
     live.order(0, &[], CommandOrder::Place { kind: plant, x: 7, y: 2 });
     live.step(300);
     let log = live.command_log().to_vec();
     let mut replay = base(None);
+    give_ready(&mut replay, 0, "power_plant");
+    give_ready(&mut replay, 0, "power_plant");
     for t in 0..600 {
         for c in log.iter().filter(|c| c.tick == t) {
             replay.order(c.command.player, &c.command.ids, c.command.order);

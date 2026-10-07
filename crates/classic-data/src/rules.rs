@@ -26,6 +26,10 @@ pub struct Entry {
     pub built: bool,
     /// The built mechanics this entity takes part in, such as `harvester` or `refinery`.
     pub roles: Vec<String>,
+    /// The building that produces it, for anything a player can build.
+    pub built_at: Option<String>,
+    /// Buildings the player must own before they can build it.
+    pub requires: Vec<String>,
     pub numbers: BTreeMap<String, Number>,
 }
 
@@ -159,11 +163,42 @@ impl RulesTable {
                     _ => errors.push(format!("{at}: roles must be from {}", ROLES.join(", "))),
                 }
             }
+            let built_at = v.get("built_at").and_then(Value::as_str).map(String::from);
+            let requires = v
+                .get("requires")
+                .and_then(Value::as_array)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|r| {
+                    r.as_str().map(String::from).or_else(|| {
+                        errors.push(format!("{at}: \"requires\" must be a list of ids"));
+                        None
+                    })
+                })
+                .collect();
             let numbers = numbers(v, &at, built, &mut errors);
-            table.entities.insert(id.clone(), Entry { kind: kind.into(), built, roles, numbers });
+            table.entities.insert(id.clone(), Entry { kind: kind.into(), built, roles, built_at, requires, numbers });
         }
         if table.entities.is_empty() {
             errors.push("entities.json: no \"entities\"".into());
+        }
+        // What builds an item and what it requires must be built buildings, and a buildable item needs a cost and a
+        // build time.
+        for (id, e) in &table.entities {
+            let at = format!("entities.json: {id}");
+            let is_building = |b: &str| table.entities.get(b).is_some_and(|x| x.built && x.kind == "building");
+            for b in e.built_at.iter().chain(&e.requires) {
+                if e.built && !is_building(b) {
+                    errors.push(format!("{at}: \"{b}\" is not a built building"));
+                }
+            }
+            if e.built && e.built_at.is_some() {
+                for n in ["cost", "build_ticks"] {
+                    if !e.numbers.contains_key(n) {
+                        errors.push(format!("{at}: a buildable item needs \"{n}\""));
+                    }
+                }
+            }
         }
         let doc = json::parse(modules).map_err(|e| vec![format!("modules.json: {e}")])?;
         for (id, v) in doc.get("modules").and_then(Value::as_object).unwrap_or_default() {

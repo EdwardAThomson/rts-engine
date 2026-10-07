@@ -6,7 +6,7 @@
 
 use classic_data::{RulesTable, json};
 use classic_sim::world::Event;
-use classic_sim::{CommandOrder, Game, GameOptions, Power, Rules};
+use classic_sim::{CommandOrder, EntryState, Game, GameOptions, Power, QueueEntry, Rules};
 
 const BASE: &str = "\
 ################....
@@ -23,8 +23,14 @@ fn game_with(rules: Option<&Rules>) -> Game {
 }
 
 /// Order a placement, run the tick, and return the power reports it made as (player, supply, demand, shortfall).
+/// The building is put ready at a yard first (spawned in the corner, drawing no power), as production would.
 fn place(g: &mut Game, player: u32, id: &str, x: i32, y: i32) -> Vec<(u32, i64, i64, i64)> {
-    let kind = g.kind(id).unwrap();
+    let (yard, kind) = (g.kind("construction_yard").unwrap(), g.kind(id).unwrap());
+    if !g.state.entities.iter().any(|e| e.owner == player && e.kind == yard) {
+        g.spawn(yard, player, 18, 5);
+    }
+    let at = g.state.entities.iter_mut().find(|e| e.owner == player && e.kind == yard).unwrap();
+    at.queue.push(QueueEntry { item: kind, state: EntryState::Ready, progress: 0, paid: 0 });
     g.order(player, &[], CommandOrder::Place { kind, x, y });
     let from = g.events.len();
     g.step(1);

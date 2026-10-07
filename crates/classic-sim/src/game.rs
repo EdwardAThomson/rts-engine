@@ -9,6 +9,7 @@ use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
+use crate::production::{self, ProduceError, QueueEntry};
 use crate::units::{Kind, Rules};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
@@ -45,6 +46,8 @@ pub struct EntityView {
     pub task: Option<Task>,
     pub cargo: Option<i64>,
     pub path_left: usize,
+    /// A producing building's queue, the head first.
+    pub queue: Vec<QueueEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,6 +126,11 @@ impl Game {
         Power::of(&self.state, &self.rules, player)
     }
 
+    /// Whether `player` may order `kind` built now. Changes nothing.
+    pub fn can_build(&self, player: u32, kind: Kind) -> Result<(), ProduceError> {
+        production::can_build(&self.state, &self.rules, player, kind)
+    }
+
     /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
     pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
@@ -150,6 +158,7 @@ impl Game {
                     task: e.task,
                     cargo: e.cargo,
                     path_left: e.path.len(),
+                    queue: e.queue.clone(),
                 })
                 .collect(),
             resource_left: s.resource.iter().sum(),
