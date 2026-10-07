@@ -2,7 +2,7 @@
 //! before the port). Matching them shows the port plays exactly the same games: same paths, same node counts,
 //! same state hashes, tick for tick.
 //!
-//! Four rule changes since then re-recorded values on purpose, each checked to change nothing else:
+//! Five rule changes since then re-recorded values on purpose, each checked to change nothing else:
 //! - the tank's generic id became `battle_tank` (the hash spells each entity's id): state hashes only;
 //! - buildings block ground movement, so units and harvesters path round each refinery: state hashes and the
 //!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged;
@@ -13,7 +13,11 @@
 //! - each player starts with a construction yard, a power plant, the refinery, its harvester and a tank, and 1,200
 //!   credits (rules-base-building-power.md, rules-economy-production.md), on a test map whose start plateaus grew to
 //!   fit: state hashes, the nodes expanded during ticks and the bench scenes' credits. Entity ids shift, so the
-//!   scripted tank is now id 5. Standalone paths, path checksums and that tank's position are unchanged.
+//!   scripted tank is now id 5. Standalone paths, path checksums and that tank's position are unchanged;
+//! - combat (rules-combat.md): tanks that see enemies turn, fire and take damage, so the scripted games and the bench
+//!   scenes, where they meet, play differently: their state hashes and the nodes expanded during bench ticks. Idle
+//!   games (no tank sees an enemy), standalone paths, path checksums, the bench scenes' credits and the lone tank's
+//!   position are unchanged.
 
 use classic_sim::path::Pathfinder;
 use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
@@ -70,10 +74,10 @@ fn scripted(game: &mut Game, ticks: u32) {
 fn scripted_games_and_the_old_replay_hash_match() {
     let mut a = game(7);
     scripted(&mut a, 10_000);
-    assert_eq!(a.hash(), "eb450e6e");
+    assert_eq!(a.hash(), "4facf23a");
     let mut b = game(3);
     scripted(&mut b, 6_000);
-    assert_eq!(b.hash(), "f3cc6748", "the replay hash every earlier change was checked against");
+    assert_eq!(b.hash(), "3e9c48fc", "the replay hash every earlier change was checked against");
     assert_eq!(b.command_log().len(), 24);
     let mut m = game(1);
     m.order(0, &[5], CommandOrder::Move { x: 20, y: 9 });
@@ -161,8 +165,8 @@ fn bench_scene_seed_1_matches() {
         path_check: 0x3b120bc1,
         path_nulls: 23,
         path_nodes: 167_392,
-        tick_nodes: 1_061_336,
-        hashes: ["54b2161b", "b053aebb", "96fe1a61", "9cd50597", "7967af2b", "2beba970"],
+        tick_nodes: 1_059_360,
+        hashes: ["18f3c7cf", "50bc9a7e", "eef37c69", "9955bf8f", "4fe8ad04", "5ee83276"],
         credits: [1400, 3000],
     });
 }
@@ -176,8 +180,8 @@ fn bench_scene_seed_2_matches() {
         path_check: 0x388dc4f4,
         path_nulls: 22,
         path_nodes: 584_041,
-        tick_nodes: 3_961_339,
-        hashes: ["dbcfe41f", "5c9eed8e", "e95d5de1", "e56bcabe", "ffbca32d", "1865bde2"],
+        tick_nodes: 3_960_707,
+        hashes: ["9539776e", "0df5c134", "8e15142b", "b3e69344", "afdd5c1f", "aa4f7997"],
         credits: [1400, 2030],
     });
 }

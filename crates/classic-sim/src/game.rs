@@ -77,6 +77,8 @@ impl Game {
             players: Vec::new(),
             entities: Vec::new(),
             kind_ids: rules.kind_ids().into(),
+            weapon_ids: rules.weapons.iter().map(|w| w.id.clone()).collect::<Vec<_>>().into(),
+            projectiles: Vec::new(),
         };
         // Each player starts with a construction yard on its start tile, a power plant to its right, a refinery
         // below them both with a harvester at its dock, and a battle tank beside the dock, all laid out from the

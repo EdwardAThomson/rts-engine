@@ -4,7 +4,7 @@
 //! simulation runs, never copied from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15
 //! ticks per second).
 
-use classic_data::RulesTable;
+use classic_data::{ARMOURS, RulesTable, WARHEADS};
 
 pub const TICKS_PER_SECOND: u32 = 15;
 
@@ -12,6 +12,40 @@ pub const TICKS_PER_SECOND: u32 = 15;
 /// the generic id, never the index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Kind(pub u16);
+
+/// A weapon: an index into `Rules::weapons`, which are in generic-id order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WeaponId(pub u16);
+
+/// Everything the combat phase needs to know about one weapon (`data/rules/weapons.json`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WeaponRules {
+    pub id: String,
+    /// Row in the damage table, an index into `classic_data::WARHEADS`.
+    pub warhead: usize,
+    /// Sub-tile units, centre to centre.
+    pub range: i64,
+    pub min_range: i64,
+    /// Ticks between shots.
+    pub reload: u32,
+    pub damage: i64,
+    /// Sub-tile units per tick; 0 hits at once.
+    pub speed: i64,
+    pub scatter: i64,
+    pub splash: i64,
+    /// Doesn't fire while its owner is short of power.
+    pub needs_power: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CombatRules {
+    /// Percent of base damage, by warhead row and armour column.
+    pub table: [[i64; 6]; 6],
+    /// Splash, beams and blasts hurt their own side at this percent.
+    pub own_splash_percent: i64,
+    /// Armed units look for targets once every this many ticks, staggered by id.
+    pub scan_every: u32,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HarvesterStats {
@@ -38,6 +72,16 @@ pub struct KindRules {
     pub refinery: bool,
     /// Kinds with the `wall` role block movement but don't extend their owner's building area.
     pub wall: bool,
+    /// Column in the damage table, an index into `classic_data::ARMOURS`.
+    pub armour: usize,
+    /// What it fires, if armed.
+    pub weapon: Option<WeaponId>,
+    /// The blast it leaves when destroyed.
+    pub death: Option<WeaponId>,
+    /// Facing units per tick its weapon turns (256 to a full turn).
+    pub turn_rate: i64,
+    /// How far it looks for targets, in sub-tile units: its sight, or its weapon's range if it has no sight.
+    pub sight: i64,
     /// Credits, paid while it builds.
     pub cost: i64,
     /// Ticks to build at full power.
@@ -89,6 +133,8 @@ pub struct Rules {
     pub placement: Placement,
     pub power: PowerRules,
     pub production: ProductionRules,
+    pub weapons: Vec<WeaponRules>,
+    pub combat: CombatRules,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -129,6 +175,14 @@ impl Rules {
                 build_ticks: t.number(id, "build_ticks").unwrap_or(0),
                 built_at: None,
                 requires: Vec::new(),
+                armour: ARMOURS
+                    .iter()
+                    .position(|a| e.armour.as_deref() == Some(*a))
+                    .ok_or(format!("{id} has no armour"))?,
+                weapon: None,
+                death: None,
+                turn_rate: t.number(id, "turn_rate").unwrap_or(0),
+                sight: t.number(id, "sight").unwrap_or(0) * crate::map::TILE,
             });
         }
         if kinds.len() > u16::MAX as usize {
@@ -147,8 +201,40 @@ impl Rules {
             k.built_at = built_at;
             k.requires = requires;
         }
+        let mut weapons = Vec::new();
+        for (id, w) in &t.weapons {
+            let n = |name: &str| t.weapon_number(id, name).ok_or(format!("rules data has no weapon {id}.{name}"));
+            weapons.push(WeaponRules {
+                id: id.clone(),
+                warhead: WARHEADS.iter().position(|h| *h == w.warhead).ok_or(format!("{id}: unknown warhead"))?,
+                range: n("range")?,
+                min_range: n("min_range")?,
+                reload: n("reload")? as u32,
+                damage: n("damage")?,
+                speed: n("speed")?,
+                scatter: n("scatter")?,
+                splash: n("splash")?,
+                needs_power: n("needs_power")? != 0,
+            });
+        }
+        let weapon_index =
+            |id: &str| weapons.binary_search_by(|w| w.id.as_str().cmp(id)).ok().map(|i| WeaponId(i as u16));
+        for k in &mut kinds {
+            let e = &t.entities[&k.id];
+            k.weapon = e.weapon.as_deref().and_then(weapon_index);
+            k.death = e.death.as_deref().and_then(weapon_index);
+            if k.sight == 0 {
+                k.sight = k.weapon.map_or(0, |w| weapons[w.0 as usize].range);
+            }
+        }
         let num = |id: &str, name: &str| t.number(id, name).ok_or(format!("rules data has no {id}.{name}"));
         let module = |id: &str, name: &str| t.module_number(id, name).ok_or(format!("rules data has no {id}.{name}"));
+        let mut table = [[0; 6]; 6];
+        for (w, row) in WARHEADS.iter().zip(&mut table) {
+            for (a, cell) in ARMOURS.iter().zip(row.iter_mut()) {
+                *cell = module("combat", &format!("{w}_vs_{a}"))?;
+            }
+        }
         let every = num("resource", "regrow_every_ticks")?;
         Ok(Rules {
             kinds,
@@ -169,8 +255,23 @@ impl Rules {
                 instant_build: module("production", "instant_build")? != 0,
                 starting_credits: module("production", "starting_credits")?,
             },
+            combat: CombatRules {
+                table,
+                own_splash_percent: module("combat", "own_splash_percent")?,
+                scan_every: module("combat", "scan_every_ticks")? as u32,
+            },
+            weapons,
             hash: t.hash(),
         })
+    }
+
+    pub fn weapon(&self, w: WeaponId) -> &WeaponRules {
+        &self.weapons[w.0 as usize]
+    }
+
+    /// The weapon with this generic id.
+    pub fn weapon_id(&self, id: &str) -> Option<WeaponId> {
+        self.weapons.binary_search_by(|w| w.id.as_str().cmp(id)).ok().map(|i| WeaponId(i as u16))
     }
 
     pub fn kind(&self, k: Kind) -> &KindRules {

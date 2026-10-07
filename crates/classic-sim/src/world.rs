@@ -8,18 +8,23 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::imath::isqrt;
 use rts_core::rng::random_int;
 
+use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
-use crate::units::{Kind, Rules};
+use crate::units::{Kind, Rules, WeaponId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Order {
+    /// Standing guard: armed units look for targets and fire on them.
     Idle,
+    /// Moving under orders, ignoring enemies.
     Move,
     Harvest,
+    /// Going after one target the player chose, until it is destroyed.
+    Attack,
 }
 
 /// A harvester's step in its loop.
@@ -39,6 +44,7 @@ impl Order {
             Order::Idle => "idle",
             Order::Move => "move",
             Order::Harvest => "harvest",
+            Order::Attack => "attack",
         }
     }
 }
@@ -86,6 +92,14 @@ pub struct Entity {
     pub home_id: Option<u32>,
     /// Producing buildings only: what it is building, the head first.
     pub queue: Vec<QueueEntry>,
+    /// Armed entities only: the facing its weapon points along, 0 to 255 clockwise from north.
+    pub facing: i64,
+    /// Ticks until its weapon can fire again.
+    pub reload: u32,
+    /// What it is shooting at.
+    pub target: Option<u32>,
+    /// Who last hit it, and on which tick, so it can answer.
+    pub last_attacker: Option<(u32, u32)>,
 }
 
 impl Entity {
@@ -101,16 +115,24 @@ impl Canon for EntityCanon<'_> {
     fn canon(&self, w: &mut CanonHasher) {
         let e = self.0;
         let queue: Vec<EntryCanon> = e.queue.iter().map(|q| EntryCanon(q, self.1)).collect();
+        let attacker = e.last_attacker.map(|(id, _)| id);
+        let attacked = e.last_attacker.map(|(_, tick)| tick);
+        // Combat fields are written only when set, so an entity that never fought hashes as it did before combat.
         w.object()
+            .opt("attackedAt", attacked.as_ref())
             .opt("cargo", e.cargo.as_ref())
+            .opt("facing", (e.facing != 0).then_some(&e.facing))
             .field("health", &e.health)
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
+            .opt("lastAttacker", attacker.as_ref())
             .field("order", &e.order)
             .field("owner", &e.owner)
             .array("path", &e.path)
             // Written only while something is queued, so a game with no production hashes as it did before.
             .opt("queue", (!queue.is_empty()).then_some(&queue))
+            .opt("reload", (e.reload != 0).then_some(&e.reload))
+            .opt("target", e.target.as_ref())
             .opt("task", e.task.as_ref())
             .field("type", self.1[e.kind.0 as usize].as_str())
             .field("x", &e.x)
@@ -143,17 +165,24 @@ pub struct GameState {
     pub players: Vec<Player>,
     /// Always sorted by id.
     pub entities: Vec<Entity>,
+    /// Shells and rockets in flight, sorted by id; they take ids from `next_id` like entities.
+    pub projectiles: Vec<Projectile>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
+    /// Each weapon's generic id, in weapon order, likewise.
+    pub weapon_ids: Arc<[String]>,
 }
 
 impl Canon for GameState {
     fn canon(&self, w: &mut CanonHasher) {
         let entities: Vec<EntityCanon> = self.entities.iter().map(|e| EntityCanon(e, &self.kind_ids)).collect();
+        let projectiles: Vec<ProjectileCanon> =
+            self.projectiles.iter().map(|p| ProjectileCanon(p, &self.weapon_ids)).collect();
         w.object()
             .array("entities", &entities)
             .field("nextId", &self.next_id)
             .field("players", &self.players)
+            .opt("projectiles", (!projectiles.is_empty()).then_some(&projectiles))
             .field("resource", &self.resource)
             .field("rng", &self.rng)
             .field("tick", &self.tick)
@@ -185,6 +214,10 @@ pub enum CommandOrder {
     /// primary (first built) building that makes it.
     Produce {
         kind: Kind,
+    },
+    /// Go after one enemy until it is destroyed: armed units only.
+    Attack {
+        target: u32,
     },
     /// Remove the last queued entry of this kind from the same factory and refund what was paid for it.
     Cancel {
@@ -277,6 +310,54 @@ pub enum Event {
         entity: u32,
         kind: Kind,
     },
+    /// A scan picked a new target.
+    TargetAcquired {
+        tick: u32,
+        unit: u32,
+        target: u32,
+    },
+    Fired {
+        tick: u32,
+        unit: u32,
+        weapon: WeaponId,
+        target: u32,
+    },
+    ProjectileSpawned {
+        tick: u32,
+        projectile: u32,
+        weapon: WeaponId,
+        x: i64,
+        y: i64,
+        to_x: i64,
+        to_y: i64,
+    },
+    /// A projectile burst, on target or not.
+    ProjectileHit {
+        tick: u32,
+        projectile: u32,
+        weapon: WeaponId,
+        x: i64,
+        y: i64,
+    },
+    /// An entity lost health.
+    Hit {
+        tick: u32,
+        target: u32,
+        attacker: u32,
+        weapon: WeaponId,
+        damage: i64,
+        health: i64,
+    },
+    /// An entity was removed by damage. `killer` is whoever hit it last.
+    Destroyed {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
+        killer: Option<u32>,
+        x: i64,
+        y: i64,
+    },
     /// A player's power supply, demand or shortfall differs from the previous tick's.
     PowerChanged {
         tick: u32,
@@ -302,6 +383,12 @@ impl Event {
             Event::ProductionCancelled { .. } => "production_cancelled",
             Event::BuildingReady { .. } => "building_ready",
             Event::UnitBuilt { .. } => "unit_built",
+            Event::TargetAcquired { .. } => "target_acquired",
+            Event::Fired { .. } => "fired",
+            Event::ProjectileSpawned { .. } => "projectile_spawned",
+            Event::ProjectileHit { .. } => "projectile_hit",
+            Event::Hit { .. } => "hit",
+            Event::Destroyed { .. } => "destroyed",
         }
     }
 
@@ -318,7 +405,13 @@ impl Event {
             | Event::ProductionPaused { tick, .. }
             | Event::ProductionCancelled { tick, .. }
             | Event::BuildingReady { tick, .. }
-            | Event::UnitBuilt { tick, .. } => tick,
+            | Event::UnitBuilt { tick, .. }
+            | Event::TargetAcquired { tick, .. }
+            | Event::Fired { tick, .. }
+            | Event::ProjectileSpawned { tick, .. }
+            | Event::ProjectileHit { tick, .. }
+            | Event::Hit { tick, .. }
+            | Event::Destroyed { tick, .. } => tick,
         }
     }
 }
@@ -344,6 +437,10 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         cargo: harvester.then_some(0),
         home_id: None,
         queue: Vec::new(),
+        facing: 0,
+        reload: 0,
+        target: None,
+        last_attacker: None,
     });
     id
 }
@@ -368,7 +465,7 @@ pub fn occupy(pf: &mut Pathfinder, rules: &Rules, e: &Entity, blocked: bool) {
     }
 }
 
-fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeque<Tile> {
+pub(crate) fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeque<Tile> {
     pf.find(from.x, from.y, to.x, to.y).map(|p| p.tiles.into()).unwrap_or_default()
 }
 
@@ -410,6 +507,14 @@ pub fn apply_command(
         }
         return;
     }
+    // An attack names a target that must still be there; the units go after it in the combat phase.
+    let attack = match cmd.order {
+        CommandOrder::Attack { target } => match state.entity(target) {
+            Some(_) => Some(target),
+            None => return,
+        },
+        _ => None,
+    };
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
         let e = &mut state.entities[i];
@@ -420,12 +525,19 @@ pub fn apply_command(
             CommandOrder::Move { x, y } => {
                 e.path = path_or_empty(pf, e.tile(), Tile { x, y });
                 e.order = Order::Move;
+                e.target = None;
             }
             CommandOrder::Harvest if rules.kind(e.kind).harvester.is_some() => {
                 e.order = Order::Harvest;
                 e.task = Some(Task::Seek);
                 e.path.clear();
             }
+            CommandOrder::Attack { .. } if rules.kind(e.kind).weapon.is_some() && attack != Some(e.id) => {
+                e.order = Order::Attack;
+                e.target = attack;
+                e.path.clear();
+            }
+            CommandOrder::Attack { .. } => {}
             CommandOrder::Harvest
             | CommandOrder::Place { .. }
             | CommandOrder::Produce { .. }
@@ -444,11 +556,12 @@ pub fn step(
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat (not built yet), movement, crush (not built yet), economy, world.
+    // commands, combat, movement, crush (not built yet), economy, world.
     let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
+    combat::tick(pf, state, rules, events);
     movement(state, rules);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);

@@ -42,7 +42,7 @@ function check(name, got, want) {
     tanks.forEach(([id, owner], k) => api.game_order_move(g, owner, id, (t / 50 + 7 * k) % 30, (t / 100 + 3 * k) % 18));
     api.game_step(g, 500);
   }
-  check("seed 3 scripted, 6,000 ticks", hex(g), "f3cc6748");
+  check("seed 3 scripted, 6,000 ticks", hex(g), "3e9c48fc");
   check("tick count", api.game_tick(g), 6000);
   api.game_free(g);
 }
