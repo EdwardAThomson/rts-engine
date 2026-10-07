@@ -54,7 +54,7 @@ fn looks() -> Vec<(&'static str, Look)> {
         ("slab", Building(1, 1, d::slab)),
         ("slab_large", Building(2, 2, d::slab)),
         ("power_plant", Building(2, 2, d::power_plant)),
-        ("refinery", Building(1, 1, d::refinery)),
+        ("refinery", Building(3, 2, d::refinery)),
         ("silo", Building(2, 2, d::silo)),
         ("radar", Building(2, 2, d::radar)),
         ("barracks", Building(2, 2, d::barracks)),

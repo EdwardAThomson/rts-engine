@@ -1,37 +1,49 @@
-"""Refinery: a processing block with two storage tanks, piping and a loading bay. One tile (10.67 m) square; the
-harvester docks just south of the footprint, so the bay faces south."""
+"""Refinery: a processing hall, an unloading bay in the middle of the south side (the harvester docks one row
+below the middle column) and two storage tanks. Three tiles by two, built in proportion to FOOTPRINT."""
 import math
 
 import rts_studio as st
 
-FOOTPRINT = (1, 1)
+FOOTPRINT = (3, 2)
 T = st.STUDIO["metres_per_tile"]
 
 
 def build(root):
     paint, steel, dark, conc = st.team_paint(), st.steel(), st.dark_steel(), st.concrete()
     load, glass = st.cargo(), st.glass()
-    c = (T / 2, -T / 2)  # centre of the footprint
-    st.block((T - 0.6, T - 0.6, 0.3), (c[0], c[1], 0.15), mat=conc, parent=root, bevel=0.08, name="pad")
-    # Processing block, west half.
-    st.block((4.6, 6.4, 3.6), (2.8, -4.3, 2.1), mat=steel, parent=root, name="block")
-    st.block((4.7, 6.5, 0.5), (2.8, -4.3, 4.1), mat=paint, parent=root, name="roof_band")
-    st.block((3.6, 4.8, 0.3), (2.8, -4.3, 4.45), mat=dark, parent=root, name="roof")
-    for k in range(3):
-        st.cylinder(0.35, 0.6, (1.9 + k * 0.9, -2.2, 4.8), mat=steel, parent=root, verts=12, name="vent")
-    st.block((2.2, 0.1, 0.7), (2.8, -7.56, 2.6), mat=glass, parent=root, name="window")
-    # Two storage tanks, east half.
-    for k, y in enumerate((-2.6, -6.2)):
-        st.cylinder(1.6, 3.4, (7.9, y, 2.0), mat=steel, parent=root, verts=32, name="tank")
-        st.cylinder(1.62, 0.45, (7.9, y, 2.9), mat=paint, parent=root, verts=32, name="tank_band")
-        st.sphere(1.6, (7.9, y, 3.7), mat=load, parent=root, scale=(1, 1, 0.35), name="tank_top")
-    # Pipes from the block to the tanks.
-    for y in (-2.6, -6.2):
-        st.cylinder(0.22, 2.6, (6.1, y, 3.0), rot=(0, math.pi / 2, 0), mat=dark, parent=root, verts=12, name="pipe")
-    # Loading bay on the south edge, with hazard stripes.
-    st.block((6.0, 1.9, 0.35), (5.0, -9.4, 0.4), mat=dark, parent=root, name="bay")
     stripe = st.plain("stripe", (0.75, 0.55, 0.08))
-    for k in range(6):
-        st.block((0.45, 1.7, 0.05), (2.5 + k * 1.0, -9.4, 0.6), rot=(0, 0, 0.5), mat=stripe, parent=root,
+    W, H = FOOTPRINT[0] * T, FOOTPRINT[1] * T
+    st.block((W - 0.6, H - 0.6, 0.3), (W / 2, -H / 2, 0.15), mat=conc, parent=root, bevel=0.08, name="pad")
+
+    # Processing hall across the west and middle columns, north half.
+    hx, hy, hw, hl = W * 0.36, -H * 0.3, W * 0.62, H * 0.5
+    st.block((hw, hl, 5.5), (hx, hy, 3.0), mat=steel, parent=root, name="hall")
+    st.block((hw + 0.1, hl + 0.1, 0.6), (hx, hy, 5.8), mat=paint, parent=root, name="roof_band")
+    st.block((hw - 1.6, hl - 1.6, 0.3), (hx, hy, 6.2), mat=dark, parent=root, name="roof")
+    for k in range(5):
+        st.cylinder(0.45, 0.8, (hx - hw / 2 + 2.5 + k * (hw - 5) / 4, hy + hl / 4, 6.7), mat=steel, parent=root,
+                    verts=12, name="vent")
+    st.cylinder(0.5, 6.0, (hx - hw / 2 + 1.6, hy + hl / 2 - 1.6, 8.5), mat=dark, parent=root, verts=16,
+                name="stack")
+    for k in range(3):
+        st.block((2.4, 0.1, 0.9), (hx - hw / 3 + k * hw / 3, hy - hl / 2 - 0.05, 3.4), mat=glass, parent=root,
+                 name="window")
+
+    # Unloading bay in the middle column, open to the south edge, with a chute down into it.
+    bx = W / 2
+    st.block((T * 0.7, H * 0.42, 0.4), (bx, -H * 0.76, 0.45), mat=dark, parent=root, name="bay")
+    for k in range(7):
+        st.block((0.6, 0.12, 0.06), (bx, -H * 0.58 - k * 1.2, 0.68), rot=(0, 0, 0.6), mat=stripe, parent=root,
                  name="stripe")
-    st.block((1.2, 2.4, 2.0), (8.9, -9.0, 1.3), mat=paint, parent=root, name="hopper_chute")
+    st.block((2.4, 3.0, 3.2), (bx, -H * 0.58, 2.2), mat=paint, parent=root, name="chute")
+    st.block((3.6, 0.5, 0.5), (bx, -H * 0.55, 4.0), mat=steel, parent=root, name="gantry")
+
+    # Two storage tanks in the east column, piped to the hall.
+    tx = W - T / 2
+    for y in (-H * 0.27, -H * 0.73):
+        st.cylinder(3.2, 5.4, (tx, y, 3.0), mat=steel, parent=root, verts=40, name="tank")
+        st.cylinder(3.23, 0.7, (tx, y, 4.6), mat=paint, parent=root, verts=40, name="tank_band")
+        st.sphere(3.2, (tx, y, 5.7), mat=load, parent=root, scale=(1, 1, 0.3), name="tank_top")
+        st.cylinder(0.35, tx - 3.2 - (hx + hw / 2), ((tx - 3.2 + hx + hw / 2) / 2, y, 4.2),
+                    rot=(0, math.pi / 2, 0), mat=dark, parent=root, verts=12, name="pipe")
+    st.block((1.2, H * 0.46, 1.0), (tx - 4.0, -H / 2, 0.8), mat=dark, parent=root, name="manifold")

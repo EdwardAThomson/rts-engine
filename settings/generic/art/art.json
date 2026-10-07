@@ -21,7 +21,7 @@
     "slab": { "kind": "building", "file": "art/buildings/slab.png", "frame": [32, 32], "frames": 1, "size": [1, 1] },
     "slab_large": { "kind": "building", "file": "art/buildings/slab_large.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "power_plant": { "kind": "building", "file": "art/buildings/power_plant.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
-    "refinery": { "kind": "building", "file": "art/buildings/refinery.png", "frame": [32, 32], "frames": 1, "size": [1, 1] },
+    "refinery": { "kind": "building", "file": "art/buildings/refinery.png", "frame": [96, 64], "frames": 1, "size": [3, 2] },
     "silo": { "kind": "building", "file": "art/buildings/silo.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "radar": { "kind": "building", "file": "art/buildings/radar.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "barracks": { "kind": "building", "file": "art/buildings/barracks.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
