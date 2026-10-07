@@ -14,6 +14,11 @@ python3 art/studio/pack.py /tmp/renders/* --out settings/generic/art/sprites
 python3 art/studio/preview.py settings/generic/art/sprites /tmp/preview.png
 ```
 
+**Styles.** `studio.json` lists styles: `detailed` (the default) and `classic` (flat colours, direct light only,
+small parts a model lists in `DETAIL` left out, chunky 2x pixels, a 48-colour palette and hard edges). Render
+with `--style classic`; the packer reads the style from each render and keeps one style per atlas page. Every
+style has the same scale, pivots and frame layout, so a renderer can offer them as a player option.
+
 Quick test of one facing while modelling: `render.py MODEL --out DIR --samples 16 --facings 16 --only 2`.
 
 - `studio/studio.json`: the camera (orthographic, facing north, 60°), the scale (64 atlas pixels per 10.67 m

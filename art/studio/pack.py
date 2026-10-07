@@ -64,15 +64,26 @@ def resize(arr, size):
     return np.clip(out, 0, 1)
 
 
-def shrink(rgba, mask, origin):
+def shrink(rgba, mask, origin, style):
+    """Downscale to atlas size. A style with pixel_size 2 shrinks to half that and doubles back with nearest
+    neighbour, for chunky pixels at the same atlas scale; hard_alpha cuts edges to on or off."""
     rs, st = STUDIO["render_scale"], STUDIO["vertical_stretch"]
+    px = style["pixel_size"]
     h, w = rgba.shape[:2]
-    size = (max(1, round(w / rs)), max(1, round(h * st / rs)))
+    size = (max(1, round(w / rs / px)), max(1, round(h * st / rs / px)))
     small = resize(rgba, size)
     m = None
     if mask is not None:
         m = np.clip(resize(mask * rgba[..., 3], size) / np.maximum(small[..., 3], 1e-4), 0, 1) * (small[..., 3] > 0)
-    return small, m, (origin[0] * size[0] / w, origin[1] * size[1] / h)
+    if style["hard_alpha"]:
+        keep = small[..., 3] >= 0.5
+        small[..., 3] = keep
+        if m is not None:
+            m = np.where(keep, (m >= 0.5).astype(np.float32), 0)
+    if px > 1:
+        small = small.repeat(px, 0).repeat(px, 1)
+        m = None if m is None else m.repeat(px, 0).repeat(px, 1)
+    return small, m, (origin[0] * size[0] * px / w, origin[1] * size[1] * px / h)
 
 
 def trim(rgba, mask, pivot):
@@ -88,18 +99,19 @@ def trim(rgba, mask, pivot):
 
 def frames_of(rdir, meta):
     """Every frame of an entity: (part, kind, index, rgba, mask, pivot); kind is 'image' or 'shadow'."""
+    style = STUDIO["styles"][meta.get("style", "detailed")]
     out = []
     for part, info in meta["parts"].items():
         for i in range(info["facings"]):
             name = f"{part}-idle-f{i:02d}-00"
             rgba, mask = team_mask(load(rdir / f"{name}.png"))
-            small, m, piv = shrink(rgba, mask, meta["origin_px"])
+            small, m, piv = shrink(rgba, mask, meta["origin_px"], style)
             out.append((part, "image", i, *trim(small, m, piv)))
             sp = rdir / f"{name}.shadow.png"
             if sp.exists():
                 sh = load(sp)
                 sh[..., :3] = 0
-                small, _, piv = shrink(sh, None, meta["origin_px"])
+                small, _, piv = shrink(sh, None, meta["origin_px"], style)
                 out.append((part, "shadow", i, *trim(small, None, piv)))
     return out
 
@@ -118,7 +130,17 @@ def pack(frames):
     return pos, (PAGE_WIDTH, y + shelf)
 
 
-def write_page(path, frames, masks, pos, size):
+def palettise(page, colours):
+    """Reduce a page's colours to one shared palette, as 90s games did. Team paint is already grey, so the
+    palette never spends entries on player colours."""
+    rgb = Image.fromarray((page[..., :3] * 255).round().astype(np.uint8), "RGB")
+    q = rgb.quantize(colors=colours, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
+    out = page.copy()
+    out[..., :3] = np.asarray(q, np.float32) / 255
+    return out
+
+
+def write_page(path, frames, masks, pos, size, colours=0):
     page = np.zeros((size[1], size[0], 4), np.float32)
     mpage = np.zeros((size[1], size[0]), np.float32)
     for f, m, (x, y) in zip(frames, masks, pos):
@@ -126,6 +148,8 @@ def write_page(path, frames, masks, pos, size):
         page[y:y + h, x:x + w] = f
         if m is not None:
             mpage[y:y + h, x:x + w] = m
+    if colours:
+        page = palettise(page, colours)
     Image.fromarray((page * 255).round().astype(np.uint8), "RGBA").save(path.with_suffix(".png"), optimize=True)
     Image.fromarray((mpage * 255).round().astype(np.uint8), "L").save(path.with_suffix(".mask.png"), optimize=True)
 
@@ -146,7 +170,10 @@ def main():
     for atlas, entities in sorted(by_atlas.items()):
         flat = [f for _, fs in entities for f in fs]
         pos, size = pack([f[3] for f in flat])
-        write_page(out / atlas, [f[3] for f in flat], [f[4] for f in flat], pos, size)
+        styles = {m.get("style", "detailed") for m, _ in entities}
+        assert len(styles) == 1, f"{atlas}: one style per page, got {sorted(styles)}"
+        write_page(out / atlas, [f[3] for f in flat], [f[4] for f in flat], pos, size,
+                   STUDIO["styles"][styles.pop()]["palette"])
         k = 0
         for meta, fs in entities:
             parts = {}

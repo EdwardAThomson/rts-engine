@@ -27,9 +27,14 @@ def ramp(name, t):
     return pts[i] * (1 - f) + pts[i + 1] * f
 
 
-def sprite(atlas, mask, frame, team):
+SHADOW_ALPHA = 0.45  # renderer.md layers.json: shadows are composited once at 45% black
+
+
+def sprite(atlas, mask, frame, team, shadow=False):
     x, y, w, h, px, py = frame
     img = atlas[y:y + h, x:x + w].copy()
+    if shadow:
+        img[..., 3] *= SHADOW_ALPHA
     if team and mask is not None:
         m = mask[y:y + h, x:x + w, None]
         luma = img[..., :3] @ np.array([0.299, 0.587, 0.114], np.float32)
@@ -56,7 +61,7 @@ def main():
             for i in range(0, n, step):
                 layers = []
                 if "shadow" in doc["parts"][base]:
-                    layers.append(sprite(atlas, None, doc["parts"][base]["shadow"]["frames"][i], None))
+                    layers.append(sprite(atlas, None, doc["parts"][base]["shadow"]["frames"][i], None, shadow=True))
                 layers.append(sprite(atlas, mask, doc["parts"][base]["anims"]["idle"]["frames"][i], team))
                 if "turret" in doc["parts"]:
                     t = doc["parts"]["turret"]

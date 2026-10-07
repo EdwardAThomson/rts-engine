@@ -12,6 +12,9 @@ HULL_Z = 0.55            # hull belly height
 DECK_Z = 1.55            # top of hull deck
 TURRET_Z = DECK_Z
 TURRET_HEIGHT = 0
+# Small parts the classic style leaves out, for the simpler, bolder shapes of early 90s sprites.
+DETAIL = {"link", "spare_link", "cable", "antenna", "rack_bar", "rack_rail", "sight", "sight_glass", "vision",
+          "driver_hatch", "hatch", "deck_plate", "sprocket", "exhaust", "stowage"}
 
 
 def build_hull(root):

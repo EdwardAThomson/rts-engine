@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--facings", type=int, help="override the facing count (quick tests)")
     ap.add_argument("--only", type=int, help="render just this facing index (quick tests)")
     ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--style", default="detailed", help="a style from studio.json")
     args = ap.parse_args()
 
     mod = load(args.model)
@@ -76,6 +77,9 @@ def main():
             parts["hull"] = [o for o in hull]
         kind = "vehicle"
 
+    st.apply_style(scene, root, args.style, getattr(mod, "DETAIL", ()))
+    for part in parts:
+        parts[part] = [o for o in parts[part] if not o.hide_viewport]
     b = st.bounds(root)
     el = math.radians(st.STUDIO["elevation_deg"])
     sx, sy = st.shadow_extent(b["top"])
@@ -93,7 +97,7 @@ def main():
     ground = st.shadow_ground(scene)
 
     facings = st.STUDIO["facings"]
-    meta = {"id": eid, "category": category, "kind": kind, "render_size": list(size), "origin_px": list(origin),
+    meta = {"id": eid, "category": category, "kind": kind, "style": args.style, "render_size": list(size), "origin_px": list(origin),
             "bounds_m": b, "parts": {}}
     if kind == "building":
         meta["footprint"] = list(mod.FOOTPRINT)

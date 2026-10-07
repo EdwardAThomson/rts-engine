@@ -313,6 +313,32 @@ def wedge(size, loc, slope_front=0.4, rot=(0, 0, 0), mat=None, parent=None, name
     return _place(o, loc, rot, mat, parent, name, 0.03)
 
 
+def apply_style(scene, root, style, detail_names=()):
+    """Turn the scene into a style from studio.json: `flat` drops textures and bevels (one plain colour per
+    material, the look of early 90s renders), `detail` False hides parts a model lists as detail-only,
+    and `max_bounces` 0 keeps direct light only."""
+    cfg = STUDIO["styles"][style]
+    scene.cycles.max_bounces = cfg["max_bounces"]
+    if cfg["flat"]:
+        for m in bpy.data.materials:
+            bsdf = m.node_tree.nodes.get("Principled BSDF")
+            if not bsdf:
+                continue
+            for link in list(bsdf.inputs["Base Color"].links) + list(bsdf.inputs["Normal"].links):
+                m.node_tree.links.remove(link)
+            bsdf.inputs["Base Color"].default_value = m.diffuse_color
+            bsdf.inputs["Metallic"].default_value = 0.0
+            bsdf.inputs["Roughness"].default_value = 0.8
+        for o in meshes(root):
+            for mod in [mod for mod in o.modifiers if mod.type == "BEVEL"]:
+                o.modifiers.remove(mod)
+    if not cfg["detail"]:
+        for o in meshes(root):
+            if o.name.split(".")[0] in detail_names:
+                o.hide_render = True
+                o.hide_viewport = True
+
+
 def meshes(root):
     return [o for o in root.children_recursive if o.type == "MESH"]
 
