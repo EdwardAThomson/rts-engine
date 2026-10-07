@@ -51,7 +51,7 @@ impl UnitType {
     /// The generic id, as data files and the state hash spell it.
     pub fn id(self) -> &'static str {
         match self {
-            UnitType::BattleTank => "tank",
+            UnitType::BattleTank => "battle_tank",
             UnitType::Harvester => "harvester",
             UnitType::Refinery => "refinery",
         }

@@ -180,7 +180,7 @@ mod tests {
     fn builtin_rules_load() {
         let r = RulesTable::builtin();
         assert_eq!(r.number("harvester", "capacity"), Some(200));
-        assert!(r.entities["tank"].built);
+        assert!(r.entities["battle_tank"].built);
         assert!(!r.entities["hazard"].built);
         assert_eq!(r.modules.get("harvesting"), Some(&true));
     }

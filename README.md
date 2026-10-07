@@ -33,7 +33,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 - The Rust port plays the same games as the TypeScript engine it replaced: identical state hashes at eight
   points in four seeds' games, for scripted orders (including the old replay hash `e0342eba`), and every 150 ticks
-  of two 500-unit bench games; identical paths, node counts and path checksums.
+  of two 500-unit bench games; identical paths, node counts and path checksums. The hashes were re-recorded once
+  when the tank's id became `battle_tank` (the replay hash is now `1bcfbaae`); nothing else changed.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
   different game; replaying seed, map and command log reproduces the live game.

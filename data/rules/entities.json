@@ -46,7 +46,7 @@
       }
     },
     "mcv": { "kind": "unit", "status": "planned" },
-    "tank": {
+    "battle_tank": {
       "kind": "unit",
       "status": "built",
       "numbers": {
