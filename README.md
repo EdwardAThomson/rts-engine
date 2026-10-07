@@ -16,7 +16,7 @@ cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node we
 
 | Path | Does |
 |---|---|
-| `crates/engine-core` | Shared with any future sibling engine: `isqrt`, the seeded xorshift generator, the canonical state hash, the command queue and log. |
+| `rts-core` (separate repository) | Shared with the 3D engine: `isqrt`, the seeded xorshift generator, the canonical state hash, the command queue and log. Pinned by commit in `Cargo.toml`. |
 | `crates/classic-sim/src/map.rs` | ASCII maps: open ground, rock, cliffs, resource fields, start positions. 256 sub-tile units per tile. |
 | `crates/classic-sim/src/path.rs` | A* on the grid, 8-way, integer costs and a fixed tie-break; connected regions refuse unreachable goals at once. |
 | `crates/classic-sim/src/units.rs` | Unit stats. Our own placeholder numbers, to be tuned later by AI-vs-AI runs. |

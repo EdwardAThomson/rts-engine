@@ -1,6 +1,6 @@
 //! The tile map. Terrain never changes during a game; resource amounts do, so they live in the game state.
 
-use engine_core::hash::{Canon, CanonHasher};
+use rts_core::hash::{Canon, CanonHasher};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

@@ -6,7 +6,7 @@ version = 4
 name = "classic-sim"
 version = "0.1.0"
 dependencies = [
- "engine-core",
+ "rts-core",
 ]
 
 [[package]]
@@ -24,5 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-core"
+name = "rts-core"
 version = "0.1.0"
+source = "git+https://github.com/EdwardAThomson/rts-core?rev=da80e8730d22dcd6f34194787e168b565982af4c#da80e8730d22dcd6f34194787e168b565982af4c"

@@ -1,7 +1,7 @@
 //! Unit and building stats. Our own numbers, to be tuned later by simulation runs, never copied from another
 //! game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second).
 
-use engine_core::hash::{Canon, CanonHasher};
+use rts_core::hash::{Canon, CanonHasher};
 
 pub const TICKS_PER_SECOND: u32 = 15;
 
