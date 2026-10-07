@@ -69,6 +69,8 @@ pub struct Placement {
 pub struct ProductionRules {
     /// The most entries one building's queue holds, the one in progress included.
     pub queue_size: usize,
+    /// Each player's credits at the start of a skirmish.
+    pub starting_credits: i64,
     /// A test switch: every entry finishes, paid in full, on the tick it reaches the head of its queue.
     pub instant_build: bool,
 }
@@ -165,6 +167,7 @@ impl Rules {
             production: ProductionRules {
                 queue_size: module("production", "queue_size")? as usize,
                 instant_build: module("production", "instant_build")? != 0,
+                starting_credits: module("production", "starting_credits")?,
             },
             hash: t.hash(),
         })

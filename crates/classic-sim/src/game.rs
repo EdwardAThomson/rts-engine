@@ -65,7 +65,9 @@ impl Game {
         let map = parse_map(opts.map)?;
         let rules = opts.rules.cloned().unwrap_or_default();
         let kind = |id: &str| rules.kind_id(id).ok_or(format!("the rules have no built {id}"));
-        let (refinery_kind, harvester_kind, tank_kind) = (kind("refinery")?, kind("harvester")?, kind("battle_tank")?);
+        let [yard, plant, refinery, harvester, tank] =
+            ["construction_yard", "power_plant", "refinery", "harvester", "battle_tank"].map(kind);
+        let (yard, plant, refinery, harvester, tank) = (yard?, plant?, refinery?, harvester?, tank?);
         let count = opts.players.unwrap_or(map.start.len());
         let mut state = GameState {
             tick: 0,
@@ -76,17 +78,23 @@ impl Game {
             entities: Vec::new(),
             kind_ids: rules.kind_ids().into(),
         };
-        // Each player starts with a refinery on its start tile, a harvester at the dock and a battle tank beside it.
+        // Each player starts with a construction yard on its start tile, a power plant to its right, a refinery
+        // below them both with a harvester at its dock, and a battle tank beside the dock, all laid out from the
+        // footprints in the rules (rules-base-building-power.md: "a starting base of yard, one power plant and a
+        // refinery"). Maps leave room for it.
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
-            state.players.push(Player { id: p as u32, credits: 0, delivered: 0 });
-            let refinery = world::spawn(&mut state, &rules, refinery_kind, p as u32, s.x, s.y);
-            let dock = world::dock_of(&rules, state.entities.last().expect("just spawned"));
-            world::spawn(&mut state, &rules, harvester_kind, p as u32, dock.x, dock.y);
-            state.entities.last_mut().expect("just spawned").home_id = Some(refinery);
-            // Diagonally past the refinery's bottom-right corner, clear of its footprint at any size.
-            let r = rules.kind(refinery_kind);
-            world::spawn(&mut state, &rules, tank_kind, p as u32, s.x + r.width, s.y + r.height);
+            let owner = p as u32;
+            state.players.push(Player { id: owner, credits: rules.production.starting_credits, delivered: 0 });
+            let (y, r) = (rules.kind(yard), rules.kind(refinery));
+            world::spawn(&mut state, &rules, yard, owner, s.x, s.y);
+            world::spawn(&mut state, &rules, plant, owner, s.x + y.width, s.y);
+            let below = s.y + y.height.max(rules.kind(plant).height);
+            let home = world::spawn(&mut state, &rules, refinery, owner, s.x, below);
+            let dock = world::dock_at(r, s.x, below);
+            world::spawn(&mut state, &rules, harvester, owner, dock.x, dock.y);
+            state.entities.last_mut().expect("just spawned").home_id = Some(home);
+            world::spawn(&mut state, &rules, tank, owner, dock.x + 2, dock.y);
         }
         let mut pathfinder = Pathfinder::new(&map);
         for e in &state.entities {

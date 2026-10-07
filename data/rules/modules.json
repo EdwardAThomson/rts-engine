@@ -20,6 +20,7 @@
       "status": "built",
       "numbers": {
         "queue_size": { "default": 5, "min": 1, "max": 20 },
+        "starting_credits": { "default": 1200, "min": 0, "max": 100000 },
         "instant_build": { "default": 0, "min": 0, "max": 1 }
       }
     },

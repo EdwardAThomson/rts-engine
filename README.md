@@ -41,7 +41,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   points in four seeds' games, for scripted orders (including the old replay hash `e0342eba`), and every 150 ticks
   of two 500-unit bench games; identical paths, node counts and path checksums. Hashes were re-recorded on purpose
   when the tank's id became `battle_tank`, when buildings began to block movement, and when the tick split into
-  phases with a 3x2 refinery (the replay hash is now `e294aed5`); each time standalone paths and path checksums
+  phases with a 3x2 refinery, and when players began with a yard, a power plant and 1,200 credits (the replay hash
+  is now `f3cc6748`); each time standalone paths and path checksums
   were checked unchanged; the credit totals that moved as harvesters use the new dock were recorded on purpose.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
@@ -51,7 +52,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Paths never enter a cliff and go round the ridge; a cliff tile is refused as a goal; a sealed-off goal is
   refused without searching.
 - Orders for another player's units or for buildings are ignored.
-- The start refinery is 3x2 with its dock under the middle column. Placement accepts a building on rock touching
+- Each player starts with a construction yard, a power plant, a 3x2 refinery with its harvester at the dock under
+  its middle column, a tank and 1,200 credits; the base has a power margin of 70. Placement accepts a building on rock touching
   its owner's base (diagonals count, walls don't) and refuses each broken rule with its reason, including a
   refinery whose dock is a cliff; tuning can allow open ground or let a base reach further; a tank already moving drives round a building placed on
   its path; a bigger refinery moves its dock and harvesters still deliver; placements replay from the command log.
@@ -70,9 +72,6 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 ## Not verified / not built yet
 
 - Units pass through each other; there's no collision or tile reservation yet.
-- The skirmish start is still a refinery, a harvester and a tank, with no construction yard and no starting
-  credits, so default games build nothing yet. The design's start (a yard, a power plant and a refinery, 1,200
-  credits) needs bigger start plateaus than `maps/test-01.txt` has.
 - No combat or AI; no storage cap, tech levels, factory upgrades or starport.
 - No renderer, UI or audio yet, on desktop or web.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

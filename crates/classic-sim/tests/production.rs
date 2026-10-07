@@ -1,9 +1,10 @@
 //! Production (rules-economy-production.md, sections 7, 8 and 10): queues, paying while building, the power factor,
 //! pausing for funds, cancelling, the yard's ready-and-place flow, unit exits and prerequisites.
 //!
-//! The map below is all rock with no resource, so no delivery ever changes a player's credits. Player 0's 3x2
-//! refinery stands at (1, 1) and its tank at (4, 3). The tests spawn a power plant at (5, 1), a heavy factory at
-//! (8, 1) (exit tile (9, 3)) and a construction yard at (12, 1). A battle tank costs 600 and takes 450 ticks.
+//! The map below is all rock with no resource, so no delivery ever changes a player's credits. Player 0 starts with
+//! its yard at (1, 1), a power plant at (3, 1), its 3x2 refinery at (1, 3) and its tank at (4, 5). The tests add a
+//! second power plant at (5, 1) and a heavy factory at (8, 1), whose exit tile is (9, 3). A battle tank costs 600
+//! and takes 450 ticks.
 
 use classic_data::{RulesTable, json};
 use classic_sim::world::Event;
@@ -35,15 +36,16 @@ fn kind(g: &Game, id: &str) -> Kind {
     g.kind(id).unwrap_or_else(|| panic!("no kind {id}"))
 }
 
-/// Player 0's base with a power plant, a heavy factory and a yard, and `credits` to spend. Returns the factory's id.
-fn base(g: &mut Game, credits: i64, plant: bool) -> u32 {
-    if plant {
-        g.spawn(kind(g, "power_plant"), 0, 5, 1);
-    }
+/// Player 0's base with a second power plant and a heavy factory, and `credits` to spend. Returns the factory's id.
+fn base(g: &mut Game, credits: i64) -> u32 {
+    g.spawn(kind(g, "power_plant"), 0, 5, 1);
     let factory = g.spawn(kind(g, "heavy_factory"), 0, 8, 1);
-    g.spawn(kind(g, "construction_yard"), 0, 12, 1);
     g.state.players[0].credits = credits;
     factory
+}
+
+fn yard(g: &Game) -> u32 {
+    g.state.entities.iter().find(|e| e.owner == 0 && g.rules.kind(e.kind).id == "construction_yard").unwrap().id
 }
 
 fn credits(g: &Game) -> i64 {
@@ -80,7 +82,7 @@ fn built_at(g: &Game) -> Vec<(u32, Tile)> {
 #[test]
 fn a_tank_is_paid_for_steadily_and_leaves_by_the_exit_when_done() {
     let mut g = game(None);
-    let factory = base(&mut g, 600, true);
+    let factory = base(&mut g, 600);
     assert_eq!(g.power(0).factor(&g.rules), 100);
     produce(&mut g, "battle_tank");
     g.step(225);
@@ -95,9 +97,10 @@ fn a_tank_is_paid_for_steadily_and_leaves_by_the_exit_when_done() {
 
 #[test]
 fn a_shortfall_slows_production_to_the_power_factor() {
-    let mut g = game(None);
-    let factory = base(&mut g, 600, false);
-    // A refinery (30) and a heavy factory (35) with no supply: the factor sits at its 25% floor.
+    // Plants tuned to make nothing: a refinery (30) and a heavy factory (35) with no supply sit at the 25% floor.
+    let rules = tuned(r#"{ "power_plant": { "power": 0 } }"#);
+    let mut g = game(Some(&rules));
+    let factory = base(&mut g, 600);
     assert_eq!(g.power(0).factor(&g.rules), 25);
     produce(&mut g, "battle_tank");
     g.step(450);
@@ -109,7 +112,7 @@ fn a_shortfall_slows_production_to_the_power_factor() {
 #[test]
 fn production_pauses_for_funds_without_losing_progress_and_resumes_by_itself() {
     let mut g = game(None);
-    let factory = base(&mut g, 100, true);
+    let factory = base(&mut g, 100);
     produce(&mut g, "battle_tank");
     g.step(200);
     // 100 credits buy 75 ticks of a 600-credit, 450-tick tank (7,500 hundredths owes exactly 100).
@@ -127,7 +130,7 @@ fn production_pauses_for_funds_without_losing_progress_and_resumes_by_itself() {
 #[test]
 fn cancelling_refunds_exactly_what_was_paid() {
     let mut g = game(None);
-    let factory = base(&mut g, 600, true);
+    let factory = base(&mut g, 600);
     produce(&mut g, "battle_tank");
     g.step(180);
     assert_eq!(queue(&g, factory)[0].3, 240, "40% built, 40% paid");
@@ -143,7 +146,7 @@ fn cancelling_refunds_exactly_what_was_paid() {
 fn a_queue_holds_five_and_builds_them_in_order() {
     let rules = tuned(r#"{ "modules": { "production": { "instant_build": 1 } } }"#);
     let mut g = game(Some(&rules));
-    let factory = base(&mut g, 100_000, true);
+    let factory = base(&mut g, 100_000);
     for id in ["battle_tank", "harvester", "battle_tank", "battle_tank", "harvester", "battle_tank"] {
         produce(&mut g, id);
     }
@@ -167,21 +170,21 @@ fn a_queue_holds_five_and_builds_them_in_order() {
 fn what_a_player_can_build_depends_on_what_they_own() {
     let mut g = game(None);
     assert_eq!(g.can_build(0, kind(&g, "construction_yard")), Err(ProduceError::NotBuildable));
-    let plant = kind(&g, "power_plant");
-    assert_eq!(g.can_build(0, kind(&g, "barracks")), Err(ProduceError::Requires { kind: plant }));
-    assert_eq!(g.can_build(0, kind(&g, "power_plant")), Ok(()));
-    produce(&mut g, "power_plant");
+    let radar = kind(&g, "radar");
+    assert_eq!(g.can_build(0, kind(&g, "research_lab")), Err(ProduceError::Requires { kind: radar }));
+    assert_eq!(g.can_build(0, kind(&g, "silo")), Ok(()), "the start base has its plant and refinery");
+    produce(&mut g, "battle_tank");
     g.step(1);
-    assert_eq!(rejections(&g), [ProduceError::NoFactory], "no yard yet");
-    base(&mut g, 1000, true);
-    assert_eq!(g.can_build(0, kind(&g, "barracks")), Ok(()), "now there is a plant");
+    assert_eq!(rejections(&g), [ProduceError::NoFactory], "no heavy factory yet");
+    g.spawn(radar, 0, 5, 3);
+    assert_eq!(g.can_build(0, kind(&g, "research_lab")), Ok(()), "now there is a radar");
 }
 
 #[test]
 fn a_finished_building_waits_at_the_yard_until_placed() {
     let mut g = game(None);
-    base(&mut g, 1000, true);
-    let yard = g.state.entities.iter().find(|e| g.rules.kind(e.kind).id == "construction_yard").unwrap().id;
+    base(&mut g, 1000);
+    let yard = yard(&g);
     produce(&mut g, "power_plant");
     produce(&mut g, "wall");
     g.step(450);
@@ -202,7 +205,7 @@ fn a_finished_building_waits_at_the_yard_until_placed() {
 fn a_unit_with_no_free_exit_waits_until_one_frees_up() {
     let rules = tuned(r#"{ "modules": { "production": { "instant_build": 1 } } }"#);
     let mut g = game(Some(&rules));
-    let factory = base(&mut g, 1000, true);
+    let factory = base(&mut g, 1000);
     // The exit (9, 3) and the open tiles round it; the row above is the factory itself.
     let tank = kind(&g, "battle_tank");
     let blockers: Vec<u32> =
@@ -222,7 +225,7 @@ fn a_unit_with_no_free_exit_waits_until_one_frees_up() {
 #[test]
 fn orders_go_to_the_first_factory_unless_one_is_named() {
     let mut g = game(None);
-    let first = base(&mut g, 10_000, true);
+    let first = base(&mut g, 10_000);
     let second = g.spawn(kind(&g, "heavy_factory"), 0, 8, 5);
     produce(&mut g, "battle_tank");
     let tank = kind(&g, "battle_tank");
@@ -234,7 +237,7 @@ fn orders_go_to_the_first_factory_unless_one_is_named() {
 #[test]
 fn production_replays_from_the_command_log() {
     let setup = |g: &mut Game| {
-        base(g, 5000, true);
+        base(g, 5000);
     };
     let mut live = game(None);
     setup(&mut live);

@@ -95,7 +95,7 @@ fn harvester_round_trip_first_delivery_arrives_within_a_minute_of_game_time() {
         .collect();
     println!("deliveries in 900 ticks: {}", first.join(" "));
     for p in &g.state.players {
-        assert!(p.credits >= 200, "player {} has {} credits", p.id, p.credits);
+        assert!(p.delivered >= 200, "player {} has delivered {}", p.id, p.delivered);
     }
 }
 
@@ -163,8 +163,8 @@ fn move_order_a_tank_reaches_the_tile_it_was_sent_to() {
 fn orders_for_other_players_units_and_buildings_are_ignored() {
     let mut g = game(1);
     let before = g.hash();
-    // Unit 6 is player 1's tank and unit 1 is player 0's refinery; neither may be moved by player 0.
-    g.order(0, &[6, 1, 999], CommandOrder::Move { x: 5, y: 5 });
+    // Unit 10 is player 1's tank and unit 1 is player 0's yard; neither may be moved by player 0.
+    g.order(0, &[10, 1, 999], CommandOrder::Move { x: 5, y: 5 });
     let mut h = game(1);
     g.step(1);
     h.step(1);
