@@ -188,6 +188,8 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
             ring = st.group("turret", (0, 0, mod.TURRET_HEIGHT), parent=root)
             mod.build_turret(ring)
             ctx["groups"]["turret"] = st.meshes(ring)
+    import bpy
+    bpy.context.view_layer.update()  # parts under a moved group (a hinge, a rotor) need fresh world matrices
     ctx["intact_bounds"] = st.bounds(root)
     ctx["groups"] = {k: [o.name for o in v] for k, v in ctx["groups"].items()}  # variants may delete objects
 
