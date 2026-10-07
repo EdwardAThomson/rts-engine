@@ -1,0 +1,64 @@
+{
+  "about": "The one studio every unit and building is rendered in (plans/rts/art-pipeline.md, section 1). Change a value here and re-render everything, so the whole set keeps one camera, light and scale.",
+  "elevation_deg": 60,
+  "metres_per_tile": 10.67,
+  "atlas_px_per_tile": 64,
+  "render_scale": 4,
+  "vertical_stretch": 1.1547,
+  "samples": 48,
+  "shadow_samples": 16,
+  "facings": {
+    "hull": 16,
+    "turret": 32,
+    "building": 1
+  },
+  "margin_px": 2,
+  "team_paint": {
+    "rgb": [
+      0.012,
+      0.2,
+      0.015
+    ],
+    "hue_band": [
+      0.2,
+      0.45
+    ],
+    "min_saturation": 0.15
+  },
+  "key_light": {
+    "direction": [
+      0.75,
+      -0.35,
+      -1.0
+    ],
+    "energy": 3.0,
+    "colour": [
+      1.0,
+      0.92,
+      0.8
+    ]
+  },
+  "reference_sizes_m": {
+    "battle_tank_length": 6.3,
+    "harvester_length": 8.0
+  },
+  "styles": {
+    "about": "One set of models, several looks. A style changes how the studio renders and packs, never the models' size, pivots or frame layout, so any style drops into the same atlas format.",
+    "detailed": {
+      "flat": false,
+      "detail": true,
+      "max_bounces": 4,
+      "pixel_size": 1,
+      "palette": 0,
+      "hard_alpha": false
+    },
+    "classic": {
+      "flat": true,
+      "detail": false,
+      "max_bounces": 0,
+      "pixel_size": 2,
+      "palette": 48,
+      "hard_alpha": true
+    }
+  }
+}
