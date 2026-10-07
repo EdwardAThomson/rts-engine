@@ -156,10 +156,10 @@ says `hazard`; a pack says what the hazard is.
 
 | Check | Proves |
 |---|---|
-| Two packs that differ only in names, art and audio give the same state hash for the same seed and commands | Story and look never change the game |
+| Two packs that differ only in names, art and audio give the same state hash for the same seed and commands (names: built, in `tests/packs.rs`) | Story and look never change the game |
 | A pack with tuning gives a different rules hash, and its replays refuse to run under another pack | Replays stay honest |
 | Every pack passes a schema check: known ids only, numbers in range, every used id has a name, icon and sprite | No missing or invented content |
-| A protected-names check over every tracked file, and a check that the public build contains nothing from `settings-private/` | The private pack never leaks into this repo |
+| A protected-names check over every file and file name (`crates/classic-tools/tests/protected_names.rs`, built), and a check that the public build contains nothing from `settings-private/` (planned) | The private pack never leaks into this repo |
 
 ## Order of work
 
