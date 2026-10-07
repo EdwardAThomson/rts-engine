@@ -47,16 +47,17 @@ def build_hull(root):
         scout.rider(root, (x, -0.28, 1.36), lean_deg=12, cloth=cloth, helmet=helmet, glass=glass)
     st.cylinder(0.18, 0.06, (-0.35, 0.42, 1.65), rot=(math.radians(60), 0, 0), mat=dark, verts=12,
                 parent=root, name="steering")
-    # Roll cage: four posts, side rails and cross bars, thick enough not to shimmer.
+    # Roll cage: four posts, side rails and cross bars, thick enough not to shimmer. Rails are a little thinner than
+    # the posts and bars thinner still, so no two parts share a face plane at the joints (that renders dark).
     bar = 0.26
     for side in (-1, 1):
         x = side * 0.72
         st.block((bar, bar, 1.15), (x, 0.55, 1.5), rot=(math.radians(-12), 0, 0), mat=steel, parent=root,
                  name="cage_post")
         st.block((bar, bar, 1.1), (x, -0.95, 1.5), mat=steel, parent=root, name="cage_post")
-        st.block((bar, 1.75, bar), (x, -0.22, CAGE_Z), mat=steel, parent=root, name="cage_rail")
+        st.block((bar - 0.03, 1.75, bar - 0.03), (x, -0.22, CAGE_Z), mat=steel, parent=root, name="cage_rail")
     for y in (0.65, -0.95):
-        st.block((1.7, bar, bar), (0, y, CAGE_Z), mat=steel, parent=root, name="cage_bar")
+        st.block((1.64, bar - 0.05, bar - 0.05), (0, y, CAGE_Z), mat=steel, parent=root, name="cage_bar")
     # Twin guns on a pintle over the front bar.
     st.cylinder(0.14, 0.35, (0, 0.7, CAGE_Z + 0.25), mat=dark, verts=12, parent=root, name="pintle")
     st.block((0.7, 0.55, 0.28), (0, 0.82, CAGE_Z + 0.45), mat=dark, parent=root, name="gun_cradle")

@@ -6,9 +6,10 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 86 checks, about 1 s after the first build
+cargo test                                                    # 93 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
+cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo run --release --bin play                                # play on the desktop: build from the rail, drag to select, right-click to order
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
@@ -29,6 +30,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
 | `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font). |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
@@ -97,15 +99,31 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
+- Computer opponent (`crates/classic-ai/tests/skirmish.rs`, on `skirmish-01`): within 7,000 ticks it has a power
+  plant, two refineries, both factories, a radar, turrets, four harvesters and tanks, with no command refused; it
+  destroys every building of a player who does nothing, from either start, and never before its first-wave time;
+  two AIs play the same 20,000-tick game twice to the same hash and command log; a game between two AIs replays
+  from its command log with the AI switched off to the same hash; thinking never changes the game's hash; a power
+  plant removed at tick 3,000 is rebuilt within 90 seconds; an enemy tank beside its base draws an attack order
+  and takes hits within 20 seconds.
+
 ## Not verified / not built yet
 
 - Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
+- Two harvesters can wait on each other for good at a refinery dock (one on the dock heading out, one queued for
+  it); seen on `skirmish-01` when a factory exit sat beside the dock. The computer opponent nudges a stuck
+  harvester aside, but the movement rule itself is not fixed yet.
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
-- No AI; no storage cap, tech levels, factory upgrades or starport.
-- The renderer is desktop only so far, with no selection card, messages, menus, audio or computer
-  opponent; the rail has no tabs by category, hotkeys, pause per item or primary factory choice yet; cliffs are
+- The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
+  in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
+  exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
+  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` often play to a
+  stalemate behind their turrets. It is not yet wired into the desktop player.
+- No storage cap, tech levels, factory upgrades or starport.
+- The renderer is desktop only so far, with no selection card, messages, menus or audio; the rail has no tabs by
+  category, hotkeys, pause per item or primary factory choice yet; cliffs are
   plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - The web viewer (`web/viewer/`) is the debug view: plain shapes on a 2D canvas, checked in headless Chromium.

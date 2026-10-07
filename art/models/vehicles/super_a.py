@@ -44,8 +44,9 @@ def build_hull(root):
     body_w = W - 2 * TRACK_W + 0.6
     st.block((body_w, L - 1.4, DECK_Z - HULL_Z), (0, -0.2, (HULL_Z + DECK_Z) / 2), mat=paint, bevel=0.06,
              parent=root, name="body")
-    st.block((body_w, 1.3, 0.3), (0, 2.75, DECK_Z - 0.32), rot=(math.radians(-26), 0, 0), mat=paint, bevel=0.05,
-             parent=root, name="glacis")
+    # 4 cm narrower than the body, so their sides don't share a plane (coincident faces render dark).
+    st.block((body_w - 0.04, 1.3, 0.3), (0, 2.75, DECK_Z - 0.32), rot=(math.radians(-26), 0, 0), mat=paint,
+             bevel=0.05, parent=root, name="glacis")
     st.block((body_w - 0.1, 1.2, 0.65), (0, 2.65, 0.9), mat=paint, bevel=0.06, parent=root, name="nose")
     st.block((0.45, 0.12, 0.12), (-0.75, 2.95, DECK_Z - 0.12), mat=dark, bevel=0.01, parent=root, name="vision")
     st.cylinder(0.24, 0.1, (-0.75, 2.45, DECK_Z + 0.02), mat=paint, verts=16, bevel=0.02, parent=root,
@@ -64,10 +65,10 @@ def build_hull(root):
                     parent=bank, name="horn")
             st.block((0.62, 0.05, 0.62), (x, 0.47, z), mat=throat, bevel=0.0, parent=bank, name="horn_mouth")
     # frame around the bank: open top rails (so the horns show from above), a bottom rail and side cheeks; the
-    # front top rail carries a team band
-    st.block((3.1, 0.22, 0.2), (0, 0.4, 0.84), mat=team, bevel=0.03, parent=bank, name="frame_top")
-    st.block((3.1, 0.22, 0.2), (0, -0.8, 0.84), mat=paint, bevel=0.03, parent=bank, name="frame_rear")
-    st.block((3.1, 1.4, 0.16), (0, -0.2, -0.82), mat=paint, bevel=0.03, parent=bank, name="frame_bottom")
+    # front top rail carries a team band. The rails stop 2 cm inside the cheeks' outer faces and edges.
+    st.block((3.06, 0.22, 0.2), (0, 0.4, 0.84), mat=team, bevel=0.03, parent=bank, name="frame_top")
+    st.block((3.06, 0.22, 0.2), (0, -0.8, 0.84), mat=paint, bevel=0.03, parent=bank, name="frame_rear")
+    st.block((3.06, 1.36, 0.16), (0, -0.2, -0.8), mat=paint, bevel=0.03, parent=bank, name="frame_bottom")
     for side in (-1, 1):
         st.block((0.18, 1.4, 1.8), (side * 1.46, -0.2, 0), mat=paint, bevel=0.03, parent=bank, name="cheek")
         st.block((0.26, 0.9, 0.26), (side * 1.1, -1.1, -0.65), rot=(math.radians(35), 0, 0), mat=steel,
