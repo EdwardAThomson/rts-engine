@@ -1,0 +1,15 @@
+{"id": "battle_tank", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [293, 270], "seconds": 106.9, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "harvester", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [292, 266], "seconds": 74.7, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "refinery", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 12, "render_size": [763, 535], "seconds": 112.6, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_1x1", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [251, 246], "seconds": 2.4, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_2x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [448, 409], "seconds": 8.3, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [645, 417], "seconds": 11.3, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x3", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [644, 569], "seconds": 16.6, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_1x1", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [247, 228], "seconds": 2.4, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_2x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [443, 398], "seconds": 7.2, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [635, 398], "seconds": 10.7, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x3", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [635, 564], "seconds": 16.2, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_1x1", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [235, 191], "seconds": 1.4, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_2x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [422, 367], "seconds": 4.6, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x2", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [617, 377], "seconds": 7.7, "cores": 4, "partial": false, "date": "2026-10-07"}
+{"id": "rubble_3x3", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 1, "render_size": [612, 545], "seconds": 11.6, "cores": 4, "partial": false, "date": "2026-10-07"}
