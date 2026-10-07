@@ -2,10 +2,12 @@
 //! build, so a match gives the same state hashes in both.
 //!
 //! The interface is plain functions over a game handle, with no binding generator: JavaScript copies the map
-//! text into memory from `alloc`, calls `game_new`, then drives the game. The renderer will read state through
-//! further functions added here as it needs them. See `web/check.mjs` for a caller.
+//! text into memory from `alloc`, calls `game_new`, then drives the game. The viewer reads the state through the
+//! read-only functions in `view.rs`. See `web/check.mjs` and `web/viewer/` for callers.
 
 use classic_sim::{CommandOrder, Game, GameOptions};
+
+pub mod view;
 
 /// Reserve `len` bytes for the caller to write into (the map text). Freed by `game_new`.
 #[unsafe(no_mangle)]

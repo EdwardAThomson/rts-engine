@@ -11,6 +11,7 @@ cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-m
 cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
+python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
 ```
 
 ## What's in it
@@ -28,7 +29,8 @@ cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node we
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. |
+| `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
+| `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. |
 | `settings/generic/` | The public setting pack: plain names for every id, two factions. Generic placeholder art will live here too. |
 
@@ -81,5 +83,6 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - No AI; no storage cap, tech levels, factory upgrades or starport.
-- No renderer, UI or audio yet, on desktop or web.
+- No real renderer, UI or audio yet. The web viewer draws plain shapes on a 2D canvas, for watching and debugging
+  games; it has no sprites, camera, sidebar or sound, and its smoothness has only been checked in headless Chromium.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

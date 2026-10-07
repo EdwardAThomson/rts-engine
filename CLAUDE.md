@@ -13,6 +13,7 @@ cargo fmt
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500
 cargo run --release --bin bench              # performance; prints hashes to compare runs
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs   # web build
+python3 -m http.server 8000                  # then http://localhost:8000/web/viewer/ draws a game in the browser
 ```
 
 The toolchain is pinned in `rust-toolchain.toml`. The workspace has no third-party dependencies; add one only

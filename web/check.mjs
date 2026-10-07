@@ -47,6 +47,41 @@ function check(name, got, want) {
   api.game_free(g);
 }
 
+// The viewer's read-only functions report what the native game holds: the map, the kinds and every entity.
+{
+  const g = newGame(1);
+  const hashBefore = hex(g);
+  check("map size", `${api.game_map_width(g)}x${api.game_map_height(g)}`, "32x20");
+  check("start tile is rock", api.game_terrain(g, 3, 2), 1);
+  check("off the map", api.game_terrain(g, -1, 0), -1);
+  const names = api.alloc(64);
+  const kinds = [];
+  for (let k = 0; k < api.game_kind_count(g); k++) {
+    const len = api.game_kind_id(g, k, names, 64);
+    kinds.push(new TextDecoder().decode(new Uint8Array(api.memory.buffer, names, len)));
+  }
+  api.dealloc(names, 64);
+  // Every built unit and building in the rules data, in generic-id order, with its footprint.
+  const rules = JSON.parse(readFileSync(new URL("data/rules/entities.json", root), "utf8")).entities;
+  const built = Object.keys(rules).filter((id) => rules[id].status === "built" && ["unit", "building"].includes(rules[id].kind)).sort();
+  check("kinds", kinds.join(","), built.join(","));
+  const footprint = (id) => `${api.game_kind_width(g, kinds.indexOf(id))}x${api.game_kind_height(g, kinds.indexOf(id))}`;
+  const n = (id, name) => rules[id].numbers[name].default;
+  check("refinery footprint", footprint("refinery"), `${n("refinery", "width")}x${n("refinery", "height")}`);
+  check("unit footprint", footprint("battle_tank"), "1x1");
+  const fields = 9;
+  const buf = api.alloc(4 * 64 * fields);
+  const count = api.game_entities(g, buf, 64 * fields);
+  const e = new Int32Array(api.memory.buffer, buf, count * fields);
+  check("entities", count, api.game_entity_count(g));
+  // Entity 1 is player 1's first building, its top-left tile on the start tile (3, 2), at that tile's centre.
+  check("entity 1", [...e.subarray(0, 5)].map((v, i) => (i === 1 ? kinds[v] && api.game_kind_building(g, v) : v)).join(","),
+    `1,1,0,${3 * 256 + 128},${2 * 256 + 128}`);
+  check("reading changes nothing", hex(g), hashBefore);
+  api.dealloc(buf, 4 * 64 * fields);
+  api.game_free(g);
+}
+
 for (const c of checks) console.log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.got}${c.ok ? "" : ` (want ${c.want})`}`);
 console.log(`wasm module ${(wasm.length / 1024).toFixed(0)} KB`);
 if (checks.some((c) => !c.ok)) process.exit(1);
