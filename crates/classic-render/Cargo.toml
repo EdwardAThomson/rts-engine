@@ -1,0 +1,19 @@
+[package]
+name = "classic-render"
+version = "0.1.0"
+description = "Draws a Classic engine game with wgpu, and the desktop player. Reads the game state; never changes it."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The renderer is the one part of the engine with third-party dependencies (Ed chose wgpu, 2026-10-07): wgpu draws
+# on every desktop GPU API and on the web, winit opens the window, pollster waits for wgpu's async set-up, and png
+# reads the setting pack's art. The simulation crates still have none.
+[dependencies]
+classic-sim = { path = "../classic-sim" }
+classic-data = { path = "../classic-data" }
+classic-tools = { path = "../classic-tools" }
+wgpu = "30"
+pollster = "1"
+png = "0.18"
+winit = "0.30"

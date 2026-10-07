@@ -12,12 +12,14 @@ cargo clippy --all-targets -- -D warnings    # also enforces the determinism rul
 cargo fmt
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500
 cargo run --release --bin bench              # performance; prints hashes to compare runs
+cargo run --release --bin play               # the desktop player (needs a GPU; tests use Mesa's software one)
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs   # web build
 python3 -m http.server 8000                  # then http://localhost:8000/web/viewer/ draws a game in the browser
 ```
 
-The toolchain is pinned in `rust-toolchain.toml`. The workspace has no third-party dependencies; add one only
-when it clearly pays for itself.
+The toolchain is pinned in `rust-toolchain.toml`. The simulation, data and tools crates have no third-party
+dependencies; only the renderer (`classic-render`) has them: wgpu, winit, pollster and png. Add one only when it
+clearly pays for itself.
 
 The shared core lives in the public `rts-core` repository and is pinned by commit (`Cargo.toml`,
 `[workspace.dependencies]`). Changes to it go there, not here; moving the pin forward must keep the golden tests
