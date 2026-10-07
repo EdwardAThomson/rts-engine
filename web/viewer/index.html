@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classic engine viewer</title>
+<style>
+  :root { color-scheme: dark; --bg: #16181c; --panel: #22252b; --text: #d8dbe0; --dim: #8a909a; --line: #343841; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+  label { color: var(--dim); }
+  input[type=number] { width: 6em; }
+  button, select, input { font: inherit; color: var(--text); background: #2d3139; border: 1px solid var(--line);
+                          border-radius: 4px; padding: 3px 8px; }
+  button:hover { background: #383d47; }
+  main { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; align-items: flex-start; }
+  canvas { background: #000; max-width: 100%; image-rendering: pixelated; cursor: crosshair; }
+  aside { min-width: 220px; flex: 1; max-width: 340px; }
+  aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); margin: 0 0 6px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+  td { padding: 2px 6px 2px 0; font-variant-numeric: tabular-nums; }
+  td:last-child { text-align: right; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .hint { color: var(--dim); font-size: 12px; }
+  #error { color: #ff8a80; white-space: pre-wrap; padding: 0 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Classic engine viewer</h1>
+  <button id="play">Pause</button>
+  <button id="stepOne" title="Advance one tick">Step</button>
+  <label>Speed <select id="speed">
+    <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option>
+    <option value="8">8×</option><option value="32">32×</option>
+  </select></label>
+  <label>Map <select id="map"><option value="test-01.txt">test-01</option></select></label>
+  <label>Seed <input id="seed" type="number" value="1"></label>
+  <button id="restart">Restart</button>
+  <label><input id="grid" type="checkbox"> Grid</label>
+</header>
+<div id="error"></div>
+<main>
+  <canvas id="view"></canvas>
+  <aside>
+    <h2>Game</h2>
+    <table id="game"></table>
+    <h2>Players</h2>
+    <table id="players"></table>
+    <h2>Selected</h2>
+    <table id="selected"></table>
+    <p class="hint">Click a unit to select it; right-click a tile to move a selected unit, as its owner would.
+      The viewer only reads the game state; orders go through the same command queue as any player's.</p>
+  </aside>
+</main>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

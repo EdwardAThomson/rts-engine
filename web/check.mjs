@@ -47,6 +47,33 @@ function check(name, got, want) {
   api.game_free(g);
 }
 
+// The viewer's read-only functions report what the native game holds: the map, the kinds and every entity.
+{
+  const g = newGame(1);
+  const hashBefore = hex(g);
+  check("map size", `${api.game_map_width(g)}x${api.game_map_height(g)}`, "32x20");
+  check("start tile is rock", api.game_terrain(g, 3, 2), 1);
+  check("off the map", api.game_terrain(g, -1, 0), -1);
+  const names = api.alloc(64);
+  const kinds = [];
+  for (let k = 0; k < api.game_kind_count(g); k++) {
+    const len = api.game_kind_id(g, k, names, 64);
+    kinds.push(new TextDecoder().decode(new Uint8Array(api.memory.buffer, names, len)));
+  }
+  api.dealloc(names, 64);
+  check("kinds", kinds.join(","), "battle_tank,harvester,refinery");
+  const fields = 9;
+  const buf = api.alloc(4 * 64 * fields);
+  const n = api.game_entities(g, buf, 64 * fields);
+  const e = new Int32Array(api.memory.buffer, buf, n * fields);
+  check("entities", n, api.game_entity_count(g));
+  // Player 1's refinery is entity 1, on its start tile (3, 2), centred in sub-tile units.
+  check("refinery 1", [...e.subarray(0, 5)].join(","), `1,${kinds.indexOf("refinery")},0,${3 * 256 + 128},${2 * 256 + 128}`);
+  check("reading changes nothing", hex(g), hashBefore);
+  api.dealloc(buf, 4 * 64 * fields);
+  api.game_free(g);
+}
+
 for (const c of checks) console.log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.got}${c.ok ? "" : ` (want ${c.want})`}`);
 console.log(`wasm module ${(wasm.length / 1024).toFixed(0)} KB`);
 if (checks.some((c) => !c.ok)) process.exit(1);
