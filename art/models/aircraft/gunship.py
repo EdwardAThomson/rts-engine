@@ -43,7 +43,7 @@ def build_hull(root):
     st.wedge((1.3, 1.2, 1.05), (0, 2.95, 1.1), slope_front=0.55, mat=body, parent=root, name="nose")
     st.block((1.0, 0.5, 0.55), (0, 3.4, 0.82), mat=body, bevel=0.1, parent=root, name="chin")
     st.block((1.1, 2.0, 0.55), (0, -0.55, 2.1), mat=body, bevel=0.12, parent=root, name="spine")
-    st.cylinder(0.42, 2.6, (0, -2.25, 1.55), rot=(math.pi / 2, 0, 0), mat=body, verts=16, bevel=0.03,
+    st.cylinder(0.42, 2.2, (0, -2.05, 1.55), rot=(math.pi / 2, 0, 0), mat=body, verts=16, bevel=0.03,
                 scale=(1.0, 1.25, 1.0), parent=root, name="tail_boom")
     st.cylinder(0.45, 0.35, (0, -1.7, 1.55), rot=(math.pi / 2, 0, 0), mat=team, verts=16, bevel=0.02,
                 scale=(1.0, 1.25, 1.0), parent=root, name="tail_band")
@@ -60,11 +60,11 @@ def build_hull(root):
     for i in range(4):
         st.block((0.7, 0.1, 0.04), (0, -0.9 - 0.22 * i, 2.39), mat=dark, bevel=0.01, parent=root, name="vent")
     # Tail: twin fins (team colour) on a stabiliser, with a small tail bumper.
-    st.block((2.2, 0.75, 0.14), (0, -3.15, 1.75), mat=body, bevel=0.04, parent=root, name="stabiliser")
+    st.block((2.2, 0.75, 0.14), (0, -2.85, 1.75), mat=body, bevel=0.04, parent=root, name="stabiliser")
     for side in (-1, 1):
-        st.wedge((0.16, 0.85, 1.05), (side * 1.05, -3.1, 2.3), slope_front=0.45, mat=team, parent=root,
+        st.wedge((0.16, 0.85, 1.05), (side * 1.05, -2.8, 2.3), slope_front=0.45, mat=team, parent=root,
                  name="fin")
-    st.block((0.3, 0.3, 0.4), (0, -3.25, 1.0), mat=dark, bevel=0.03, parent=root, name="tail_skid")
+    st.block((0.3, 0.3, 0.4), (0, -2.95, 1.0), mat=dark, bevel=0.03, parent=root, name="tail_skid")
     # Stub wings with the ducted fans at the tips.
     for side in (-1, 1):
         st.block((FAN_X - DUCT_R - 0.55, 1.25, 0.3), (side * (FAN_X - DUCT_R) / 2 + side * 0.45, FAN_Y, WING_Z),
@@ -87,7 +87,7 @@ def build_hull(root):
     # Chin gun: a turret ball with two barrels.
     st.sphere(0.36, (0, 3.2, 0.5), mat=dark, parent=root, name="gun_ball")
     for dx in (-0.12, 0.12):
-        st.cylinder(0.12, 1.0, (dx, 3.75, 0.48), rot=(math.pi / 2, 0, 0), mat=steel, verts=10, parent=root,
+        st.cylinder(0.12, 0.75, (dx, 3.6, 0.48), rot=(math.pi / 2, 0, 0), mat=steel, verts=10, parent=root,
                     name="gun_barrel")
     # Skids on short struts, and small detail.
     for side in (-1, 1):
