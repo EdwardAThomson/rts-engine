@@ -47,7 +47,8 @@ def build_hull(root):
     body_w = W - 2 * TRACK_W + 0.5
     st.block((body_w, L - 1.5, DECK_Z - HULL_Z), (0, -0.25, (HULL_Z + DECK_Z) / 2), mat=paint, bevel=0.06,
              parent=root, name="body")
-    st.wedge((body_w, 1.3, DECK_Z - HULL_Z), (0, L / 2 - 0.9, (HULL_Z + DECK_Z) / 2), slope_front=0.55,
+    # 4 cm narrower than the body, so their sides don't share a plane (coincident faces render dark).
+    st.wedge((body_w - 0.04, 1.3, DECK_Z - HULL_Z), (0, L / 2 - 0.9, (HULL_Z + DECK_Z) / 2), slope_front=0.55,
              mat=paint, parent=root, name="glacis")
     # a raised crew cab at the front right, so the hull reads differently from the battle tank's
     st.wedge((1.1, 1.2, 0.5), (0.45, 1.9, DECK_Z + 0.2), slope_front=0.5, mat=paint, parent=root, name="cab")

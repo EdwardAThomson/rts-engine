@@ -51,7 +51,8 @@ def build_hull(root):
     body_w = W - 2 * TRACK_W + 0.5
     st.block((body_w, L - 1.6, DECK_Z - HULL_Z), (0, -0.3, (HULL_Z + DECK_Z) / 2), mat=paint, bevel=0.06,
              parent=root, name="body")
-    st.block((body_w, 1.4, 0.3), (0, 2.55, DECK_Z - 0.35), rot=(math.radians(-24), 0, 0), mat=paint, bevel=0.05,
+    # 4 cm narrower than the body, so their sides don't share a plane (coincident faces render dark).
+    st.block((body_w - 0.04, 1.4, 0.3), (0, 2.55, DECK_Z - 0.35), rot=(math.radians(-24), 0, 0), mat=paint, bevel=0.05,
              parent=root, name="glacis")
     st.block((body_w - 0.1, 1.3, 0.7), (0, 2.45, 0.95), mat=paint, bevel=0.06, parent=root, name="nose")
     st.block((0.4, 0.12, 0.12), (0.55, 2.3, DECK_Z - 0.02), mat=dark, bevel=0.01, parent=root, name="vision")
