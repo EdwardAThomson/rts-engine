@@ -1,13 +1,16 @@
 //! Headless run from the command line:
 //!   cargo run --release --bin cli -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
+//!     [--ai 0,1]
 //! Prints the setting pack in use, one JSON line every --every ticks and the event counts at the end. No window, no
-//! graphics. `--setting` (or the SETTING environment variable) takes a pack folder, a name under `settings/`, or
+//! graphics. `--ai` hands the listed players (0 is the map's start 1) to the computer opponent; the run then stops
+//! early when one player is left, and the last line names the winner. `--setting` (or the SETTING environment variable) takes a pack folder, a name under `settings/`, or
 //! a pack in the git-ignored `settings-private/` by its folder name under `packs/` or its id (`private` picks the
 //! first); the default is `generic`.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
+use classic_ai::{Ai, Settings};
 use classic_sim::{Game, GameOptions, Rules};
 use classic_tools::setting;
 
@@ -19,6 +22,11 @@ fn main() {
     let seed = num("seed", 1) as i32;
     let ticks = num("ticks", 9000);
     let every = num("every", 1500).max(1);
+    let mut ais: Vec<Ai> = arg("ai")
+        .map(|v| {
+            v.split(',').map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal())).collect()
+        })
+        .unwrap_or_default();
 
     let setting_name = arg("setting").or_else(|| std::env::var("SETTING").ok()).unwrap_or_else(|| "generic".into());
     let pack = setting::load(&setting_name).unwrap_or_else(|e| {
@@ -43,8 +51,20 @@ fn main() {
     let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
     let t0 = Instant::now();
     let mut t = 0;
-    while t < ticks {
-        game.step(every.min(ticks - t));
+    let mut winner = None;
+    while t < ticks && winner.is_none() {
+        for _ in 0..every.min(ticks - t) {
+            for ai in &mut ais {
+                ai.tick(&mut game);
+            }
+            game.step(1);
+            if !ais.is_empty()
+                && let Some(w) = classic_ai::winner(&game)
+            {
+                winner = Some(w);
+                break;
+            }
+        }
         t += every;
         let s = game.snapshot();
         let credits: Vec<String> = s.players.iter().map(|p| p.credits.to_string()).collect();
@@ -75,9 +95,10 @@ fn main() {
     }
     let events: Vec<String> = order.iter().map(|k| format!("\"{k}\":{}", counts[k])).collect();
     println!(
-        "{{\"seed\":{seed},\"ticks\":{},\"entities\":{},\"events\":{{{}}},\"ms\":{}}}",
+        "{{\"seed\":{seed},\"ticks\":{},\"entities\":{},\"winner\":{},\"events\":{{{}}},\"ms\":{}}}",
         game.state.tick,
         game.state.entities.len(),
+        winner.map_or("null".into(), |w| w.to_string()),
         events.join(","),
         t0.elapsed().as_millis()
     );
