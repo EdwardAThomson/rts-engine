@@ -7,11 +7,16 @@ playbooks repository under `plans/rts/` (start with `settings.md`, `engineering.
 ## Commands
 
 ```bash
-npm ci                  # TypeScript and Node's types, for type checking only
-npm test                # node --test, no build step (Node 22 strips the types)
-npm run typecheck
-node tools/cli.ts --seed 1 --ticks 9000 --every 1500
+cargo test                                   # every check, about 1 s after the first build
+cargo clippy --all-targets -- -D warnings    # also enforces the determinism rule below
+cargo fmt
+cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500
+cargo run --release --bin bench              # performance; prints hashes to compare runs
+cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs   # web build
 ```
+
+The toolchain is pinned in `rust-toolchain.toml`. The workspace has no third-party dependencies; add one only
+when it clearly pays for itself.
 
 ## Rules
 
@@ -23,9 +28,10 @@ node tools/cli.ts --seed 1 --ticks 9000 --every 1500
 - **No protected names.** Code, data, identifiers, comments and file names use generic ids only (`power_plant`,
   `harvester`, `hazard`, `resource`, `faction_a`). Setting-specific names live only in setting packs; the private
   pack lives in its own private repository, cloned into the git-ignored `settings-private/`.
-- **Determinism.** Everything under `src/sim` uses integer maths (`src/sim/imath.ts`), the one seeded RNG held in
-  the game state, and entities in id order. Never `Math.random()`, the clock, `Math.sqrt`/trig, or iteration
-  over unordered collections. `hashState` throws on any fractional number.
+- **Determinism.** `crates/engine-core` and `crates/classic-sim` use integer maths (`engine_core::imath`), the one
+  seeded generator held in the game state, and entities in id order. Never floating point, the clock, outside
+  randomness, threads inside a tick, or iteration over `HashMap`/`HashSet`. Each crate's `clippy.toml` bans the
+  types; keep it that way. A change that alters any state hash must say so and update the golden tests on purpose.
 - **Mechanics are modules.** Never assume three factions, one resource or land-only movement; counts and kinds come
   from data, and new mechanics are new modules.
 - **Effects are observers.** Rendering, audio and logs read `events`; nothing in `events` feeds back into the state.

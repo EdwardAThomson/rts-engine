@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Tests replay thousands of ticks; a little optimisation keeps them quick without slowing builds much.
+[profile.test]
+opt-level = 1
+
+[profile.release]
+codegen-units = 1
+lto = true
