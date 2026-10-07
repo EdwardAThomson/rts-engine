@@ -11,7 +11,8 @@ What a model file defines, by category (art/models/<category>/<id>.py; see art/R
   buildings            FOOTPRINT and build(root); DETAIL; damage(rng, root); IDLE_PARTS, IDLE_FRAMES and
                        idle_pose(root, t); DOORS, DOOR_FRAMES and door_pose(root, t); build_head(ring) with
                        HEAD_HEIGHT for defence turrets; JOINS = True and build(root, joins) for walls
-  infantry             build(root, joints), parts parented to the joints of st.rig()
+  infantry             build(root, joints), parts parented to the joints of st.rig(); optional
+                       rig_pose(joints, anim, frame, frames) in place of st.pose
 
 Every frame is written as <part>-<anim>-fFF-NN.png (FF the facing clockwise from north, NN the frame), with
 <...>.shadow.png beside it where the part casts a shadow, and meta.json describes the jobs and where the origin
@@ -303,7 +304,7 @@ def plan(mod, kind, facings, has_wreck):
             die = a.startswith("die")
             jobs.append(Job("body", a, 1 if die else nf(F["infantry"]), n, shadow=True,
                             select=lambda ctx: (ctx["all"], [], ctx["all"]),
-                            pose=lambda ctx, k, a=a, n=n: st.pose(ctx["joints"], a, k, n),
+                            pose=lambda ctx, k, a=a, n=n: getattr(mod, "rig_pose", st.pose)(ctx["joints"], a, k, n),
                             yaw=math.pi / 2 if die else 0.0))
         out.append(("intact", jobs))
     return out
