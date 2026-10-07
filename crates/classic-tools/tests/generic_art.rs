@@ -78,3 +78,17 @@ fn every_generic_id_has_art() {
 fn the_generic_pack_still_loads_with_its_art() {
     setting::load("generic").unwrap();
 }
+
+#[test]
+fn building_art_matches_the_rules_footprints() {
+    let rules = RulesTable::builtin();
+    let index = json::parse(&std::fs::read_to_string(pack().join("art/art.json")).unwrap()).unwrap();
+    for (id, v) in index.get("sprites").and_then(Value::as_object).unwrap() {
+        let Some(size) = v.get("size").and_then(Value::as_array) else { continue };
+        let art = (size[0].as_int().unwrap(), size[1].as_int().unwrap());
+        // Only where the rules give a footprint: buildings without one yet keep their art size.
+        if let (Some(w), Some(h)) = (rules.number(id, "width"), rules.number(id, "height")) {
+            assert_eq!(art, (w, h), "{id}: art is {art:?} tiles but its footprint is {w}x{h}");
+        }
+    }
+}

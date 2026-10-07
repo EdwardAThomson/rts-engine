@@ -330,21 +330,21 @@ pub fn power_plant(p: &mut Pen, w: i64, h: i64) {
     p.rect(w / 2 - 6, 16, w / 2 + 6, 56, R2);
 }
 
+/// Drawn in proportion, so it fits whatever footprint the rules give the refinery.
 pub fn refinery(p: &mut Pen, w: i64, h: i64) {
     pad(p, w, h);
-    block(p, 8, 8, 96, h - 8);
-    for (x, y) in [(124, 30), (164, 30)] {
-        p.circle(x, y, 18, METAL_D);
-        p.circle(x, y, 15, ORE_D);
-        p.circle(x - 4, y - 4, 6, ORE);
+    block(p, 6, 6, w * 9 / 16, h * 11 / 16);
+    let r = w.min(h) * 7 / 32;
+    let (x, y) = (w * 25 / 32, h * 9 / 32);
+    p.circle(x, y, r, METAL_D);
+    p.circle(x, y, r - 3, ORE_D);
+    p.circle(x - r / 4, y - r / 4, r / 3, ORE);
+    p.rect(6, h * 3 / 4, w - 6, h - 6, CONC_D);
+    let mut x = 8;
+    while x < w - 12 {
+        p.poly(&[(x + 4, h * 3 / 4 + 2), (x + 8, h * 3 / 4 + 2), (x + 4, h - 8), (x, h - 8)], WARN);
+        x += 10;
     }
-    p.rect(104, 64, w - 8, h - 8, CONC_D);
-    let mut x = 106;
-    while x < w - 10 {
-        p.poly(&[(x, 66), (x + 6, 66), (x + 2, 74), (x - 4, 74)], WARN);
-        x += 12;
-    }
-    door(p, 24, 80, h - 8);
 }
 
 pub fn silo(p: &mut Pen, w: i64, h: i64) {

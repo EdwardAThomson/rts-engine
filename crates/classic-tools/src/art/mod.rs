@@ -45,8 +45,8 @@ enum Look {
     Power(Draw),
 }
 
-/// Every generic id the engine knows, in the order of `data/rules/entities.json`. Building sizes here are art
-/// sizes only: footprints belong in the rules data, and the art follows them once they're there.
+/// Every generic id the engine knows, in the order of `data/rules/entities.json`. Building sizes match the default
+/// footprints in the rules data; the `generic_art` test checks them wherever the rules give one.
 fn looks() -> Vec<(&'static str, Look)> {
     use Look::*;
     vec![
@@ -54,7 +54,7 @@ fn looks() -> Vec<(&'static str, Look)> {
         ("slab", Building(1, 1, d::slab)),
         ("slab_large", Building(2, 2, d::slab)),
         ("power_plant", Building(2, 2, d::power_plant)),
-        ("refinery", Building(3, 2, d::refinery)),
+        ("refinery", Building(1, 1, d::refinery)),
         ("silo", Building(2, 2, d::silo)),
         ("radar", Building(2, 2, d::radar)),
         ("barracks", Building(2, 2, d::barracks)),
@@ -440,7 +440,7 @@ pub fn generate() -> Vec<File> {
         })
         .collect();
     let index = format!(
-        "{{\n  \"about\": \"Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and are art sizes only until footprints are in the rules data.\",\n  \"tile\": {TILE},\n  \"remap\": [{}],\n  \"ramps\": {{\n{}\n  }},\n  \"terrain\": {{\n{}\n  }},\n  \"sprites\": {{\n{}\n  }},\n  \"icons\": {{\n{}\n  }},\n  \"effects\": {{\n{}\n  }}\n}}\n",
+        "{{\n  \"about\": \"Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data.\",\n  \"tile\": {TILE},\n  \"remap\": [{}],\n  \"ramps\": {{\n{}\n  }},\n  \"terrain\": {{\n{}\n  }},\n  \"sprites\": {{\n{}\n  }},\n  \"icons\": {{\n{}\n  }},\n  \"effects\": {{\n{}\n  }}\n}}\n",
         remap.join(", "),
         ramps.join(",\n"),
         terrain.join(",\n"),

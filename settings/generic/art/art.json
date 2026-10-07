@@ -1,5 +1,5 @@
 {
-  "about": "Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and are art sizes only until footprints are in the rules data.",
+  "about": "Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data.",
   "tile": 32,
   "remap": ["#400040", "#800080", "#c000c0", "#ff40ff"],
   "ramps": {
@@ -21,7 +21,7 @@
     "slab": { "kind": "building", "file": "art/buildings/slab.png", "frame": [32, 32], "frames": 1, "size": [1, 1] },
     "slab_large": { "kind": "building", "file": "art/buildings/slab_large.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "power_plant": { "kind": "building", "file": "art/buildings/power_plant.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
-    "refinery": { "kind": "building", "file": "art/buildings/refinery.png", "frame": [96, 64], "frames": 1, "size": [3, 2] },
+    "refinery": { "kind": "building", "file": "art/buildings/refinery.png", "frame": [32, 32], "frames": 1, "size": [1, 1] },
     "silo": { "kind": "building", "file": "art/buildings/silo.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "radar": { "kind": "building", "file": "art/buildings/radar.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
     "barracks": { "kind": "building", "file": "art/buildings/barracks.png", "frame": [64, 64], "frames": 1, "size": [2, 2] },
