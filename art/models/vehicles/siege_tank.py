@@ -114,18 +114,18 @@ def build_turret(root):
     # gun: a deep mantlet, a thick cradle with recoil cylinders, then the long barrel
     gun = st.group("gun", (0, 1.05, GUN_Z), parent=root)
     gun.rotation_euler = (GUN_PITCH, 0, 0)
-    st.block((1.1, 0.6, 0.7), (0, 0.1, 0), mat=paint, bevel=0.06, parent=gun, name="mantlet")
-    st.cylinder(0.3, 1.2, (0, 0.9, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun,
+    st.block((1.2, 0.6, 0.85), (0, 0.1, 0), mat=paint, bevel=0.06, parent=gun, name="mantlet")
+    st.cylinder(0.38, 1.2, (0, 0.9, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun,
                 name="gun_cradle")
-    for x in (-0.22, 0.22):
-        st.cylinder(0.09, 1.0, (x, 0.85, 0.28), rot=(math.pi / 2, 0, 0), mat=dark, verts=10, parent=gun,
+    for x in (-0.28, 0.28):
+        st.cylinder(0.09, 1.0, (x, 0.85, 0.36), rot=(math.pi / 2, 0, 0), mat=dark, verts=10, parent=gun,
                     name="recoil")
-    st.cylinder(0.2, 4.6, (0, 3.75, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun, name="barrel")
-    st.cylinder(0.28, 0.55, (0, 3.1, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, bevel=0.03, parent=gun,
+    st.cylinder(0.28, 4.6, (0, 3.75, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun, name="barrel")
+    st.cylinder(0.38, 0.6, (0, 3.1, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, bevel=0.03, parent=gun,
                 name="evacuator")
-    st.block((0.85, 0.6, 0.32), (0, 6.1, 0), mat=dark, bevel=0.05, parent=gun, name="muzzle_brake")
-    for x in (-0.3, 0.3):
-        st.block((0.12, 0.42, 0.36), (x, 6.12, 0), mat=steel, bevel=0.01, parent=gun, name="muzzle_brake")
+    st.block((1.0, 0.65, 0.44), (0, 6.1, 0), mat=dark, bevel=0.05, parent=gun, name="muzzle_brake")
+    for x in (-0.36, 0.36):
+        st.block((0.14, 0.46, 0.5), (x, 6.12, 0), mat=steel, bevel=0.01, parent=gun, name="muzzle_brake")
 
 
 def wreck(rng, root):
