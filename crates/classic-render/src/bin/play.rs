@@ -5,19 +5,22 @@
 //! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. Space pauses and
 //! Escape quits. The window title shows the tick, your credits and your power. There is no sidebar or computer
 //! opponent yet. `--frames N` quits after N frames, for smoke tests.
+//!
+//! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
+//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3`), and the files
+//! are fetched from the server first, because the browser has no file system and can't wait for the GPU.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use classic_render::art::{self, Art};
-use classic_render::platform::{Gpu, Rect, SpriteBatch};
+use classic_render::platform::{Files, Gpu, Instant, Rect, SpriteBatch};
 use classic_render::{Camera, Scene};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
-use classic_tools::setting;
 use winit::application::ApplicationHandler;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -30,10 +33,19 @@ const SCROLL: f32 = 600.0;
 /// How close to a screen edge the mouse scrolls the view.
 const EDGE: f32 = 8.0;
 
+/// An option: `--name value` on the command line, or `?name=value` in the browser.
 fn arg(name: &str) -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == &format!("--{name}")).and_then(|i| args.get(i + 1).cloned())
+    #[cfg(target_arch = "wasm32")]
+    return classic_render::platform::web::query(name);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        args.iter().position(|a| a == &format!("--{name}")).and_then(|i| args.get(i + 1).cloned())
+    }
 }
+
+/// A window, its surface and the GPU that draws to it, once the GPU has opened.
+type Opened = (Arc<Window>, wgpu::Surface<'static>, Gpu);
 
 struct Running {
     window: Arc<Window>,
@@ -48,6 +60,11 @@ struct App {
     game: Game,
     scene: Scene,
     pack: classic_data::Pack,
+    /// The art's files: the pack folder on the desktop, fetched copies in the browser.
+    art_files: Files,
+    /// In the browser the GPU opens in the background and lands here; see `resumed`.
+    #[cfg(target_arch = "wasm32")]
+    opened: std::rc::Rc<std::cell::RefCell<Option<Opened>>>,
     player: u32,
     cam: Camera,
     run: Option<Running>,
@@ -63,6 +80,28 @@ struct App {
 }
 
 impl App {
+    fn new(game: Game, pack: classic_data::Pack, art_files: Files) -> App {
+        App {
+            game,
+            scene: Scene::default(),
+            pack,
+            art_files,
+            #[cfg(target_arch = "wasm32")]
+            opened: Default::default(),
+            player: arg("player").and_then(|s| s.parse().ok()).unwrap_or(0),
+            cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
+            run: None,
+            last: Instant::now(),
+            owed: Duration::ZERO,
+            paused: false,
+            keys: BTreeSet::new(),
+            mouse: (-1.0e4, -1.0e4),
+            drag: None,
+            frames: 0,
+            max_frames: arg("frames").and_then(|s| s.parse().ok()),
+        }
+    }
+
     fn world_px(&self) -> f32 {
         self.run.as_ref().map_or(32.0, |r| r.art.tile) / TILE as f32
     }
@@ -221,23 +260,22 @@ impl App {
         run.batch.draw(&run.gpu, &view, run.config.width, run.config.height, [0, 0, 0, 255]);
         run.gpu.queue.present(texture);
         run.window.set_title(&title);
+        #[cfg(target_arch = "wasm32")]
+        classic_render::platform::web::set_title(&title);
         self.frames += 1;
     }
-}
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.run.is_some() {
-            return;
+    /// Finish setting up once the GPU is open: the surface, the sprite batcher and the art.
+    fn start(&mut self, (window, surface, gpu): Opened) {
+        let drawing = format!("drawing with {}", gpu.describe());
+        #[cfg(not(target_arch = "wasm32"))]
+        println!("{drawing}");
+        // In the browser the line goes to the console, and the page's loading message goes away.
+        #[cfg(target_arch = "wasm32")]
+        {
+            classic_render::platform::web::log(&drawing);
+            classic_render::platform::web::status("");
         }
-        let attrs = Window::default_attributes().with_title(self.title()).with_inner_size(PhysicalSize::new(1280, 800));
-        let window = Arc::new(event_loop.create_window(attrs).expect("a window"));
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
-            event_loop.owned_display_handle(),
-        )));
-        let surface = instance.create_surface(window.clone()).expect("a surface for the window");
-        let gpu = Gpu::open(instance, Some(&surface)).expect("a GPU that can draw to the window");
-        println!("drawing with {}", gpu.describe());
         let size = window.inner_size();
         let mut config = surface
             .get_default_config(&gpu.adapter, size.width.max(1), size.height.max(1))
@@ -250,7 +288,7 @@ impl ApplicationHandler for App {
         surface.configure(&gpu.device, &config);
         let mut batch = SpriteBatch::new(&gpu, config.format);
         let ramps = art::player_ramps(&self.pack, self.game.state.players.len());
-        let art = Art::load(&gpu, &mut batch, &art::art_dir(&self.pack), &ramps).expect("the pack's art loads");
+        let art = Art::from_files(&gpu, &mut batch, &self.art_files, &ramps).expect("the pack's art loads");
         // Start over the player's own base.
         if let Some(e) = self.game.state.entities.iter().find(|e| e.owner == self.player) {
             let t = e.tile();
@@ -259,6 +297,51 @@ impl ApplicationHandler for App {
         }
         self.run = Some(Running { window, surface, config, gpu, batch, art });
         self.last = Instant::now();
+    }
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.run.is_some() {
+            return;
+        }
+        let attrs = Window::default_attributes().with_title(self.title());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let window = Arc::new(
+                event_loop
+                    .create_window(attrs.with_inner_size(winit::dpi::PhysicalSize::new(1280, 800)))
+                    .expect("a window"),
+            );
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
+                event_loop.owned_display_handle(),
+            )));
+            let surface = instance.create_surface(window.clone()).expect("a surface for the window");
+            let gpu =
+                pollster::block_on(Gpu::open(instance, Some(&surface))).expect("a GPU that can draw to the window");
+            self.start((window, surface, gpu));
+        }
+        // The browser can't wait for the GPU, so it opens in the background and the first redraw after it lands
+        // finishes the set-up. The canvas is the page's `#game`, sized by the page's style.
+        #[cfg(target_arch = "wasm32")]
+        {
+            use classic_render::platform::web;
+            use winit::platform::web::WindowAttributesExtWebSys;
+            let canvas = web::canvas("game");
+            let window = Arc::new(event_loop.create_window(attrs.with_canvas(canvas)).expect("a canvas"));
+            let opened = self.opened.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let instance = Gpu::browser_instance().await;
+                let surface = instance.create_surface(window.clone()).expect("a surface for the canvas");
+                match Gpu::open(instance, Some(&surface)).await {
+                    Ok(gpu) => {
+                        window.request_redraw();
+                        *opened.borrow_mut() = Some((window, surface, gpu));
+                    }
+                    Err(e) => web::status(&format!("this browser can't draw the game: {e}")),
+                }
+            });
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -314,6 +397,14 @@ impl ApplicationHandler for App {
                 self.cam.y = wy - self.mouse.1 / zoom;
             }
             WindowEvent::RedrawRequested => {
+                #[cfg(target_arch = "wasm32")]
+                if self.run.is_none() {
+                    let opened = self.opened.borrow_mut().take();
+                    match opened {
+                        Some(o) => self.start(o),
+                        None => return,
+                    }
+                }
                 self.redraw();
                 if self.max_frames.is_some_and(|m| self.frames >= m) {
                     event_loop.exit();
@@ -330,34 +421,46 @@ impl ApplicationHandler for App {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    use classic_tools::setting;
     let setting_name = arg("setting").or_else(|| std::env::var("SETTING").ok()).unwrap_or_else(|| "generic".into());
     let pack = setting::load(&setting_name).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(2);
     });
-    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
-    let map_path = arg("map").unwrap_or_else(|| setting::root().join("maps/test-01.txt").display().to_string());
+    let map_path = arg("map").unwrap_or_else(|| setting::root().join(MAP).display().to_string());
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
-    let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
-    let game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
-    let mut app = App {
-        game,
-        scene: Scene::default(),
-        pack,
-        player: arg("player").and_then(|s| s.parse().ok()).unwrap_or(0),
-        cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
-        run: None,
-        last: Instant::now(),
-        owed: Duration::ZERO,
-        paused: false,
-        keys: BTreeSet::new(),
-        mouse: (-1.0e4, -1.0e4),
-        drag: None,
-        frames: 0,
-        max_frames: arg("frames").and_then(|s| s.parse().ok()),
-    };
+    let art_files = Files::Dir(art::art_dir(&pack));
+    let mut app = App::new(new_game(&pack, &text), pack, art_files);
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
     println!("quit at tick {} after {} frames, hash {}", app.game.state.tick, app.frames, app.game.hash());
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use classic_render::platform::web;
+    use winit::platform::web::EventLoopExtWebSys;
+    web::report_panics();
+    web::status("loading");
+    wasm_bindgen_futures::spawn_local(async {
+        let setting_name = arg("setting").unwrap_or_else(|| "generic".into());
+        let map = arg("map").unwrap_or_else(|| MAP.into());
+        let loaded = match classic_render::web::load(&setting_name, &map).await {
+            Ok(l) => l,
+            Err(e) => return web::status(&e),
+        };
+        let app = App::new(new_game(&loaded.pack, &loaded.map), loaded.pack, loaded.art);
+        EventLoop::new().expect("an event loop").spawn_app(app);
+    });
+}
+
+/// The map played when none is given, from the repository root.
+const MAP: &str = "maps/test-01.txt";
+
+fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
+    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
+    let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
+    Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map")
 }

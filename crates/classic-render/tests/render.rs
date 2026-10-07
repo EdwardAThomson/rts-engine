@@ -4,7 +4,7 @@
 //! first writes the frame to `target/render-test.png` so a person can look at it.
 
 use classic_render::art::{self, Art};
-use classic_render::platform::{Gpu, SpriteBatch, gpu::OFFSCREEN_FORMAT};
+use classic_render::platform::{Files, Gpu, SpriteBatch, gpu::OFFSCREEN_FORMAT};
 use classic_render::{Camera, Scene};
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use classic_tools::setting;
@@ -161,4 +161,22 @@ fn recolouring_swaps_exact_remap_pixels_only() {
     let mut px = vec![0x40, 0, 0x40, 255, 0x80, 0, 0x80, 128, 0x41, 0, 0x40, 255];
     art::recolour(&mut px, &remap, &ramp);
     assert_eq!(px, [1, 2, 3, 255, 4, 5, 6, 128, 0x41, 0, 0x40, 255]);
+}
+
+#[test]
+fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
+    // The browser build fetches the files `art.json` names, then loads them from memory.
+    let mut r = rig();
+    let dir = art::art_dir(&setting::load("generic").unwrap());
+    let index = std::fs::read_to_string(dir.join(art::ART_INDEX)).unwrap();
+    let mut files = std::collections::BTreeMap::new();
+    for f in art::art_files(&index).unwrap().into_iter().chain([art::ART_INDEX.to_string()]) {
+        files.insert(f.clone(), std::fs::read(dir.join(&f)).unwrap());
+    }
+    let memory = Files::Memory { label: "fetched".into(), files };
+    let mut scene = Scene::default();
+    let cam = Camera { x: 0.0, y: 0.0, zoom: 1.0 };
+    let from_folder = frame(&mut r, &mut scene, &cam);
+    r.art = Art::from_files(&r.gpu, &mut r.batch, &memory, &r.ramps).unwrap();
+    assert_eq!(frame(&mut r, &mut scene, &cam), from_folder);
 }

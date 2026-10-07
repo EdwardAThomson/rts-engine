@@ -7,13 +7,34 @@ license.workspace = true
 publish.workspace = true
 
 # The renderer is the one part of the engine with third-party dependencies (Ed chose wgpu, 2026-10-07): wgpu draws
-# on every desktop GPU API and on the web, winit opens the window, pollster waits for wgpu's async set-up, and png
-# reads the setting pack's art. The simulation crates still have none.
+# on every desktop GPU API and on the web, winit opens the window (or the page's canvas), pollster waits for wgpu's
+# async set-up on the desktop, and png reads the setting pack's art. The simulation crates still have none.
 [dependencies]
 classic-sim = { path = "../classic-sim" }
 classic-data = { path = "../classic-data" }
 classic-tools = { path = "../classic-tools" }
 wgpu = "30"
-pollster = "1"
 png = "0.18"
 winit = "0.30"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "1"
+
+# The browser build: WebGL2 as well as WebGPU, and the bindings wgpu and winit already use, to fetch files and
+# talk to the page.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30", features = ["webgl"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Location",
+    "Performance",
+    "Response",
+    "UrlSearchParams",
+    "Window",
+] }

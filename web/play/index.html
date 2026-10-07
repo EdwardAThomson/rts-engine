@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classic RTS Engine</title>
+<!--
+  The desktop player (crates/classic-render/src/bin/play.rs) in the browser, drawing with WebGPU, or WebGL2 where
+  the browser has no WebGPU. Build it, serve the repository root and open /web/play/ (see the README):
+
+    cargo build --release --target wasm32-unknown-unknown -p classic-render --bin play
+    wasm-bindgen --target web --no-typescript --out-dir web/play/pkg target/wasm32-unknown-unknown/release/play.wasm
+    python3 -m http.server 8000
+
+  Options go in the address, as the desktop's go on the command line: ?setting=generic&map=maps/test-01.txt&seed=1
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #game { display: block; width: 100%; height: 100%; outline: none; }
+  #status { position: fixed; left: 8px; bottom: 6px; margin: 0; color: #9a9a9a; font: 12px monospace;
+            white-space: pre-wrap; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0"></canvas>
+<pre id="status">loading</pre>
+<script type="module">
+  import init from "./pkg/play.js";
+  try {
+    await init();
+  } catch (e) {
+    // winit hands control back to the browser by throwing; that one is expected.
+    if (!String(e).includes("Using exceptions for control flow")) {
+      document.getElementById("status").textContent = `could not start: ${e}`;
+      throw e;
+    }
+  }
+  document.getElementById("game").focus();
+</script>
+</body>
+</html>

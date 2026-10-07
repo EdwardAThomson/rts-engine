@@ -56,14 +56,38 @@ impl Pack {
 
     /// Load and check the pack in `dir` against `rules`. Returns every problem found when it doesn't pass.
     pub fn load(dir: &Path, rules: &RulesTable) -> Result<Pack, Vec<String>> {
+        let mut files = Vec::new();
+        let mut errors = Vec::new();
+        list_files(dir, dir, &mut files, &mut errors);
+        let read = |file: &str| match std::fs::read_to_string(dir.join(file)) {
+            Ok(t) => Ok(Some(t)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.to_string()),
+        };
+        match Pack::from_files(dir, &files, &read, rules) {
+            Ok(pack) if errors.is_empty() => Ok(pack),
+            Ok(_) => Err(errors),
+            Err(more) => Err(errors.into_iter().chain(more).collect()),
+        }
+    }
+
+    /// Check a pack given as its file list (paths relative to the pack, `/`-separated) and a reader that returns a
+    /// file's text, or `None` when it is missing. The browser build loads packs this way, from fetched files; `dir`
+    /// is only where the pack says it came from.
+    pub fn from_files(
+        dir: &Path,
+        files: &[String],
+        read_text: &dyn Fn(&str) -> Result<Option<String>, String>,
+        rules: &RulesTable,
+    ) -> Result<Pack, Vec<String>> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
-        check_files(dir, dir, &mut errors);
+        check_files(files, &mut errors);
 
         let read = |file: &str, errors: &mut Vec<String>| -> Option<Value> {
-            let text = match std::fs::read_to_string(dir.join(file)) {
-                Ok(t) => t,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            let text = match read_text(file) {
+                Ok(Some(t)) => t,
+                Ok(None) => return None,
                 Err(e) => {
                     errors.push(format!("{file}: {e}"));
                     return None;
@@ -195,8 +219,8 @@ impl Pack {
     }
 }
 
-/// Walk the pack, skipping hidden entries such as `.git`, and refuse any file that isn't data or an asset.
-fn check_files(root: &Path, dir: &Path, errors: &mut Vec<String>) {
+/// Walk the pack, skipping hidden entries such as `.git`, listing each file relative to `root`.
+fn list_files(root: &Path, dir: &Path, files: &mut Vec<String>, errors: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => return errors.push(format!("{}: {e}", dir.display())),
@@ -209,13 +233,21 @@ fn check_files(root: &Path, dir: &Path, errors: &mut Vec<String>) {
             continue;
         }
         if p.is_dir() {
-            check_files(root, &p, errors);
+            list_files(root, &p, files, errors);
             continue;
         }
-        let ext = p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+        let rel = p.strip_prefix(root).unwrap_or(&p);
+        files.push(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"));
+    }
+}
+
+/// Refuse any file that isn't data or an asset.
+fn check_files(files: &[String], errors: &mut Vec<String>) {
+    for f in files {
+        let name = f.rsplit('/').next().unwrap_or(f);
+        let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
         if !ext.is_some_and(|e| ALLOWED.contains(&e.as_str())) {
-            let shown = p.strip_prefix(root).unwrap_or(&p).display();
-            errors.push(format!("{shown}: not a data or asset file; packs hold no code"));
+            errors.push(format!("{f}: not a data or asset file; packs hold no code"));
         }
     }
 }
