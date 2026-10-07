@@ -5,11 +5,11 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use rts_core::hash::{Canon, CanonHasher};
-use rts_core::imath::isqrt;
 use rts_core::rng::random_int;
 
 use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
+use crate::movement;
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
@@ -100,6 +100,13 @@ pub struct Entity {
     pub target: Option<u32>,
     /// Who last hit it, and on which tick, so it can answer.
     pub last_attacker: Option<(u32, u32)>,
+    /// Ticks left to wait before looking for a way round the units blocking its path.
+    pub wait: u32,
+    /// Searches for a way round blocking units that failed in a row.
+    pub repath_fails: u32,
+    /// The unit that asked this one to step aside, and on which tick.
+    pub yield_for: Option<u32>,
+    pub yield_at: Option<u32>,
 }
 
 impl Entity {
@@ -132,11 +139,15 @@ impl Canon for EntityCanon<'_> {
             // Written only while something is queued, so a game with no production hashes as it did before.
             .opt("queue", (!queue.is_empty()).then_some(&queue))
             .opt("reload", (e.reload != 0).then_some(&e.reload))
+            .opt("repathFails", (e.repath_fails != 0).then_some(&e.repath_fails))
             .opt("target", e.target.as_ref())
             .opt("task", e.task.as_ref())
             .field("type", self.1[e.kind.0 as usize].as_str())
+            .opt("wait", (e.wait != 0).then_some(&e.wait))
             .field("x", &e.x)
             .field("y", &e.y)
+            .opt("yieldAt", e.yield_at.as_ref())
+            .opt("yieldFor", e.yield_for.as_ref())
             .end();
     }
 }
@@ -230,6 +241,24 @@ pub struct Command {
     pub player: u32,
     pub ids: Vec<u32>,
     pub order: CommandOrder,
+}
+
+/// Why a move ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveEnd {
+    /// At its goal, or the nearest free tile to it.
+    Arrived,
+    /// Gave up on a path blocked by units.
+    Blocked,
+}
+
+impl MoveEnd {
+    pub fn id(self) -> &'static str {
+        match self {
+            MoveEnd::Arrived => "arrived",
+            MoveEnd::Blocked => "blocked",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,6 +387,25 @@ pub enum Event {
         x: i64,
         y: i64,
     },
+    /// A unit under a move order stopped.
+    MoveEnded {
+        tick: u32,
+        unit: u32,
+        reason: MoveEnd,
+        x: i32,
+        y: i32,
+    },
+    /// A unit stepped aside for `asker`.
+    UnitYielded {
+        tick: u32,
+        unit: u32,
+        asker: u32,
+    },
+    /// A unit gave up on a path blocked by units.
+    UnitStuck {
+        tick: u32,
+        unit: u32,
+    },
     /// A player's power supply, demand or shortfall differs from the previous tick's.
     PowerChanged {
         tick: u32,
@@ -389,6 +437,9 @@ impl Event {
             Event::ProjectileHit { .. } => "projectile_hit",
             Event::Hit { .. } => "hit",
             Event::Destroyed { .. } => "destroyed",
+            Event::MoveEnded { .. } => "move_ended",
+            Event::UnitYielded { .. } => "unit_yielded",
+            Event::UnitStuck { .. } => "unit_stuck",
         }
     }
 
@@ -411,12 +462,15 @@ impl Event {
             | Event::ProjectileSpawned { tick, .. }
             | Event::ProjectileHit { tick, .. }
             | Event::Hit { tick, .. }
-            | Event::Destroyed { tick, .. } => tick,
+            | Event::Destroyed { tick, .. }
+            | Event::MoveEnded { tick, .. }
+            | Event::UnitYielded { tick, .. }
+            | Event::UnitStuck { tick, .. } => tick,
         }
     }
 }
 
-fn centre(t: i32) -> i64 {
+pub(crate) fn centre(t: i32) -> i64 {
     t as i64 * TILE + TILE / 2
 }
 
@@ -441,6 +495,10 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         reload: 0,
         target: None,
         last_attacker: None,
+        wait: 0,
+        repath_fails: 0,
+        yield_for: None,
+        yield_at: None,
     });
     id
 }
@@ -474,7 +532,7 @@ fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState) {
     for e in &mut state.entities {
         if e.path.iter().any(|t| !pf.passable(t.x, t.y)) {
             let end = *e.path.back().expect("a path that crosses something is not empty");
-            e.path = path_or_empty(pf, e.tile(), end);
+            e.path = movement::route(pf, e, end);
         }
     }
 }
@@ -523,19 +581,19 @@ pub fn apply_command(
         }
         match cmd.order {
             CommandOrder::Move { x, y } => {
-                e.path = path_or_empty(pf, e.tile(), Tile { x, y });
+                e.path = movement::route(pf, e, Tile { x, y });
                 e.order = Order::Move;
                 e.target = None;
             }
             CommandOrder::Harvest if rules.kind(e.kind).harvester.is_some() => {
                 e.order = Order::Harvest;
                 e.task = Some(Task::Seek);
-                e.path.clear();
+                movement::halt(e);
             }
             CommandOrder::Attack { .. } if rules.kind(e.kind).weapon.is_some() && attack != Some(e.id) => {
                 e.order = Order::Attack;
                 e.target = attack;
-                e.path.clear();
+                movement::halt(e);
             }
             CommandOrder::Attack { .. } => {}
             CommandOrder::Harvest
@@ -562,7 +620,7 @@ pub fn step(
         apply_command(map, pf, state, rules, cmd, events);
     }
     combat::tick(pf, state, rules, events);
-    movement(state, rules);
+    movement::tick(pf, state, rules, events);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
     report_power(state, rules, &power_before, events);
@@ -579,26 +637,6 @@ fn report_power(state: &GameState, rules: &Rules, before: &[Power], events: &mut
     }
 }
 
-/// Every ground unit with a path moves along it. A harvester on its loop moves only while travelling.
-fn movement(state: &mut GameState, rules: &Rules) {
-    for e in &mut state.entities {
-        let k = rules.kind(e.kind);
-        if k.building {
-            continue;
-        }
-        let travelling = !matches!(
-            (e.order, e.task),
-            (Order::Harvest, Some(Task::Seek | Task::Mining | Task::Unloading | Task::Stuck))
-        );
-        if travelling {
-            move_along_path(e, k.speed);
-        }
-        if e.order == Order::Move && e.path.is_empty() {
-            e.order = Order::Idle;
-        }
-    }
-}
-
 /// Harvesters on their loop (find a field, mine, return, unload), then every production queue.
 fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     for i in 0..state.entities.len() {
@@ -608,27 +646,6 @@ fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Ru
         }
     }
     production::tick(map, pf, state, rules, events);
-}
-
-/// Move toward the next path tile's centre, carrying leftover budget past centres.
-fn move_along_path(e: &mut Entity, speed: i64) {
-    let mut budget = speed;
-    while budget > 0 {
-        let Some(&next) = e.path.front() else { break };
-        let (dx, dy) = (centre(next.x) - e.x, centre(next.y) - e.y);
-        let dist = isqrt((dx * dx + dy * dy) as u64) as i64;
-        if dist <= budget {
-            e.x += dx;
-            e.y += dy;
-            budget -= dist;
-            e.path.pop_front();
-        } else {
-            // Integer division truncates toward zero, as the original TypeScript's Math.trunc did.
-            e.x += dx * budget / dist;
-            e.y += dy * budget / dist;
-            budget = 0;
-        }
-    }
 }
 
 fn harvest(
@@ -647,13 +664,13 @@ fn harvest(
     match task {
         Task::Seek => {
             let e_id = state.entities[i].id;
-            let Some(field) = nearest_resource(map, pf, state, here) else {
+            let Some(field) = nearest_resource(map, pf, state, rules, e_id, here) else {
                 state.entities[i].task = Some(Task::Stuck);
                 events.push(Event::HarvesterIdle { tick, unit: e_id, reason: IdleReason::NoResource });
                 return;
             };
             let e = &mut state.entities[i];
-            e.path = path_or_empty(pf, here, field);
+            e.path = movement::route(pf, e, field);
             e.task = Some(Task::ToField);
         }
         Task::ToField => {
@@ -720,8 +737,24 @@ fn home_refinery(state: &mut GameState, rules: &Rules, i: usize) -> Option<Tile>
     Some(dock)
 }
 
-/// Breadth-first search outward over tiles ground units can enter; the first tile with resource left wins.
-fn nearest_resource(map: &MapData, pf: &Pathfinder, state: &GameState, from: Tile) -> Option<Tile> {
+/// Breadth-first search outward over tiles ground units can enter; the first tile with resource left and no other
+/// unit on it wins.
+fn nearest_resource(
+    map: &MapData,
+    pf: &Pathfinder,
+    state: &GameState,
+    rules: &Rules,
+    me: u32,
+    from: Tile,
+) -> Option<Tile> {
+    let mut held = vec![false; state.resource.len()];
+    for e in state.entities.iter().filter(|e| e.id != me && !rules.kind(e.kind).building) {
+        for t in std::iter::once(e.tile()).chain(movement::step_tile(e)) {
+            if map.in_bounds(t.x, t.y) {
+                held[map.index(t.x, t.y)] = true;
+            }
+        }
+    }
     let start = map.index(from.x, from.y);
     let mut seen = vec![false; state.resource.len()];
     seen[start] = true;
@@ -730,7 +763,7 @@ fn nearest_resource(map: &MapData, pf: &Pathfinder, state: &GameState, from: Til
     while qi < queue.len() {
         let t = queue[qi];
         qi += 1;
-        if state.resource[t] > 0 {
+        if state.resource[t] > 0 && !held[t] {
             return Some(map.tile_at(t));
         }
         let Tile { x, y } = map.tile_at(t);

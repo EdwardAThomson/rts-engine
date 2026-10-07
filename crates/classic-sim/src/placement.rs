@@ -104,7 +104,9 @@ pub fn check(
             if state.resource[i] > 0 {
                 return Err(PlaceError::OnResource { x: tx, y: ty });
             }
-            if state.entities.iter().any(|e| footprint(e).contains(tx, ty)) {
+            let heading_here =
+                |e: &crate::world::Entity| crate::movement::step_tile(e).is_some_and(|t| t.x == tx && t.y == ty);
+            if state.entities.iter().any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
                 return Err(PlaceError::Blocked { x: tx, y: ty });
             }
         }

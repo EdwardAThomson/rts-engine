@@ -98,6 +98,11 @@ impl Pathfinder {
         self.label_regions();
     }
 
+    /// The map's width and height in tiles.
+    pub fn size(&self) -> (i32, i32) {
+        (self.w, self.h)
+    }
+
     /// Whether ground units can enter this tile now.
     pub fn passable(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && x < self.w && y < self.h && self.pass[(y * self.w + x) as usize] != 0
@@ -146,6 +151,29 @@ impl Pathfinder {
 
     /// Shortest path from start to goal, or `None`. Diagonal moves may not cut past a cliff corner.
     pub fn find(&mut self, sx: i32, sy: i32, gx: i32, gy: i32) -> Option<PathResult> {
+        self.search(sx, sy, gx, gy, u32::MAX)
+    }
+
+    /// A search that also treats the `avoid` tiles (indices `y * width + x`) as blocked, such as tiles held by
+    /// standing units, and gives up after `max_nodes` expansions. The regions are not relabelled, so this can only
+    /// refuse a path the full search would find, never invent one.
+    pub fn find_avoiding(
+        &mut self,
+        from: (i32, i32),
+        to: (i32, i32),
+        avoid: &[usize],
+        max_nodes: u32,
+    ) -> Option<PathResult> {
+        let was: Vec<u8> = avoid.iter().map(|&i| std::mem::replace(&mut self.pass[i], 0)).collect();
+        let found = self.search(from.0, from.1, to.0, to.1, max_nodes);
+        // Restore in reverse, so a tile listed twice gets its first saved value back.
+        for (&i, &v) in avoid.iter().zip(&was).rev() {
+            self.pass[i] = v;
+        }
+        found
+    }
+
+    fn search(&mut self, sx: i32, sy: i32, gx: i32, gy: i32, max_nodes: u32) -> Option<PathResult> {
         let (w, hgt) = (self.w, self.h);
         if gx < 0 || gy < 0 || gx >= w || gy >= hgt || sx < 0 || sy < 0 || sx >= w || sy >= hgt {
             return None;
@@ -213,6 +241,9 @@ impl Pathfinder {
             }
             closed[c] = gen_;
             expanded += 1;
+            if expanded > max_nodes {
+                break;
+            }
             if cur == goal {
                 let mut tiles = Vec::new();
                 let mut n = goal;

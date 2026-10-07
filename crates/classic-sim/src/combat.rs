@@ -13,6 +13,7 @@ use rts_core::imath::isqrt;
 use rts_core::rng::random_int;
 
 use crate::map::{TILE, Tile};
+use crate::movement;
 use crate::path::Pathfinder;
 use crate::power::Power;
 use crate::units::{Rules, WeaponId};
@@ -202,7 +203,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             e.target = None;
             if e.order == Order::Attack {
                 e.order = Order::Idle;
-                e.path.clear();
+                movement::halt(e);
             }
         }
         // 1. Scan, unless moving under orders or attacking a target the player chose.
@@ -225,15 +226,14 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         // An attack order closes in until the target is in range, then stands.
         if state.entities[i].order == Order::Attack && !k.building {
             if in_range {
-                state.entities[i].path.clear();
+                movement::halt(&mut state.entities[i]);
             } else if let Some(goal) = approach(pf, rules, &state.entities[i], &state.entities[t])
                 // Set off at once, then follow a moving target on scan ticks.
                 && (state.entities[i].path.is_empty() || (tick + state.entities[i].id).is_multiple_of(rules.combat.scan_every))
                 && state.entities[i].path.back() != Some(&goal)
                 && state.entities[i].tile() != goal
             {
-                let from = state.entities[i].tile();
-                state.entities[i].path = world::path_or_empty(pf, from, goal);
+                state.entities[i].path = movement::route(pf, &state.entities[i], goal);
             }
         }
         // 2. Turn towards it.

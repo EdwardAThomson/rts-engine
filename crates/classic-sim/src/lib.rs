@@ -9,6 +9,7 @@
 pub mod combat;
 pub mod game;
 pub mod map;
+pub mod movement;
 pub mod path;
 pub mod placement;
 pub mod power;
@@ -22,4 +23,4 @@ pub use placement::PlaceError;
 pub use power::Power;
 pub use production::{EntryState, ProduceError, QueueEntry};
 pub use units::{Kind, Rules, WeaponId};
-pub use world::{Command, CommandOrder, Entity, Event, GameState, Order, Task};
+pub use world::{Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};
