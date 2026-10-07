@@ -11,4 +11,4 @@ pub mod pack;
 pub mod rules;
 
 pub use pack::{Faction, Pack};
-pub use rules::{Entry, Number, RulesTable};
+pub use rules::{Entry, Module, Number, RulesTable};

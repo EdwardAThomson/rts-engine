@@ -37,9 +37,13 @@ pub struct PathResult {
 pub struct Pathfinder {
     w: i32,
     h: i32,
-    /// 1 if passable; terrain never changes during a game.
+    /// 1 if passable: not cliff, and not under a building.
     pass: Vec<u8>,
-    /// Connected-region id per passable tile (0 for cliffs).
+    /// 1 if the terrain is passable; terrain never changes during a game.
+    ground: Vec<u8>,
+    /// Buildings covering each tile; a tile is blocked while this is above zero.
+    blocked: Vec<u16>,
+    /// Connected-region id per passable tile (0 for cliffs and buildings).
     region: Vec<u32>,
     g: Vec<i32>,
     from: Vec<u32>,
@@ -59,12 +63,55 @@ pub struct Pathfinder {
 impl Pathfinder {
     pub fn new(map: &MapData) -> Self {
         let n = (map.width * map.height) as usize;
-        let w = map.width as usize;
         let pass: Vec<u8> = map.terrain.iter().map(|&t| u8::from(t != Terrain::Cliff)).collect();
+        let h_max = octile(0, 0, map.width, map.height) as i64;
+        let mut pf = Self {
+            w: map.width,
+            h: map.height,
+            ground: pass.clone(),
+            blocked: vec![0; n],
+            region: vec![0; n],
+            pass,
+            g: vec![0; n],
+            from: vec![0; n],
+            seen: vec![0; n],
+            closed: vec![0; n],
+            gen_: 0,
+            hk: vec![0; 8 * n + 1],
+            hi: vec![0; 8 * n + 1],
+            h_range: h_max + 1,
+            stats: PathStats::default(),
+        };
+        pf.label_regions();
+        pf
+    }
+
+    /// Block (or unblock) a building's footprint, clipped to the map, and relabel the regions.
+    pub fn set_blocked(&mut self, x: i32, y: i32, w: i32, h: i32, on: bool) {
+        for ty in y.max(0)..(y + h).min(self.h) {
+            for tx in x.max(0)..(x + w).min(self.w) {
+                let i = (ty * self.w + tx) as usize;
+                self.blocked[i] = if on { self.blocked[i] + 1 } else { self.blocked[i].saturating_sub(1) };
+                self.pass[i] = u8::from(self.ground[i] != 0 && self.blocked[i] == 0);
+            }
+        }
+        self.label_regions();
+    }
+
+    /// Whether ground units can enter this tile now.
+    pub fn passable(&self, x: i32, y: i32) -> bool {
+        x >= 0 && y >= 0 && x < self.w && y < self.h && self.pass[(y * self.w + x) as usize] != 0
+    }
+
+    fn label_regions(&mut self) {
+        let n = self.pass.len();
+        let w = self.w as usize;
+        let pass = &self.pass;
         // Connected regions (an idea from OpenRA's domains): a flood fill over passable tiles. Four-way links are
         // enough, because the corner rule only allows a diagonal step when both orthogonal neighbours are
         // passable. Two tiles in different regions have no path, so the search can refuse at once.
-        let mut region = vec![0u32; n];
+        let region = &mut self.region;
+        region.fill(0);
         let mut queue = vec![0usize; n];
         let mut next = 0;
         for i in 0..n {
@@ -94,22 +141,6 @@ impl Pathfinder {
                     }
                 }
             }
-        }
-        let h_max = octile(0, 0, map.width, map.height) as i64;
-        Self {
-            w: map.width,
-            h: map.height,
-            pass,
-            region,
-            g: vec![0; n],
-            from: vec![0; n],
-            seen: vec![0; n],
-            closed: vec![0; n],
-            gen_: 0,
-            hk: vec![0; 8 * n + 1],
-            hi: vec![0; 8 * n + 1],
-            h_range: h_max + 1,
-            stats: PathStats::default(),
         }
     }
 
