@@ -22,9 +22,9 @@ fn game() -> (Game, Hud) {
     (game, hud)
 }
 
-/// The map's left edge just right of the rail, at zoom 1.
+/// The map's top-left corner at the screen's, at zoom 1; the rail covers the right.
 fn view() -> View {
-    View { cam: Camera { x: -RAIL_W, y: 0.0, zoom: 1.0 }, screen: SCREEN, tile: TILE }
+    View { cam: Camera { x: 0.0, y: 0.0, zoom: 1.0 }, screen: SCREEN, tile: TILE }
 }
 
 fn centre(r: Rect) -> (f32, f32) {
@@ -75,7 +75,8 @@ fn the_rail_offers_what_the_players_factories_can_build() {
 fn clicks_on_the_rail_never_reach_the_world() {
     let (mut game, mut hud) = game();
     let v = view();
-    assert!(hud.click(&mut game, &v, (RAIL_W - 2.0, SCREEN.1 - 2.0), Button::Left, false));
+    assert!(hud.click(&mut game, &v, (SCREEN.0 - RAIL_W + 2.0, SCREEN.1 - 2.0), Button::Left, false));
+    assert!(hud.click(&mut game, &v, (SCREEN.0 - 2.0, 2.0), Button::Left, false), "the readout is part of the rail");
     assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Left, false), "the world gets clicks off the HUD");
     assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Right, false));
     assert!(game.command_log().is_empty(), "empty rail and world clicks order nothing");
@@ -136,7 +137,7 @@ fn a_ready_building_goes_where_the_simulation_allows_and_nowhere_else() {
     for ty in 0..game.map.height {
         for tx in 0..game.map.width {
             let p = tile_point(tx, ty);
-            if p.0 <= RAIL_W + 1.0 || p.0 >= SCREEN.0 || p.1 >= SCREEN.1 {
+            if p.0 >= SCREEN.0 - RAIL_W - 1.0 || p.1 >= SCREEN.1 {
                 continue;
             }
             let g = hud.ghost(&game, &v, p.0, p.1).unwrap();
@@ -208,7 +209,8 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     };
     let l = hud.layout(&game, SCREEN);
     let readout = differs(l.readout);
-    let middle = differs(Rect::new(500.0, 300.0, 200.0, 150.0));
+    let middle = differs(Rect::new(300.0, 300.0, 200.0, 150.0));
+    assert_eq!(l.rail.x + l.rail.w, SCREEN.0, "the rail is on the right");
     println!("pixels changed: readout {readout}, middle of the world {middle}");
     assert!(readout > 1000, "the readout is drawn");
     assert_eq!(middle, 0, "the world away from the HUD is untouched");

@@ -96,9 +96,10 @@ impl Font {
         GLYPH_H as f32 * scale
     }
 
-    /// Draw `text` with its top left at (x, y); returns its width.
+    /// Draw `text` with its top left at (x, y), rounded to whole pixels; returns its width.
     pub fn draw(&self, batch: &mut SpriteBatch, text: &str, x: f32, y: f32, scale: f32, colour: [u8; 4]) -> f32 {
-        let mut cx = x;
+        // Whole pixels, so no glyph column falls between two screen pixels.
+        let (mut cx, y) = (x.round(), y.round());
         for c in text.chars() {
             let c = c.to_ascii_uppercase();
             let g = GLYPHS.iter().position(|(k, _)| *k == c).or_else(|| GLYPHS.iter().position(|(k, _)| *k == '?'));

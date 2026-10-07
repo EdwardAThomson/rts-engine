@@ -1,5 +1,5 @@
-//! The heads-up display over the world: the production rail on the left (a tab per kind of factory the player
-//! owns, a grid of what it can build, and its queue), the economy readout at the top right, and the ghost of a
+//! The heads-up display over the world: the production rail on the right (the economy readout at its top, then a
+//! tab per kind of factory the player owns, a grid of what it can build, and its queue), and the ghost of a
 //! finished building being placed. Design: `plans/rts/ui.md`, sections 2 to 4.
 //!
 //! The HUD is client state only. It reads the game to draw and turns clicks into the same commands any player
@@ -25,8 +25,7 @@ const CELL_H: f32 = 72.0;
 const GAP: f32 = 4.0;
 const QUEUE_W: f32 = 36.0;
 const QUEUE_H: f32 = 27.0;
-const READOUT_W: f32 = 240.0;
-const READOUT_H: f32 = 58.0;
+const READOUT_H: f32 = 62.0;
 /// The most a shift-click queues at once.
 const SHIFT_COUNT: usize = 5;
 
@@ -199,8 +198,10 @@ impl Hud {
     pub fn layout(&self, game: &Game, screen: (f32, f32)) -> Layout {
         let s = self.scale;
         let (w, h) = screen;
-        let rail = Rect::new(0.0, 0.0, RAIL_W * s, h);
-        let readout = Rect::new(w - (READOUT_W + 6.0) * s, 6.0 * s, READOUT_W * s, READOUT_H * s);
+        // On the right, as most players expect (Ed, 2026-10-07; ui.md had picked the left).
+        let rail = Rect::new(w - RAIL_W * s, 0.0, RAIL_W * s, h);
+        let x0 = rail.x;
+        let readout = Rect::new(x0, 0.0, RAIL_W * s, READOUT_H * s);
         let factories = self.factories(game);
         let per_row = 4;
         let tabs: Vec<Tab> = factories
@@ -208,13 +209,17 @@ impl Hud {
             .enumerate()
             .map(|(i, &factory)| {
                 let (col, row) = ((i % per_row) as f32, (i / per_row) as f32);
-                let rect =
-                    Rect::new((5.0 + col * (TAB_W + 2.0)) * s, (6.0 + row * (TAB_H + 2.0)) * s, TAB_W * s, TAB_H * s);
+                let rect = Rect::new(
+                    x0 + (5.0 + col * (TAB_W + 2.0)) * s,
+                    readout.h + (6.0 + row * (TAB_H + 2.0)) * s,
+                    TAB_W * s,
+                    TAB_H * s,
+                );
                 Tab { factory, rect }
             })
             .collect();
         let open = self.tab.filter(|t| factories.contains(t)).or(factories.first().copied());
-        let grid_top = tabs.last().map_or(6.0 * s, |t| t.rect.y + t.rect.h + 8.0 * s);
+        let grid_top = tabs.last().map_or(readout.h + 6.0 * s, |t| t.rect.y + t.rect.h + 8.0 * s);
         let queue_top = h - (QUEUE_H + 8.0) * s;
         let mut icons = Vec::new();
         let mut queue = Vec::new();
@@ -226,7 +231,7 @@ impl Hud {
             for (i, &item) in items.iter().enumerate().skip(skip * 2).take(rows_fit * 2) {
                 let (col, row) = ((i % 2) as f32, (i / 2 - skip) as f32);
                 let rect = Rect::new(
-                    (2.0 + col * (CELL_W + GAP)) * s,
+                    x0 + (2.0 + col * (CELL_W + GAP)) * s,
                     grid_top + row * (CELL_H + GAP) * s,
                     CELL_W * s,
                     CELL_H * s,
@@ -236,7 +241,8 @@ impl Hud {
             // The queue of the primary factory, the one orders go to.
             if let Some(f) = game.state.entities.iter().find(|e| e.owner == self.player && e.kind == factory) {
                 for (i, q) in f.queue.iter().enumerate() {
-                    let rect = Rect::new((5.0 + i as f32 * (QUEUE_W + 2.0)) * s, queue_top, QUEUE_W * s, QUEUE_H * s);
+                    let rect =
+                        Rect::new(x0 + (5.0 + i as f32 * (QUEUE_W + 2.0)) * s, queue_top, QUEUE_W * s, QUEUE_H * s);
                     queue.push((q.item, rect));
                 }
             }
@@ -377,7 +383,7 @@ impl Hud {
 
         let l = self.layout(game, view.screen);
         batch.fill(l.rail, PANEL);
-        batch.fill(Rect::new(l.rail.x + l.rail.w - 1.0, 0.0, 1.0, l.rail.h), [70, 70, 80, 255]);
+        batch.fill(Rect::new(l.rail.x, 0.0, 1.0, l.rail.h), [70, 70, 80, 255]);
         for t in &l.tabs {
             let open = l.open == Some(t.factory);
             batch.fill(t.rect, if open { [70, 70, 84, 255] } else { CELL });
@@ -494,8 +500,7 @@ impl Hud {
     /// Credits, power in numbers and the game clock, and a power gauge: supply filled, demand marked.
     fn draw_readout(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, r: Rect, text: f32) {
         let s = self.scale;
-        batch.fill(r, PANEL);
-        batch.outline(r, 1.0, [70, 70, 80, 255]);
+        batch.fill(Rect::new(r.x, r.y + r.h - 1.0, r.w, 1.0), [70, 70, 80, 255]);
         let credits = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.credits);
         let (x, mut y) = (r.x + 6.0 * s, r.y + 6.0 * s);
         font.draw(batch, &format!("CREDITS {credits}"), x, y, text, TEXT);
@@ -510,11 +515,12 @@ impl Hud {
             text,
             if short { BAD } else { TEXT },
         );
+        y += Font::height(text) + 4.0 * s;
         let secs = game.state.tick / TICKS_PER_SECOND;
         let clock = format!("{}:{:02}", secs / 60, secs % 60);
-        font.draw(batch, &clock, r.x + r.w - 6.0 * s - Font::width(&clock, text), y, text, DIM);
-        y += Font::height(text) + 4.0 * s;
-        let bar = Rect::new(x, y, r.w - 12.0 * s, 8.0 * s);
+        let clock_w = Font::width(&clock, text);
+        font.draw(batch, &clock, r.x + r.w - 6.0 * s - clock_w, y, text, DIM);
+        let bar = Rect::new(x, y + (Font::height(text) - 8.0 * s) / 2.0, r.w - 18.0 * s - clock_w, 8.0 * s);
         batch.fill(bar, [0, 0, 0, 255]);
         let top = power.supply.max(power.demand).max(1) as f32;
         let fill = Rect::new(bar.x, bar.y, bar.w * power.supply as f32 / top, bar.h);
@@ -558,7 +564,8 @@ impl Hud {
         let line = Font::height(text) + 4.0 * s;
         let w = lines.iter().map(|(t, _)| Font::width(t, text)).fold(0.0, f32::max) + 12.0 * s;
         let h = lines.len() as f32 * line + 8.0 * s;
-        let x = (mouse.0 + 16.0 * s).min(screen.0 - w);
+        // Beside the cursor, on the world's side of the rail.
+        let x = (mouse.0 - 16.0 * s - w).max(0.0);
         let y = (mouse.1 + 8.0 * s).min(screen.1 - h);
         batch.fill(Rect::new(x, y, w, h), [10, 10, 12, 235]);
         batch.outline(Rect::new(x, y, w, h), 1.0, [90, 90, 100, 255]);

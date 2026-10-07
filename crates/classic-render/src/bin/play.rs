@@ -4,7 +4,7 @@
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
 //! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there.
 //!
-//! The rail on the left builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
+//! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
 //! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
 //! where it fits. Escape puts the building back, then clears the selection, then quits. Space pauses. There is no
 //! computer opponent yet. `--frames N` quits after N frames, for smoke tests.
@@ -206,9 +206,9 @@ impl App {
         let tile = TILE as f32 * self.world_px();
         let (mw, mh) = (self.game.map.width as f32 * tile, self.game.map.height as f32 * tile);
         let (vw, vh) = (w / self.cam.zoom, h / self.cam.zoom);
-        // The rail covers the left of the screen, so the map may scroll out from under it.
-        let left = -RAIL_W * self.hud.scale / self.cam.zoom;
-        self.cam.x = (self.cam.x + dx * speed).clamp(left.min(mw - vw), (mw - vw).max(left));
+        // The rail covers the right of the screen, so the map may scroll out from under it.
+        let right = mw - vw + RAIL_W * self.hud.scale / self.cam.zoom;
+        self.cam.x = (self.cam.x + dx * speed).clamp(0.0_f32.min(right), right.max(0.0));
         self.cam.y = (self.cam.y + dy * speed).clamp(0.0_f32.min(mh - vh), (mh - vh).max(0.0));
     }
 
@@ -289,7 +289,7 @@ impl ApplicationHandler for App {
         // Start over the player's own base.
         if let Some(e) = self.game.state.entities.iter().find(|e| e.owner == self.player) {
             let t = e.tile();
-            self.cam.x = t.x as f32 * art.tile - 320.0 - RAIL_W * self.hud.scale / self.cam.zoom;
+            self.cam.x = (t.x as f32 * art.tile - 320.0).max(0.0);
             self.cam.y = (t.y as f32 * art.tile - 240.0).max(0.0);
         }
         self.run = Some(Running { window, surface, config, gpu, batch, art, font });
