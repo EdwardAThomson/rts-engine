@@ -9,7 +9,7 @@ use rts_core::rng::random_int;
 
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;
-use crate::units::{HARVESTER, RESOURCE_REGROWTH, UnitType};
+use crate::units::{Rules, UnitType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Order {
@@ -202,7 +202,7 @@ fn centre(t: i32) -> i64 {
     t as i64 * TILE + TILE / 2
 }
 
-pub fn spawn(state: &mut GameState, kind: UnitType, owner: u32, tx: i32, ty: i32) -> u32 {
+pub fn spawn(state: &mut GameState, rules: &Rules, kind: UnitType, owner: u32, tx: i32, ty: i32) -> u32 {
     let id = state.next_id;
     state.next_id += 1;
     let harvester = kind == UnitType::Harvester;
@@ -212,7 +212,7 @@ pub fn spawn(state: &mut GameState, kind: UnitType, owner: u32, tx: i32, ty: i32
         owner,
         x: centre(tx),
         y: centre(ty),
-        health: kind.stats().max_health,
+        health: rules.stats(kind).max_health,
         path: VecDeque::new(),
         order: if harvester { Order::Harvest } else { Order::Idle },
         task: harvester.then_some(Task::Seek),
@@ -232,11 +232,11 @@ fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeque<Tile> {
     pf.find(from.x, from.y, to.x, to.y).map(|p| p.tiles.into()).unwrap_or_default()
 }
 
-pub fn apply_command(pf: &mut Pathfinder, state: &mut GameState, cmd: &Command) {
+pub fn apply_command(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, cmd: &Command) {
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
         let e = &mut state.entities[i];
-        if e.owner != cmd.player || e.kind.stats().building {
+        if e.owner != cmd.player || rules.stats(e.kind).building {
             continue;
         }
         match cmd.order {
@@ -255,29 +255,37 @@ pub fn apply_command(pf: &mut Pathfinder, state: &mut GameState, cmd: &Command) 
 }
 
 /// Advance one tick. `events` receives what happened; it never feeds back in.
-pub fn step(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, commands: &[Command], events: &mut Vec<Event>) {
+pub fn step(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &mut GameState,
+    rules: &Rules,
+    commands: &[Command],
+    events: &mut Vec<Event>,
+) {
     for cmd in commands {
-        apply_command(pf, state, cmd);
+        apply_command(pf, state, rules, cmd);
     }
     for i in 0..state.entities.len() {
         let e = &state.entities[i];
         if e.kind == UnitType::Harvester && e.order == Order::Harvest {
-            harvest(map, pf, state, i, events);
+            harvest(map, pf, state, rules, i, events);
         } else {
-            move_along_path(&mut state.entities[i]);
+            let speed = rules.stats(e.kind).speed;
+            move_along_path(&mut state.entities[i], speed);
         }
         let e = &mut state.entities[i];
         if e.order == Order::Move && e.path.is_empty() {
             e.order = Order::Idle;
         }
     }
-    regrow(map, state, events);
+    regrow(map, state, rules, events);
     state.tick += 1;
 }
 
 /// Move toward the next path tile's centre. Returns true when the path is finished.
-fn move_along_path(e: &mut Entity) -> bool {
-    let mut budget = e.kind.stats().speed;
+fn move_along_path(e: &mut Entity, speed: i64) -> bool {
+    let mut budget = speed;
     while budget > 0 {
         let Some(&next) = e.path.front() else { break };
         let (dx, dy) = (centre(next.x) - e.x, centre(next.y) - e.y);
@@ -297,8 +305,17 @@ fn move_along_path(e: &mut Entity) -> bool {
     e.path.is_empty()
 }
 
-fn harvest(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, i: usize, events: &mut Vec<Event>) {
+fn harvest(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &mut GameState,
+    rules: &Rules,
+    i: usize,
+    events: &mut Vec<Event>,
+) {
     let tick = state.tick;
+    let h = &rules.harvester;
+    let speed = rules.stats(UnitType::Harvester).speed;
     let here = state.entities[i].tile();
     let Some(task) = state.entities[i].task else { return };
     match task {
@@ -315,18 +332,18 @@ fn harvest(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, i: usize, 
         }
         Task::ToField => {
             let e = &mut state.entities[i];
-            if move_along_path(e) {
+            if move_along_path(e, speed) {
                 e.task = Some(Task::Mining);
             }
         }
         Task::Mining => {
             let t = map.index(here.x, here.y);
             let cargo = state.entities[i].cargo.unwrap_or(0);
-            let take = HARVESTER.mine_rate.min(state.resource[t]).min(HARVESTER.capacity - cargo);
+            let take = h.mine_rate.min(state.resource[t]).min(h.capacity - cargo);
             state.resource[t] -= take;
             let cargo = cargo + take;
             state.entities[i].cargo = Some(cargo);
-            if cargo >= HARVESTER.capacity {
+            if cargo >= h.capacity {
                 let Some(home) = home_refinery(state, i) else {
                     state.entities[i].task = Some(Task::Stuck);
                     let unit = state.entities[i].id;
@@ -343,14 +360,14 @@ fn harvest(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, i: usize, 
         }
         Task::ToRefinery => {
             let e = &mut state.entities[i];
-            if move_along_path(e) {
+            if move_along_path(e, speed) {
                 e.task = Some(Task::Unloading);
             }
         }
         Task::Unloading => {
             let e = &mut state.entities[i];
             let cargo = e.cargo.unwrap_or(0);
-            let amount = HARVESTER.unload_rate.min(cargo);
+            let amount = h.unload_rate.min(cargo);
             e.cargo = Some(cargo - amount);
             let (unit, owner, empty) = (e.id, e.owner, cargo == amount);
             let p = &mut state.players[owner as usize];
@@ -406,8 +423,8 @@ fn nearest_resource(map: &MapData, state: &GameState, from: Tile) -> Option<Tile
 }
 
 /// Every so often, a random tile next to an original resource field grows some resource back.
-fn regrow(map: &MapData, state: &mut GameState, events: &mut Vec<Event>) {
-    if !state.tick.is_multiple_of(RESOURCE_REGROWTH.every_ticks) || state.tick == 0 {
+fn regrow(map: &MapData, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+    if !state.tick.is_multiple_of(rules.regrowth.every_ticks) || state.tick == 0 {
         return;
     }
     let i = random_int(&mut state.rng, (map.width * map.height) as u32) as usize;
@@ -418,6 +435,6 @@ fn regrow(map: &MapData, state: &mut GameState, events: &mut Vec<Event>) {
     if !near_field || !map.passable(x, y) || map.terrain[i] != Terrain::Open {
         return;
     }
-    state.resource[i] = RESOURCE_PER_TILE.min(state.resource[i] + RESOURCE_REGROWTH.amount);
+    state.resource[i] = RESOURCE_PER_TILE.min(state.resource[i] + rules.regrowth.amount);
     events.push(Event::Regrowth { tick: state.tick, x, y, amount: state.resource[i] });
 }

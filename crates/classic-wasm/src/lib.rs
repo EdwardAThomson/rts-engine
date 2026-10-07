@@ -26,7 +26,7 @@ pub unsafe extern "C" fn game_new(ptr: *mut u8, len: usize, seed: i32) -> *mut G
     // SAFETY: the caller passes back the buffer `alloc(len)` gave, filled with `len` bytes.
     let bytes = unsafe { Vec::from_raw_parts(ptr, len, len) };
     let Ok(text) = String::from_utf8(bytes) else { return std::ptr::null_mut() };
-    match Game::new(GameOptions { map: &text, seed, players: None }) {
+    match Game::new(GameOptions { map: &text, seed, players: None, rules: None }) {
         Ok(game) => Box::into_raw(Box::new(game)),
         Err(_) => std::ptr::null_mut(),
     }

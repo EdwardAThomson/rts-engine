@@ -14,5 +14,5 @@ pub mod world;
 
 pub use game::{Game, GameOptions, hash_state};
 pub use map::{MapData, Terrain, Tile, parse_map};
-pub use units::UnitType;
+pub use units::{Rules, UnitType};
 pub use world::{Command, CommandOrder, Entity, Event, GameState, Order, Task};

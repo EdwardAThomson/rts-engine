@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 rts-core = { workspace = true }
+classic-data = { path = "../classic-data" }

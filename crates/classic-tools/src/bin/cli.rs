@@ -17,7 +17,7 @@ fn main() {
     let every = num("every", 1500).max(1);
 
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
-    let mut game = Game::new(GameOptions { map: &text, seed, players: None }).expect("valid map");
+    let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: None }).expect("valid map");
     let t0 = Instant::now();
     let mut t = 0;
     while t < ticks {

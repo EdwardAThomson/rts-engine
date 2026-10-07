@@ -195,14 +195,15 @@ pub struct Group {
 
 /// A two-player game on the scene's map with `n` extra units (every tenth a harvester) in random places.
 pub fn populate(scene: &Scene, rnd: &mut Rnd, seed: i32, n: usize) -> (Game, Vec<Group>) {
-    let mut game = Game::new(GameOptions { map: &scene.text, seed, players: Some(2) }).expect("scene game");
+    let mut game =
+        Game::new(GameOptions { map: &scene.text, seed, players: Some(2), rules: None }).expect("scene game");
     let mut owners: [Vec<u32>; 2] = [Vec::new(), Vec::new()];
     for i in 0..n {
         let owner = (i % 2) as u32;
         let t = scene.random_reachable(rnd);
-        let kind = if i % 10 == 9 { UnitType::Harvester } else { UnitType::Tank };
+        let kind = if i % 10 == 9 { UnitType::Harvester } else { UnitType::BattleTank };
         let id = game.spawn(kind, owner, t as i32 % SIZE, t as i32 / SIZE);
-        if kind == UnitType::Tank {
+        if kind == UnitType::BattleTank {
             owners[owner as usize].push(id);
         }
     }

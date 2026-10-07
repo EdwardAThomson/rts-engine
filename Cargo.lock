@@ -3,9 +3,17 @@
 version = 4
 
 [[package]]
+name = "classic-data"
+version = "0.1.0"
+dependencies = [
+ "rts-core",
+]
+
+[[package]]
 name = "classic-sim"
 version = "0.1.0"
 dependencies = [
+ "classic-data",
  "rts-core",
 ]
 

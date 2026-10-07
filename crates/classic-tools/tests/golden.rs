@@ -9,7 +9,7 @@ use classic_tools::scene::{Rnd, Scene, fnv_pair, populate, send_due};
 const MAP: &str = include_str!("../../../maps/test-01.txt");
 
 fn game(seed: i32) -> Game {
-    Game::new(GameOptions { map: MAP, seed, players: None }).unwrap()
+    Game::new(GameOptions { map: MAP, seed, players: None, rules: None }).unwrap()
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn idle_games_match_the_typescript_hashes() {
 
 fn scripted(game: &mut Game, ticks: u32) {
     let tanks: Vec<(u32, u32)> =
-        game.state.entities.iter().filter(|e| e.kind == UnitType::Tank).map(|e| (e.id, e.owner)).collect();
+        game.state.entities.iter().filter(|e| e.kind == UnitType::BattleTank).map(|e| (e.id, e.owner)).collect();
     let mut t = 0;
     while t < ticks {
         for (k, &(id, owner)) in tanks.iter().enumerate() {
