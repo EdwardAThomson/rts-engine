@@ -28,8 +28,8 @@ repository's `art/models/`, so a pack's model replaces the generic one with the 
 `rts_studio` as usual.
 
 ```bash
-python3 art/studio/render.py vehicles/super_a --pack dune --out /tmp/renders/super_a
-python3 art/studio/pack.py /tmp/renders/super_a ... --out settings-private/packs/dune/art/sprites
+python3 art/studio/render.py vehicles/super_a --pack <pack> --out /tmp/renders/super_a
+python3 art/studio/pack.py /tmp/renders/super_a ... --out settings-private/packs/<pack>/art/sprites
 ```
 
 Renders record where their model came from. `pack.py` refuses to write a pack's renders anywhere in this
