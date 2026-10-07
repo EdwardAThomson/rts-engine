@@ -76,7 +76,7 @@ Two rules keep this honest:
 | Computer opponent | `crates/` (new crate) | Issues the same commands a player would; never reads hidden state | Planned |
 | Renderer | `crates/classic-render` | Draws the game with wgpu (chosen 2026-10-07: it runs natively and on the web, so desktop and web share it), reading the state and its events; never changes either. `platform/` (GPU, textures, sprite batcher) is genre-neutral and moves to a crate shared with the 3D engine once that engine needs it; `art` and `scene` know the Classic engine. The desktop player (`play`) is a window onto a skirmish. `web/viewer/` stays as the debug view, drawing coloured shapes from `classic-wasm`'s view functions | Built: desktop, pack art in faction colours, map, buildings, units, shells, explosions, selection, health bars, move and attack orders. Web build later; shape viewer built |
 | Audio | `crates/` (new crate) | Plays sounds for sim events; never changes the state | Planned |
-| UI | `crates/classic-render` | Production rail, minimap, selection, menus, styled by the pack's theme | Selection built; the rest planned |
+| UI | `crates/classic-render` (`hud`) | Production rail, minimap, selection, menus, styled by the pack's theme. Drawn with the renderer (not HTML); turns clicks into the same commands any player sends | Built: selection, the production rail (a tab per factory kind, build grid with item states, queue, tooltips), credits, power and clock readout, building placement with a ghost. Minimap, selection card, messages, menus and hotkeys planned |
 | Tools | `crates/classic-tools` | Headless CLI and the bench; later AI-vs-AI batch runs, pack and asset checks | CLI and bench built |
 
 ## Language and builds

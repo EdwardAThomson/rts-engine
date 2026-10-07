@@ -1,18 +1,22 @@
-//! The desktop player: a window onto a skirmish on the test map.
-//!   cargo run --release --bin play -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--player 0]
+//! The desktop player: a window onto a skirmish.
+//!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
-//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. Space pauses and
-//! Escape quits. The window title shows the tick, your credits and your power. There is no sidebar or computer
-//! opponent yet. `--frames N` quits after N frames, for smoke tests.
+//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there.
+//!
+//! The rail on the left builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
+//! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
+//! where it fits. Escape puts the building back, then clears the selection, then quits. Space pauses. There is no
+//! computer opponent yet. `--frames N` quits after N frames, for smoke tests.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use classic_render::art::{self, Art};
-use classic_render::platform::{Gpu, Rect, SpriteBatch};
-use classic_render::{Camera, Scene};
+use classic_render::hud::{Button, RAIL_W};
+use classic_render::platform::{Font, Gpu, Rect, SpriteBatch};
+use classic_render::{Camera, Hud, Scene, View};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use classic_tools::setting;
@@ -42,11 +46,13 @@ struct Running {
     gpu: Gpu,
     batch: SpriteBatch,
     art: Art,
+    font: Font,
 }
 
 struct App {
     game: Game,
     scene: Scene,
+    hud: Hud,
     pack: classic_data::Pack,
     player: u32,
     cam: Camera,
@@ -63,6 +69,29 @@ struct App {
 }
 
 impl App {
+    fn view(&self) -> View {
+        let screen = self.run.as_ref().map_or((1280.0, 800.0), |r| (r.config.width as f32, r.config.height as f32));
+        View { cam: self.cam, screen, tile: TILE as f32 * self.world_px() }
+    }
+
+    fn shift(&self) -> bool {
+        self.keys.contains(&KeyCode::ShiftLeft) || self.keys.contains(&KeyCode::ShiftRight)
+    }
+
+    /// Give a click to the HUD first; returns whether it took it.
+    fn hud_click(&mut self, button: Button) -> bool {
+        let view = self.view();
+        let shift = self.shift();
+        self.hud.click(&mut self.game, &view, self.mouse, button, shift)
+    }
+
+    /// A right click goes to the HUD, else orders the selected units.
+    fn right_click(&mut self) {
+        if !self.hud_click(Button::Right) {
+            self.command(self.mouse.0, self.mouse.1);
+        }
+    }
+
     fn world_px(&self) -> f32 {
         self.run.as_ref().map_or(32.0, |r| r.art.tile) / TILE as f32
     }
@@ -177,7 +206,9 @@ impl App {
         let tile = TILE as f32 * self.world_px();
         let (mw, mh) = (self.game.map.width as f32 * tile, self.game.map.height as f32 * tile);
         let (vw, vh) = (w / self.cam.zoom, h / self.cam.zoom);
-        self.cam.x = (self.cam.x + dx * speed).clamp(0.0_f32.min(mw - vw), (mw - vw).max(0.0));
+        // The rail covers the left of the screen, so the map may scroll out from under it.
+        let left = -RAIL_W * self.hud.scale / self.cam.zoom;
+        self.cam.x = (self.cam.x + dx * speed).clamp(left.min(mw - vw), (mw - vw).max(left));
         self.cam.y = (self.cam.y + dy * speed).clamp(0.0_f32.min(mh - vh), (mh - vh).max(0.0));
     }
 
@@ -213,6 +244,8 @@ impl App {
         };
         let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
+        let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
+        self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse);
         if let Some(from) = self.drag {
             let (x0, y0) = (from.0.min(self.mouse.0), from.1.min(self.mouse.1));
             let r = Rect::new(x0, y0, (from.0 - self.mouse.0).abs(), (from.1 - self.mouse.1).abs());
@@ -251,13 +284,15 @@ impl ApplicationHandler for App {
         let mut batch = SpriteBatch::new(&gpu, config.format);
         let ramps = art::player_ramps(&self.pack, self.game.state.players.len());
         let art = Art::load(&gpu, &mut batch, &art::art_dir(&self.pack), &ramps).expect("the pack's art loads");
+        let font = Font::new(&gpu, &mut batch);
+        self.hud.scale = window.scale_factor().round().max(1.0) as f32;
         // Start over the player's own base.
         if let Some(e) = self.game.state.entities.iter().find(|e| e.owner == self.player) {
             let t = e.tile();
-            self.cam.x = (t.x as f32 * art.tile - 320.0).max(0.0);
+            self.cam.x = t.x as f32 * art.tile - 320.0 - RAIL_W * self.hud.scale / self.cam.zoom;
             self.cam.y = (t.y as f32 * art.tile - 240.0).max(0.0);
         }
-        self.run = Some(Running { window, surface, config, gpu, batch, art });
+        self.run = Some(Running { window, surface, config, gpu, batch, art, font });
         self.last = Instant::now();
     }
 
@@ -279,7 +314,12 @@ impl ApplicationHandler for App {
                 if event.state == ElementState::Pressed {
                     self.keys.insert(code);
                     match code {
-                        KeyCode::Escape => event_loop.exit(),
+                        KeyCode::Escape => {
+                            if !self.hud.cancel() && self.scene.selected.is_empty() {
+                                event_loop.exit();
+                            }
+                            self.scene.selected.clear();
+                        }
                         KeyCode::Space if !event.repeat => self.paused = !self.paused,
                         _ => {}
                     }
@@ -292,13 +332,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorLeft { .. } => self.mouse = (-1.0e4, -1.0e4),
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
-                (MouseButton::Left, ElementState::Pressed) => self.drag = Some(self.mouse),
+                (MouseButton::Left, ElementState::Pressed) => {
+                    if !self.hud_click(Button::Left) {
+                        self.drag = Some(self.mouse);
+                    }
+                }
                 (MouseButton::Left, ElementState::Released) => {
                     if let Some(from) = self.drag.take() {
                         self.select(from, self.mouse);
                     }
                 }
-                (MouseButton::Right, ElementState::Pressed) => self.command(self.mouse.0, self.mouse.1),
+                (MouseButton::Right, ElementState::Pressed) => self.right_click(),
                 _ => {}
             },
             WindowEvent::MouseWheel { delta, .. } => {
@@ -306,6 +350,10 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y > 0.0,
                     MouseScrollDelta::PixelDelta(p) => p.y > 0.0,
                 };
+                if self.hud.over(&self.game, self.view().screen, self.mouse.0, self.mouse.1) {
+                    self.hud.wheel(up);
+                    return;
+                }
                 // Whole-number zooms keep every art pixel the same size; zoom about the mouse.
                 let zoom = if up { (self.cam.zoom + 1.0).min(4.0) } else { (self.cam.zoom - 1.0).max(1.0) };
                 let (wx, wy) = self.cam.to_world(self.mouse.0, self.mouse.1);
@@ -337,15 +385,18 @@ fn main() {
         std::process::exit(2);
     });
     let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
-    let map_path = arg("map").unwrap_or_else(|| setting::root().join("maps/test-01.txt").display().to_string());
+    let map_path = arg("map").unwrap_or_else(|| setting::root().join("maps/skirmish-01.txt").display().to_string());
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
     let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
     let game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
+    let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let hud = Hud::new(&pack, &game, player);
     let mut app = App {
         game,
         scene: Scene::default(),
+        hud,
         pack,
-        player: arg("player").and_then(|s| s.parse().ok()).unwrap_or(0),
+        player,
         cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
         run: None,
         last: Instant::now(),

@@ -31,6 +31,8 @@ pub struct Art {
     /// Each sprite once per faction ramp, in owner order.
     sprites: BTreeMap<String, Vec<Strip>>,
     effects: BTreeMap<String, Strip>,
+    /// Each build icon once per faction ramp, in owner order.
+    icons: BTreeMap<String, Vec<Strip>>,
 }
 
 impl Art {
@@ -54,7 +56,8 @@ impl Art {
             if let Some(ramp) = ramp {
                 recolour(&mut rgba, &remap, ramp);
             }
-            let frame = entry.get("frame").and_then(Value::as_array).ok_or("art.json: entry without a frame")?;
+            // No frame size means one picture, the whole file.
+            let frame = entry.get("frame").and_then(Value::as_array).unwrap_or(&[]);
             let fw = frame.first().and_then(Value::as_int).unwrap_or(w as i64) as f32;
             let fh = frame.get(1).and_then(Value::as_int).unwrap_or(h as i64) as f32;
             let frames =
@@ -62,7 +65,13 @@ impl Art {
             Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames })
         };
         let entries = |key: &str| doc.get(key).and_then(Value::as_object).unwrap_or(&[]);
-        let mut art = Art { tile, terrain: BTreeMap::new(), sprites: BTreeMap::new(), effects: BTreeMap::new() };
+        let mut art = Art {
+            tile,
+            terrain: BTreeMap::new(),
+            sprites: BTreeMap::new(),
+            effects: BTreeMap::new(),
+            icons: BTreeMap::new(),
+        };
         for (id, entry) in entries("terrain") {
             art.terrain.insert(id.clone(), load(batch, entry, None)?);
         }
@@ -72,6 +81,12 @@ impl Art {
         for (id, entry) in entries("sprites") {
             let strips = owner_ramps.iter().map(|r| load(batch, entry, Some(r))).collect::<Result<_, _>>()?;
             art.sprites.insert(id.clone(), strips);
+        }
+        // Icons are plain file names, one picture each.
+        for (id, file) in entries("icons") {
+            let entry = Value::Object(vec![("file".into(), file.clone())]);
+            let strips = owner_ramps.iter().map(|r| load(batch, &entry, Some(r))).collect::<Result<_, _>>()?;
+            art.icons.insert(id.clone(), strips);
         }
         Ok(art)
     }
@@ -83,6 +98,12 @@ impl Art {
     /// The sprite for generic id `id` in `owner`'s colours.
     pub fn sprite(&self, id: &str, owner: u32) -> Option<&Strip> {
         let strips = self.sprites.get(id)?;
+        strips.get(owner as usize % strips.len().max(1))
+    }
+
+    /// The build icon for generic id `id` in `owner`'s colours.
+    pub fn icon(&self, id: &str, owner: u32) -> Option<&Strip> {
+        let strips = self.icons.get(id)?;
         strips.get(owner as usize % strips.len().max(1))
     }
 
