@@ -215,7 +215,13 @@ fn a_unit_with_no_free_exit_waits_until_one_frees_up() {
     assert_eq!(queue(&g, factory)[0].1, EntryState::Blocked);
     assert!(built_at(&g).is_empty());
     g.order(0, &[blockers[3]], CommandOrder::Move { x: 8, y: 7 });
-    g.step(30);
+    // Step until it comes out, and look before it drives clear of the exit.
+    for _ in 0..30 {
+        g.step(1);
+        if !built_at(&g).is_empty() {
+            break;
+        }
+    }
     let out = built_at(&g);
     println!("left at {out:?}");
     assert_eq!(out.len(), 1);

@@ -119,6 +119,22 @@ pub struct ProductionRules {
     pub instant_build: bool,
 }
 
+/// Collision and blocked units (rules-movement.md, sections 4 to 6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MovementRules {
+    /// A blocked unit waits `wait_base` plus a random `0..wait_random` ticks before looking for a way round.
+    pub wait_base: u32,
+    pub wait_random: u32,
+    /// Failed searches for a way round, in a row, before a unit gives up.
+    pub max_repath_fails: u32,
+    /// Ticks a request to step aside stays good.
+    pub yield_expires: u32,
+    /// How far from a taken last tile a move may end instead.
+    pub close_enough_rings: i32,
+    /// Nodes a search for a way round may expand.
+    pub nodes_local: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
@@ -133,6 +149,7 @@ pub struct Rules {
     pub placement: Placement,
     pub power: PowerRules,
     pub production: ProductionRules,
+    pub movement: MovementRules,
     pub weapons: Vec<WeaponRules>,
     pub combat: CombatRules,
     /// The rules table's hash, for replays to check they run under the same numbers.
@@ -254,6 +271,14 @@ impl Rules {
                 queue_size: module("production", "queue_size")? as usize,
                 instant_build: module("production", "instant_build")? != 0,
                 starting_credits: module("production", "starting_credits")?,
+            },
+            movement: MovementRules {
+                wait_base: module("movement", "wait_base")? as u32,
+                wait_random: module("movement", "wait_random")? as u32,
+                max_repath_fails: module("movement", "max_repath_fails")? as u32,
+                yield_expires: module("movement", "yield_expires")? as u32,
+                close_enough_rings: module("movement", "close_enough_rings")? as i32,
+                nodes_local: module("movement", "nodes_local")? as u32,
             },
             combat: CombatRules {
                 table,

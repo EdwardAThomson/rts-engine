@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 62 checks, about 1 s after the first build
+cargo test                                                    # 75 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
@@ -74,12 +74,19 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   closes to within range and stands; a moving unit ignores enemies; a rocket turret needs power and a gun turret
   doesn't; a destroyed building frees its tiles; guards prefer armed units to buildings; a pack can tune weapons
   and the damage table; combat replays from the command log.
+- Collision: a tile holds one ground unit, checked on every tick of every collision test; a unit waits behind
+  another instead of driving through it; a move to a taken tile ends next to it; nine tanks sent to one tile end
+  on nine tiles round it; an idle own tank steps aside, and an enemy one never does, so the mover gives up; two
+  tanks meeting head-on in a corridor get past each other; twelve tanks squeeze through a one-tile gap with none
+  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a factory's new
+  units drive clear of its exit; collision replays from the command log.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 ## Not verified / not built yet
 
-- Units pass through each other; there's no collision or tile reservation yet.
+- Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
+  bodies that turn before driving yet, and a blocked search returns no partial path.
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - No AI; no storage cap, tech levels, factory upgrades or starport.

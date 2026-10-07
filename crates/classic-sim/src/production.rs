@@ -9,6 +9,7 @@
 use rts_core::hash::{Canon, CanonHasher};
 
 use crate::map::{MapData, Tile};
+use crate::movement;
 use crate::path::Pathfinder;
 use crate::power::Power;
 use crate::units::{Kind, Rules};
@@ -185,11 +186,7 @@ fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, f
     let f = &state.entities[factory];
     let t = f.tile();
     let exit = world::dock_at(rules.kind(f.kind), t.x, t.y);
-    let free = |x: i32, y: i32| {
-        map.in_bounds(x, y)
-            && pf.passable(x, y)
-            && !state.entities.iter().any(|e| !rules.kind(e.kind).building && e.tile() == Tile { x, y })
-    };
+    let free = |x: i32, y: i32| map.in_bounds(x, y) && pf.passable(x, y) && !held(state, rules, Tile { x, y });
     if free(exit.x, exit.y) {
         return Some(exit);
     }
@@ -199,8 +196,24 @@ fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, f
         .map(|(x, y)| Tile { x, y })
 }
 
+/// Whether a unit stands on this tile or is on its way into it.
+fn held(state: &GameState, rules: &Rules, t: Tile) -> bool {
+    state.entities.iter().any(|e| !rules.kind(e.kind).building && (e.tile() == t || movement::step_tile(e) == Some(t)))
+}
+
+/// Where a new unit drives to so the next one can come out: the nearest free tile two to four steps from the
+/// exit, ring by ring, then in row order (rules-movement.md section 7, with no rally point yet).
+fn clear_of_exit(pf: &Pathfinder, state: &GameState, rules: &Rules, exit: Tile) -> Option<Tile> {
+    (2..=4).find_map(|r: i32| {
+        (exit.y - r..=exit.y + r)
+            .flat_map(|y| (exit.x - r..=exit.x + r).map(move |x| Tile { x, y }))
+            .filter(|t| (t.x - exit.x).abs().max((t.y - exit.y).abs()) == r)
+            .find(|&t| pf.passable(t.x, t.y) && !held(state, rules, t))
+    })
+}
+
 /// One tick of every queue, factories in id order: the head entry builds and pays, pauses, or finishes.
-pub fn tick(map: &MapData, pf: &Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     let tick = state.tick;
     let factors: Vec<i64> = Power::all(state, rules).iter().map(|p| p.factor(rules)).collect();
     for i in 0..state.entities.len() {
@@ -238,6 +251,14 @@ pub fn tick(map: &MapData, pf: &Pathfinder, state: &mut GameState, rules: &Rules
             state.entities[i].queue.remove(0);
             let entity = world::spawn(state, rules, head.item, owner, t.x, t.y);
             events.push(Event::UnitBuilt { tick, factory, entity, kind: head.item });
+            // A harvester goes about its work; anything else drives clear of the exit.
+            if k.harvester.is_none()
+                && let Some(to) = clear_of_exit(pf, state, rules, t)
+            {
+                let e = state.entities.last_mut().expect("just spawned");
+                e.path = world::path_or_empty(pf, t, to);
+                e.order = world::Order::Move;
+            }
             continue;
         }
         state.entities[i].queue[0] = entry;
