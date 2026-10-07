@@ -10,7 +10,7 @@ Per entity:
              would be recoloured
   coverage   team paint covers 5% to 40% of the visible pixels of the intact frames
   scale      the model's length at facing 0 is within 5% of studio.json's reference size, where it has one
-  footprint  a building's ground contact stays the inset (0.5 m) inside its footprint
+  footprint  a building's ground contact stays the inset (0.5 m) inside its footprint (not for DECAL models)
   height     a building's tallest part stays under 1.5 tiles (warning)
   black      large patches of pure black, the mark of two faces sharing a plane (warning)
 """
@@ -111,7 +111,9 @@ def check_entity(rdir, r):
         W, H = meta["footprint"][0] * T, meta["footprint"][1] * T
         inset = STUDIO["footprint_inset_m"]
         c = meta.get("contact_m")
-        if c:
+        if meta.get("decal"):
+            r.add(eid, "footprint", True, "decal: may fill its footprint (slabs), inset not checked")
+        elif c:
             margins = [c[0], W - c[2], H + c[1], -c[3]]  # west, east, south, north, in metres
             ok = min(margins) >= inset - 1e-3
             r.add(eid, "footprint", ok, "ground contact inset W {:.2f} E {:.2f} S {:.2f} N {:.2f} m (want >= {})"

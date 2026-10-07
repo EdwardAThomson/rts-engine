@@ -78,9 +78,10 @@ optional: a model that leaves a hook out gets the studio's default.
 | `DOORS = {names}`, `DOOR_FRAMES = 3`, `door_pose(root, t)` | building | Overlay `overlay-doors`: shut plus `DOOR_FRAMES` steps open; default pose rolls each door part up into its top edge |
 | `build_head(ring)`, `HEAD_HEIGHT` | building | A defence turret's head: 32 facings about the footprint's centre |
 | `JOINS = True`, `build(root, joins)` | building | Walls: 16 frames, one per join mask (1 north, 2 east, 4 south, 8 west), intact and damaged |
-| `DECAL = True` | building | One frame, no shadow (rubble) |
+| `DECAL = True` | building | One frame, no shadow (rubble, slabs until there is a tile route); the footprint inset is not checked |
 | `TEAM = False` | all | No team paint expected (walls, rubble): the coverage check is skipped |
 | `build(root, joints)` | infantry | Parts parented to the rig's joints; idle 1, walk 6, fire 3 at 8 facings, and die-1, die-2 of 8 frames from one side |
+| `rig_pose(joints, anim, frame, frames)` | infantry | Replaces `st.pose` for that model (how it holds its weapon, kneeling or standing fire) |
 
 `rng` is a `random.Random` seeded from the id and the frame, so every render of a hook is the same. A moving part
 (idle or door) is left out of the intact frame and drawn every frame as its overlay, so nothing shows twice.
