@@ -84,7 +84,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   another instead of driving through it; a move to a taken tile ends next to it; nine tanks sent to one tile end
   on nine tiles round it; an idle own tank steps aside, and an enemy one never does, so the mover gives up; two
   tanks meeting head-on in a corridor get past each other; twelve tanks squeeze through a one-tile gap with none
-  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a factory's new
+  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a harvester
+  queued for a dock steps aside for the one leaving it, and both keep delivering; a factory's new
   units drive clear of its exit; collision replays from the command log.
 - Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
   colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same

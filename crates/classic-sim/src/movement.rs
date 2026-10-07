@@ -20,6 +20,8 @@
 //! **Stepping aside.** A unit asked to yield moves to a free neighbour off the asker's next three path tiles, or,
 //! when there is none, any free neighbour (backing off), then carries on with what it was doing. Only own units
 //! yield. A unit that is itself waiting yields only to a lower id, so two blocked units never take turns forever.
+//! The one exception is a harvester queued next to its dock: it yields to the unit on the dock, which can only
+//! leave through it, so a harvester leaving a dock and the next one queued for it never wait on each other.
 //! Enemy units never yield, so blocking a dock stays a tactic.
 
 use std::collections::VecDeque;
@@ -242,8 +244,11 @@ fn blocked(
     };
     if let Some(b) = blocker {
         let (e, o) = (&state.entities[i], &state.entities[b]);
-        // Ask an own unit standing still to step aside. One that is waiting itself only gives way to a lower id.
-        if o.owner == e.owner && o.yield_for.is_none() && can_yield(o) && (o.path.is_empty() || e.id < o.id) {
+        // Ask an own unit standing still to step aside. One that is waiting itself only gives way to a lower id,
+        // except a harvester queued for the tile this unit is leaving: it gives way to whoever is on its dock.
+        let waits_for_me = queued(o) && at_centre(o) && o.path.back() == Some(&e.tile());
+        let gives_way = (can_yield(o) && (o.path.is_empty() || e.id < o.id)) || waits_for_me;
+        if o.owner == e.owner && o.yield_for.is_none() && gives_way {
             let id = e.id;
             let o = &mut state.entities[b];
             o.yield_for = Some(id);
@@ -334,6 +339,11 @@ fn can_yield(e: &Entity) -> bool {
     at_centre(e) && still(e) && !matches!(e.task, Some(Task::Seek | Task::Mining | Task::Unloading | Task::Stuck))
 }
 
+/// A harvester next to its dock, waiting for the one on it to leave.
+fn queued(e: &Entity) -> bool {
+    e.order == Order::Harvest && e.task == Some(Task::ToRefinery) && e.path.len() == 1
+}
+
 /// The nearest free tile within `rings` of `goal`, ring by ring, then nearest the unit, then in row order.
 fn nearest_free(pf: &Pathfinder, hs: &Holders, e: &Entity, goal: Tile, rings: i32) -> Option<Tile> {
     let here = e.tile();
@@ -359,7 +369,7 @@ fn answer_yield(
     let (Some(asker), Some(at)) = (e.yield_for, e.yield_at) else { return };
     let r = index(state, asker);
     let fresh = tick.saturating_sub(at) < rules.movement.yield_expires;
-    if !fresh || r.is_none() || !can_yield(e) || !travelling(e) {
+    if !fresh || r.is_none() || !(can_yield(e) || queued(e) && at_centre(e)) || !travelling(e) {
         let e = &mut state.entities[i];
         e.yield_for = None;
         e.yield_at = None;
