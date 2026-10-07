@@ -218,12 +218,13 @@ pub fn populate(scene: &Scene, rnd: &mut Rnd, seed: i32, n: usize) -> (Game, Vec
     (game, groups)
 }
 
-/// Order every group due on tick `t`: all at tick 0, then each again every 300 ticks at its offset.
+/// Order every group due on tick `t`: all at tick 0, then each again every 300 ticks at its offset. A group with no
+/// members left is skipped.
 pub fn send_due(game: &mut Game, scene: &Scene, rnd: &mut Rnd, groups: &[Group], t: u32) {
     for gr in groups {
         if t == 0 || t % 300 == gr.offset {
-            let e = game.state.entity(gr.ids[0]).expect("group leader exists");
-            let tile = e.tile();
+            // The leader is the first member still alive; combat may have destroyed the rest.
+            let Some(tile) = gr.ids.iter().find_map(|&id| game.state.entity(id)).map(|e| e.tile()) else { continue };
             let from = (tile.y * SIZE + tile.x) as usize;
             let start = if scene.is_reachable.get(from).copied().unwrap_or(false) { from } else { scene.reachable[0] };
             let to = scene.far_from(rnd, start);

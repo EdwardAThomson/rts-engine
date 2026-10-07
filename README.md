@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 51 checks, about 1 s after the first build
+cargo test                                                    # 62 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
@@ -66,12 +66,20 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   was paid; a finished building waits at the yard until placed, and only a ready building can be placed; a
   finished unit leaves by the exit tile or waits until one frees up; prerequisites, the primary factory and replay
   from the command log all hold.
+- Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
+  heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
+  nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
+  closes to within range and stands; a moving unit ignores enemies; a rocket turret needs power and a gun turret
+  doesn't; a destroyed building frees its tiles; guards prefer armed units to buildings; a pack can tune weapons
+  and the damage table; combat replays from the command log.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 ## Not verified / not built yet
 
 - Units pass through each other; there's no collision or tile reservation yet.
-- No combat or AI; no storage cap, tech levels, factory upgrades or starport.
+- Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
+  a stand-in until vision exists, and the weapon numbers are first guesses.
+- No AI; no storage cap, tech levels, factory upgrades or starport.
 - No renderer, UI or audio yet, on desktop or web.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

@@ -1,9 +1,10 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn) and `sight` in tiles.",
   "entities": {
     "construction_yard": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "numbers": {
         "max_health": { "default": 1200, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
@@ -16,6 +17,7 @@
     "power_plant": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": [],
       "numbers": {
@@ -30,6 +32,7 @@
     "refinery": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
       "roles": ["refinery"],
@@ -45,6 +48,7 @@
     "silo": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant", "refinery"],
       "numbers": {
@@ -59,6 +63,7 @@
     "radar": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
       "numbers": {
@@ -73,6 +78,7 @@
     "barracks": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
       "numbers": {
@@ -87,6 +93,7 @@
     "barracks_heavy": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["barracks"],
       "numbers": {
@@ -101,6 +108,7 @@
     "light_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["refinery"],
       "numbers": {
@@ -115,6 +123,7 @@
     "heavy_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["light_factory"],
       "numbers": {
@@ -129,6 +138,7 @@
     "air_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
       "numbers": {
@@ -143,6 +153,7 @@
     "repair_pad": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
       "numbers": {
@@ -157,6 +168,7 @@
     "starport": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
       "numbers": {
@@ -171,6 +183,7 @@
     "research_lab": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["radar"],
       "numbers": {
@@ -185,6 +198,7 @@
     "palace": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["research_lab"],
       "numbers": {
@@ -199,6 +213,7 @@
     "wall": {
       "kind": "building",
       "status": "built",
+      "armour": "wall",
       "built_at": "construction_yard",
       "requires": [],
       "roles": ["wall"],
@@ -214,6 +229,8 @@
     "gun_turret": {
       "kind": "building",
       "status": "built",
+      "weapon": "turret_gun",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["radar"],
       "numbers": {
@@ -222,12 +239,15 @@
         "height": { "default": 1, "min": 1, "max": 4 },
         "power": { "default": -5, "min": -500, "max": 500 },
         "cost": { "default": 150, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 300, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 }
       }
     },
     "rocket_turret": {
       "kind": "building",
       "status": "built",
+      "weapon": "turret_rocket",
+      "armour": "building",
       "built_at": "construction_yard",
       "requires": ["radar"],
       "numbers": {
@@ -236,7 +256,8 @@
         "height": { "default": 1, "min": 1, "max": 4 },
         "power": { "default": -20, "min": -500, "max": 500 },
         "cost": { "default": 250, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 }
       }
     },
 
@@ -250,6 +271,8 @@
     "harvester": {
       "kind": "unit",
       "status": "built",
+      "death": "blast_vehicle",
+      "armour": "heavy",
       "built_at": "heavy_factory",
       "requires": [],
       "roles": ["harvester"],
@@ -267,13 +290,18 @@
     "battle_tank": {
       "kind": "unit",
       "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "cannon",
+      "armour": "heavy",
       "built_at": "heavy_factory",
       "requires": [],
       "numbers": {
         "speed": { "default": 22, "min": 1, "max": 128 },
         "max_health": { "default": 300, "min": 1, "max": 100000 },
         "cost": { "default": 600, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 8, "min": 1, "max": 128 },
+        "sight": { "default": 5, "min": 1, "max": 16 }
       }
     },
     "siege_tank": { "kind": "unit", "status": "planned" },
