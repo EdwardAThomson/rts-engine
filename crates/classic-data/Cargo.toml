@@ -1,0 +1,10 @@
+[package]
+name = "classic-data"
+version = "0.1.0"
+description = "The Classic engine's data: a small JSON reader, the rules data with allowed ranges, and setting packs."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rts-core = { workspace = true }

@@ -71,8 +71,8 @@ Two rules keep this honest:
 | Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, harvesting, movement, regrowth |
 | Game API | `crates/classic-sim/src/game.rs` | `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. Tests, the tools, the AI and the front ends all drive the game through it | Built |
 | Web build | `crates/classic-wasm` | The same simulation compiled to WebAssembly, with a plain function interface for JavaScript. `web/check.mjs` proves it gives the native build's hashes | Built: step, orders, hash |
-| Rules data | `data/rules/` | Every entity's generic id, footprint, prerequisites and default numbers, with an allowed range for each tunable number | Planned; numbers sit in `units.rs` for now |
-| Setting loader | `crates/` (new crate) | Reads a pack, checks it against the rules, merges names, tuning and asset paths | Planned |
+| Rules data | `data/rules/` | Every generic id the engine knows (`entities.json`) and the mechanics a pack can switch (`modules.json`), with each built entity's default numbers and the allowed range for each. Footprints and prerequisites come with placement and production | Built: ids, kinds, numbers and ranges |
+| Setting loader | `crates/classic-data` | A small JSON reader (whole numbers only), the rules table, and the pack loader: reads a pack, checks it against the rules, merges names and tuning (asset paths later). The tools find a pack with `--setting` | Built: names, factions, features, tuning, file-type check |
 | Computer opponent | `crates/` (new crate) | Issues the same commands a player would; never reads hidden state | Planned |
 | Renderer | `crates/` (new crate) | Sprite batcher reading a per-tick view of the state; never changes it. wgpu, which runs natively and on WebGPU, is the leading choice, so desktop and web share it | Planned |
 | Audio | `crates/` (new crate) | Plays sounds for sim events; never changes the state | Planned |
@@ -148,7 +148,7 @@ says `hazard`; a pack says what the hazard is.
 
 | Pack | Where | Used for |
 |---|---|---|
-| `generic` | `settings/generic/` in this repo (planned) | Plain names and placeholder art, so this repo runs and its tests pass on its own |
+| `generic` | `settings/generic/` in this repo | Plain names (placeholder art later), so this repo runs and its tests pass on its own. Two factions, on purpose |
 | The private pack | A separate private repository, cloned into `settings-private/` (git-ignored) | Ed's own build; built and run locally only, never deployed |
 | Future shareable packs | New folders | Other settings and stories, with no engine changes |
 
@@ -156,14 +156,15 @@ says `hazard`; a pack says what the hazard is.
 
 | Check | Proves |
 |---|---|
-| Two packs that differ only in names, art and audio give the same state hash for the same seed and commands | Story and look never change the game |
+| Two packs that differ only in names, art and audio give the same state hash for the same seed and commands (names: built, in `tests/packs.rs`) | Story and look never change the game |
 | A pack with tuning gives a different rules hash, and its replays refuse to run under another pack | Replays stay honest |
 | Every pack passes a schema check: known ids only, numbers in range, every used id has a name, icon and sprite | No missing or invented content |
-| A protected-names check over every tracked file, and a check that the public build contains nothing from `settings-private/` | The private pack never leaks into this repo |
+| A protected-names check over every file and file name (`crates/classic-tools/tests/protected_names.rs`, built), and a check that the public build contains nothing from `settings-private/` (planned) | The private pack never leaks into this repo |
 
 ## Order of work
 
-1. Move unit numbers from `crates/classic-sim/src/units.rs` into `data/rules/`, with ranges.
-2. The setting loader and the `generic` pack, with the checks above.
+1. ~~Move unit numbers from `crates/classic-sim/src/units.rs` into `data/rules/`, with ranges.~~ Done.
+2. ~~The setting loader and the `generic` pack, with the checks above.~~ Done, except the icon and sprite checks,
+   which come with the renderer.
 3. Core rules: base building and power, production, combat (tests first, as in `CLAUDE.md`).
 4. Renderer and UI for the desktop and web builds, then the computer opponent, then the hazard, fog and campaign.

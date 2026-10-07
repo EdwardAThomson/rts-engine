@@ -2,12 +2,13 @@
 
 An engine for classic, 1990s-style real-time strategy games, in Rust. The simulation runs headless, deterministic
 and testable; it builds natively for desktop and to WebAssembly for the browser, and both builds play exactly
-the same games. Every world it plays (names, factions, art, audio, campaign, UI theme) will come from a data-only
-**setting pack**.
+the same games. Every world it plays (names, factions, art, audio, campaign, UI theme) comes from a data-only
+**setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 20 checks, about 1 s after the first build
+cargo test                                                    # 26 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
+cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 ```
@@ -19,12 +20,15 @@ cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node we
 | `rts-core` (separate repository) | Shared with the 3D engine: `isqrt`, the seeded xorshift generator, the canonical state hash, the command queue and log. Pinned by commit in `Cargo.toml`. |
 | `crates/classic-sim/src/map.rs` | ASCII maps: open ground, rock, cliffs, resource fields, start positions. 256 sub-tile units per tile. |
 | `crates/classic-sim/src/path.rs` | A* on the grid, 8-way, integer costs and a fixed tie-break; connected regions refuse unreachable goals at once. |
-| `crates/classic-sim/src/units.rs` | Unit stats. Our own placeholder numbers, to be tuned later by AI-vs-AI runs. |
+| `data/rules/` | Every generic id the engine knows, the switchable modules, and each built entity's numbers with their allowed ranges. Our own placeholder numbers, to be tuned later by AI-vs-AI runs. |
+| `crates/classic-data` | A small JSON reader (whole numbers only), the rules table and tuning, and the setting pack loader with its checks. |
+| `crates/classic-sim/src/units.rs` | Unit kinds and the typed rules the tick reads, built from the rules data. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. |
+| `settings/generic/` | The public setting pack: plain names for every id, two factions. Generic placeholder art will live here too. |
 
 How the engine works, and how setting packs keep the code generic, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
@@ -33,7 +37,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 - The Rust port plays the same games as the TypeScript engine it replaced: identical state hashes at eight
   points in four seeds' games, for scripted orders (including the old replay hash `e0342eba`), and every 150 ticks
-  of two 500-unit bench games; identical paths, node counts and path checksums.
+  of two 500-unit bench games; identical paths, node counts and path checksums. The hashes were re-recorded once
+  when the tank's id became `battle_tank` (the replay hash is now `1bcfbaae`); nothing else changed.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
   different game; replaying seed, map and command log reproduces the live game.

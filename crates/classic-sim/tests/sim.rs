@@ -8,13 +8,13 @@ use classic_sim::{CommandOrder, Game, GameOptions, Terrain, Tile, UnitType, pars
 const MAP: &str = include_str!("../../../maps/test-01.txt");
 
 fn game(seed: i32) -> Game {
-    Game::new(GameOptions { map: MAP, seed, players: None }).expect("test map is valid")
+    Game::new(GameOptions { map: MAP, seed, players: None, rules: None }).expect("test map is valid")
 }
 
 /// A fixed script of player orders, so runs exercise commands as well as the automatic harvesters.
 pub fn scripted(game: &mut Game, ticks: u32) {
     let tanks: Vec<(u32, u32)> =
-        game.state.entities.iter().filter(|e| e.kind == UnitType::Tank).map(|e| (e.id, e.owner)).collect();
+        game.state.entities.iter().filter(|e| e.kind == UnitType::BattleTank).map(|e| (e.id, e.owner)).collect();
     let mut t = 0;
     while t < ticks {
         for (k, &(id, owner)) in tanks.iter().enumerate() {
@@ -145,7 +145,7 @@ fn pathfinding_refuses_a_goal_in_a_sealed_off_region_without_searching() {
 #[test]
 fn move_order_a_tank_reaches_the_tile_it_was_sent_to() {
     let mut g = game(1);
-    let tank = g.state.entities.iter().find(|e| e.kind == UnitType::Tank && e.owner == 0).unwrap().id;
+    let tank = g.state.entities.iter().find(|e| e.kind == UnitType::BattleTank && e.owner == 0).unwrap().id;
     g.order(0, &[tank], CommandOrder::Move { x: 20, y: 9 });
     g.step(600);
     let s = g.snapshot().entities.into_iter().find(|e| e.id == tank).unwrap();
@@ -170,6 +170,6 @@ fn orders_for_other_players_units_and_buildings_are_ignored() {
 #[test]
 fn maps_report_unknown_tiles_and_missing_starts() {
     assert!(parse_map("..Q..").unwrap_err().contains("unknown tile 'Q'"));
-    let err = Game::new(GameOptions { map: "1....", seed: 1, players: Some(2) }).err().unwrap();
+    let err = Game::new(GameOptions { map: "1....", seed: 1, players: Some(2), rules: None }).err().unwrap();
     assert!(err.contains("no start position 2"), "{err}");
 }

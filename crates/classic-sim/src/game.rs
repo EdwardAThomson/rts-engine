@@ -7,7 +7,7 @@ use rts_core::rng::seed_state;
 
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
-use crate::units::UnitType;
+use crate::units::{Rules, UnitType};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
 pub struct GameOptions<'a> {
@@ -16,11 +16,14 @@ pub struct GameOptions<'a> {
     pub seed: i32,
     /// Defaults to every start position on the map.
     pub players: Option<usize>,
+    /// The rules in play, usually a setting pack's tuned ones. Defaults to the engine's own rules data.
+    pub rules: Option<&'a Rules>,
 }
 
 pub struct Game {
     pub map: MapData,
     pub pathfinder: Pathfinder,
+    pub rules: Rules,
     pub state: GameState,
     pub events: Vec<Event>,
     queue: CommandQueue<Command>,
@@ -53,6 +56,7 @@ pub struct Snapshot {
 impl Game {
     pub fn new(opts: GameOptions) -> Result<Game, String> {
         let map = parse_map(opts.map)?;
+        let rules = opts.rules.cloned().unwrap_or_default();
         let count = opts.players.unwrap_or(map.start.len());
         let mut state = GameState {
             tick: 0,
@@ -62,25 +66,25 @@ impl Game {
             players: Vec::new(),
             entities: Vec::new(),
         };
-        // Each player starts with a refinery on its start tile, a harvester at the dock and a tank beside it.
+        // Each player starts with a refinery on its start tile, a harvester at the dock and a battle tank beside it.
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
             state.players.push(Player { id: p as u32, credits: 0, delivered: 0 });
-            let refinery = world::spawn(&mut state, UnitType::Refinery, p as u32, s.x, s.y);
+            let refinery = world::spawn(&mut state, &rules, UnitType::Refinery, p as u32, s.x, s.y);
             let dock = world::dock_of(state.entities.last().expect("just spawned"));
-            world::spawn(&mut state, UnitType::Harvester, p as u32, dock.x, dock.y);
+            world::spawn(&mut state, &rules, UnitType::Harvester, p as u32, dock.x, dock.y);
             state.entities.last_mut().expect("just spawned").home_id = Some(refinery);
-            world::spawn(&mut state, UnitType::Tank, p as u32, s.x + 1, s.y + 1);
+            world::spawn(&mut state, &rules, UnitType::BattleTank, p as u32, s.x + 1, s.y + 1);
         }
         let pathfinder = Pathfinder::new(&map);
-        Ok(Game { map, pathfinder, state, events: Vec::new(), queue: CommandQueue::default() })
+        Ok(Game { map, pathfinder, rules, state, events: Vec::new(), queue: CommandQueue::default() })
     }
 
     /// Advance `n` ticks.
     pub fn step(&mut self, n: u32) {
         for _ in 0..n {
             let cmds = self.queue.take(self.state.tick);
-            world::step(&self.map, &mut self.pathfinder, &mut self.state, &cmds, &mut self.events);
+            world::step(&self.map, &mut self.pathfinder, &mut self.state, &self.rules, &cmds, &mut self.events);
         }
     }
 
@@ -91,7 +95,7 @@ impl Game {
 
     /// Place a unit or building directly, for tests and tools.
     pub fn spawn(&mut self, kind: UnitType, owner: u32, x: i32, y: i32) -> u32 {
-        world::spawn(&mut self.state, kind, owner, x, y)
+        world::spawn(&mut self.state, &self.rules, kind, owner, x, y)
     }
 
     /// One whole tick as plain data, for agents and tools to read.
