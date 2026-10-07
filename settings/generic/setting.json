@@ -1,0 +1,18 @@
+{
+  "id": "generic",
+  "title": "Generic (engine test pack)",
+  "factions": [
+    {
+      "id": "faction_a",
+      "name": "Faction A",
+      "ramp": "blue"
+    },
+    {
+      "id": "faction_b",
+      "name": "Faction B",
+      "ramp": "red"
+    }
+  ],
+  "features": {},
+  "entities": "all"
+}

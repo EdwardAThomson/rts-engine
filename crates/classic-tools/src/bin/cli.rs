@@ -1,11 +1,14 @@
 //! Headless run from the command line:
-//!   cargo run --release --bin cli -- [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
-//! Prints one JSON line every --every ticks and the event counts at the end. No window, no graphics.
+//!   cargo run --release --bin cli -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
+//! Prints the setting pack in use, one JSON line every --every ticks and the event counts at the end. No window, no
+//! graphics. `--setting` (or the SETTING environment variable) takes a pack folder, a name under `settings/`, or
+//! `private` for the git-ignored `settings-private/`; the default is `generic`.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
-use classic_sim::{Game, GameOptions, UnitType};
+use classic_sim::{Game, GameOptions, Rules, UnitType};
+use classic_tools::setting;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -16,8 +19,27 @@ fn main() {
     let ticks = num("ticks", 9000);
     let every = num("every", 1500).max(1);
 
+    let setting_name = arg("setting").or_else(|| std::env::var("SETTING").ok()).unwrap_or_else(|| "generic".into());
+    let pack = setting::load(&setting_name).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1)
+    });
+    for w in &pack.warnings {
+        eprintln!("warning: {w}");
+    }
+    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
+    let names: Vec<String> =
+        UnitType::ALL.iter().map(|k| format!("\"{}\":{}", k.id(), json_string(pack.name(k.id())))).collect();
+    println!(
+        "{{\"setting\":{},\"title\":{},\"rules\":\"{}\",\"names\":{{{}}}}}",
+        json_string(&pack.id),
+        json_string(&pack.title),
+        rules.hash,
+        names.join(",")
+    );
+
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
-    let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: None }).expect("valid map");
+    let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
     let t0 = Instant::now();
     let mut t = 0;
     while t < ticks {
@@ -58,4 +80,19 @@ fn main() {
         events.join(","),
         t0.elapsed().as_millis()
     );
+}
+
+/// A string as a JSON literal, for the names a pack supplies.
+fn json_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }

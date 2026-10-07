@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 classic-sim = { path = "../classic-sim" }
+classic-data = { path = "../classic-data" }
