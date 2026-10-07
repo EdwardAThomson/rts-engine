@@ -18,6 +18,10 @@ cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node we
 The toolchain is pinned in `rust-toolchain.toml`. The workspace has no third-party dependencies; add one only
 when it clearly pays for itself.
 
+The shared core lives in the public `rts-core` repository and is pinned by commit (`Cargo.toml`,
+`[workspace.dependencies]`). Changes to it go there, not here; moving the pin forward must keep the golden tests
+passing.
+
 ## Rules
 
 - **Clean room.** Never copy code from other remakes of the 1992 original, from OpenRA or from the released C&C
@@ -28,7 +32,7 @@ when it clearly pays for itself.
 - **No protected names.** Code, data, identifiers, comments and file names use generic ids only (`power_plant`,
   `harvester`, `hazard`, `resource`, `faction_a`). Setting-specific names live only in setting packs; the private
   pack lives in its own private repository, cloned into the git-ignored `settings-private/`.
-- **Determinism.** `crates/engine-core` and `crates/classic-sim` use integer maths (`engine_core::imath`), the one
+- **Determinism.** `crates/classic-sim` and the shared `rts-core` use integer maths (`rts_core::imath`), the one
   seeded generator held in the game state, and entities in id order. Never floating point, the clock, outside
   randomness, threads inside a tick, or iteration over `HashMap`/`HashSet`. Each crate's `clippy.toml` bans the
   types; keep it that way. A change that alters any state hash must say so and update the golden tests on purpose.

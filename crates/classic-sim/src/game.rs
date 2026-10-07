@@ -1,9 +1,9 @@
 //! The game API that tests, tools, the computer opponent and front ends drive: `step`, `order`, `spawn`,
 //! `snapshot`, `hash` and the command log. A native build and the WebAssembly build expose the same thing.
 
-use engine_core::hash::hash_of;
-use engine_core::replay::{CommandQueue, Logged};
-use engine_core::rng::seed_state;
+use rts_core::hash::hash_of;
+use rts_core::replay::{CommandQueue, Logged};
+use rts_core::rng::seed_state;
 
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;

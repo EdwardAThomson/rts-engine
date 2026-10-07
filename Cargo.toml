@@ -7,6 +7,11 @@ edition = "2024"
 license = "MIT"
 publish = false
 
+# The genre-neutral core shared with the 3D engine, pinned by commit: moving to a newer one is a deliberate change
+# that must keep the golden tests passing.
+[workspace.dependencies]
+rts-core = { git = "https://github.com/EdwardAThomson/rts-core", rev = "da80e8730d22dcd6f34194787e168b565982af4c" }
+
 # Tests replay thousands of ticks; a little optimisation keeps them quick without slowing builds much.
 [profile.test]
 opt-level = 1

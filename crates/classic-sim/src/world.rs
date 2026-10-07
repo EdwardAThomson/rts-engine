@@ -3,9 +3,9 @@
 
 use std::collections::VecDeque;
 
-use engine_core::hash::{Canon, CanonHasher};
-use engine_core::imath::isqrt;
-use engine_core::rng::random_int;
+use rts_core::hash::{Canon, CanonHasher};
+use rts_core::imath::isqrt;
+use rts_core::rng::random_int;
 
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;

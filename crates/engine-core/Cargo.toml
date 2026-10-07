@@ -1,7 +1,0 @@
-[package]
-name = "engine-core"
-version = "0.1.0"
-description = "Genre-neutral parts of the engine: integer maths, the seeded generator, the state hash and the command log."
-edition.workspace = true
-license.workspace = true
-publish.workspace = true
