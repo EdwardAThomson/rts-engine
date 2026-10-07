@@ -148,7 +148,7 @@ says `hazard`; a pack says what the hazard is.
 
 | Pack | Where | Used for |
 |---|---|---|
-| `generic` | `settings/generic/` in this repo | Plain names (placeholder art later), so this repo runs and its tests pass on its own. Two factions, on purpose |
+| `generic` | `settings/generic/` in this repo | Plain names and placeholder art drawn from code, so this repo runs and its tests pass on its own. Two factions, on purpose |
 | The private pack | A separate private repository, cloned into `settings-private/` (git-ignored) | Ed's own build; built and run locally only, never deployed |
 | Future shareable packs | New folders | Other settings and stories, with no engine changes |
 
