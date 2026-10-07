@@ -6,12 +6,13 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 93 checks, about 1 s after the first build
+cargo test                                                    # 114 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
-cargo run --release --bin play                                # play on the desktop: build from the rail, drag to select, right-click to order
+cargo run --release --bin play                                # play on the desktop: build from the rail, drag to select, right-click to order, M mutes
+cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
 ```
@@ -32,7 +33,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font). |
+| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. The tests' map. |
@@ -96,6 +97,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   lights exactly its own pixels. The minimap keeps the map's shape, maps its corners and centre to the map's,
   shows the player's base in their colour, and its clicks move the view or ask for an order without ordering
   anything itself.
+- Sound (no sound card; the mixer renders into a buffer): every game event plays a sound or is listed as silent on
+  purpose; every sound id has a generic file; a tank battle plays cannon, impact and explosion sounds and ends
+  with the same state hash as the same game unheard; 40 tanks fighting never exceed the 24-voice and
+  three-cannons caps; a fight off screen is panned towards its side and one far away is silent; only the local
+  player hears their own deliveries; the generic sounds match their recipes byte for byte and each has a
+  provenance line.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
@@ -122,9 +129,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` often play to a
   stalemate behind their turrets. It is not yet wired into the desktop player.
 - No storage cap, tech levels, factory upgrades or starport.
-- The renderer is desktop only so far, with no selection card, messages, menus or audio; the rail has no tabs by
+- The renderer is desktop only so far, with no selection card, messages or menus; the rail has no tabs by
   category, hotkeys, pause per item or primary factory choice yet; cliffs are
   plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
+- Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
+  volume sliders yet, and no sound in the browser. The placeholder sounds were checked by tests and numbers
+  (length, peak, never clipping), not yet by ear, and the player has not been run with a real sound card.
 - The web viewer (`web/viewer/`) is the debug view: plain shapes on a 2D canvas, checked in headless Chromium.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

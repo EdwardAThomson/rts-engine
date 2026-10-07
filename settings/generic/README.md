@@ -23,3 +23,18 @@ Faction colour: pixels in the four `remap` colours in `art.json` (magenta shades
 the four shades of the owning faction's ramp. The generator refuses any drawing that blends over a key colour.
 
 Not drawn yet: blends between terrain kinds, wrecks, building animations, cursors and fonts.
+
+## Audio
+
+Everything under `audio/` is synthesised from code in `crates/classic-tools/src/sound.rs` (plain tones, noise and
+sweeps; nothing sampled from anywhere) and written by `cargo run --bin sounds`. Don't edit the WAVs by hand:
+change the recipe and rerun it. A test fails when the files and the recipes disagree.
+
+- `audio/sounds.json` lists the files for each sound id; an id with several takes picks one at random each time.
+- `audio/sfx/` holds weapons, impacts, explosions and the building thud; `audio/ui/` holds interface sounds.
+- `audio/provenance.jsonl` records each file's source.
+
+Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack
+supplies its own files the same way, in its own `audio/sounds.json`; ids it leaves out play these.
+
+Not made yet: music, unit replies, advisor lines and looping sounds.

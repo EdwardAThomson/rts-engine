@@ -18,8 +18,9 @@ python3 -m http.server 8000                  # then http://localhost:8000/web/vi
 ```
 
 The toolchain is pinned in `rust-toolchain.toml`. The simulation, data and tools crates have no third-party
-dependencies; only the renderer (`classic-render`) has them: wgpu, winit, pollster and png. Add one only when it
-clearly pays for itself.
+dependencies; only the renderer (`classic-render`) has them: wgpu, winit, pollster, png and cpal (sound; on Linux
+it builds against ALSA's headers, `libasound2-dev`, or build without the `device` feature for a silent player). Add
+one only when it clearly pays for itself.
 
 The shared core lives in the public `rts-core` repository and is pinned by commit (`Cargo.toml`,
 `[workspace.dependencies]`). Changes to it go there, not here; moving the pin forward must keep the golden tests

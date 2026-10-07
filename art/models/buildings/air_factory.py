@@ -38,7 +38,8 @@ def build(root):
     r = hw / 2
     rise = 0.62                 # the vault's height as a share of its half-width
     st.block((hw, hl, WALL_H), (hx, hy, WALL_H / 2 + 0.3), mat=conc, parent=root, bevel=0.1, name="hangar")
-    st.cylinder(r, hl, (hx, hy, WALL_H + 0.3), rot=(math.pi / 2, 0, 0), scale=(1, rise, 1), mat=armour,
+    # The vault stops 2 cm inside the hangar's end walls: flush faces in one plane render dark.
+    st.cylinder(r, hl - 0.04, (hx, hy, WALL_H + 0.3), rot=(math.pi / 2, 0, 0), scale=(1, rise, 1), mat=armour,
                 parent=root, verts=48, name="vault")
     for k in range(6):
         y = hy - hl / 2 + 0.6 + k * (hl - 1.2) / 5

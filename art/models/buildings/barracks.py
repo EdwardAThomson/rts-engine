@@ -33,7 +33,9 @@ def _block(root, spec, conc, armour, paint, steel, glass, name, windows_south):
         off = side * span / 4
         loc = (x, y + off, BLOCK_H + 0.9) if along_x else (x + off, y, BLOCK_H + 0.9)
         rot = (-side * math.radians(14), 0, 0) if along_x else (0, side * math.radians(14), 0)
-        size = (run + 0.6, span / 2 + 0.5, 0.35) if along_x else (span / 2 + 0.5, run + 0.6, 0.35)
+        # one half 4 cm shorter, so the two halves' gable ends don't share a plane (that renders dark)
+        r = run + (0.6 if side < 0 else 0.56)
+        size = (r, span / 2 + 0.5, 0.35) if along_x else (span / 2 + 0.5, r, 0.35)
         st.block(size, loc, rot=rot, mat=armour, parent=root, bevel=0.04, name=f"{name}_roof")
     if along_x:
         st.block((run + 0.7, 0.7, 0.45), (x, y - l / 2 - 0.15, BLOCK_H + 0.45), mat=paint, parent=root,
@@ -41,7 +43,7 @@ def _block(root, spec, conc, armour, paint, steel, glass, name, windows_south):
     else:
         st.block((w + 0.9, 0.7, 0.45), (x, y - l / 2 - 0.15, BLOCK_H + 0.45), mat=paint, parent=root,
                  name="roof_band")
-        st.block((0.7, l + 0.6, 0.45), (x - w / 2 - 0.15, y, BLOCK_H + 0.45), mat=paint, parent=root,
+        st.block((0.7, l + 0.6, 0.41), (x - w / 2 - 0.15, y, BLOCK_H + 0.45), mat=paint, parent=root,
                  name="roof_band")
     for k, wx in enumerate(windows_south):
         st.block((1.4, 0.12, 1.0), (wx, y - l / 2 - 0.04, 2.8), mat=glass, parent=root, name="window")
@@ -77,7 +79,7 @@ def build(root):
     bx, by = yx1 - 1.6, yy1 - 2.5
     for sy in (-1, 1):
         st.block((0.3, 0.3, 2.6), (bx, by + sy * 1.4, 1.6), mat=steel, parent=root, name="bar_post")
-    st.block((0.28, 3.1, 0.28), (bx, by, 2.8), mat=steel, parent=root, name="bar")
+    st.block((0.28, 3.06, 0.28), (bx, by, 2.8), mat=steel, parent=root, name="bar")
     for k in range(3):
         st.cylinder(0.55, 0.35, (yx1 - 1.4, yy0 + 1.3, 0.55 + 0.35 * k), mat=st.rubber(), parent=root, verts=16,
                     name="tyre")

@@ -1,0 +1,19 @@
+{
+  "about": "Placeholder sounds for the generic pack, synthesised from code by crates/classic-tools/src/sound.rs (run: cargo run --bin sounds). Paths are relative to the pack; each sound id lists its takes, and one is picked at random each time it plays. Which events play which sound id, and each id's bus, level and limits, are the engine's (data/audio/).",
+  "sounds": {
+    "sfx_cannon": { "files": ["audio/sfx/cannon_1.wav", "audio/sfx/cannon_2.wav"] },
+    "sfx_rocket": { "files": ["audio/sfx/rocket_1.wav", "audio/sfx/rocket_2.wav"] },
+    "sfx_impact": { "files": ["audio/sfx/impact_1.wav", "audio/sfx/impact_2.wav"] },
+    "sfx_explode_small": { "files": ["audio/sfx/explode_small_1.wav", "audio/sfx/explode_small_2.wav"] },
+    "sfx_explode_large": { "files": ["audio/sfx/explode_large_1.wav", "audio/sfx/explode_large_2.wav"] },
+    "sfx_build": { "files": ["audio/sfx/build_1.wav"] },
+    "ui_ready": { "files": ["audio/ui/ready_1.wav"] },
+    "ui_unit_ready": { "files": ["audio/ui/unit_ready_1.wav"] },
+    "ui_error": { "files": ["audio/ui/error_1.wav"] },
+    "ui_select": { "files": ["audio/ui/select_1.wav"] },
+    "ui_order": { "files": ["audio/ui/order_1.wav"] },
+    "ui_credits": { "files": ["audio/ui/credits_1.wav"] },
+    "ui_power_down": { "files": ["audio/ui/power_down_1.wav"] },
+    "ui_power_up": { "files": ["audio/ui/power_up_1.wav"] }
+  }
+}

@@ -38,7 +38,7 @@ def build(root):
     # Assembly bay: a recess in the hall's south face, with the shutter rolled up under the lintel.
     bx = hx + hw * 0.12
     st.block((7.0, 2.0, 4.2), (bx, hy - hl / 2 + 0.95, 2.4), mat=dark, parent=root, bevel=0.02, name="bay")
-    st.block((7.6, 0.6, 0.8), (bx, hy - hl / 2 - 0.2, 4.9), mat=steel, parent=root, name="shutter")
+    st.block((7.6, 0.56, 0.8), (bx, hy - hl / 2 - 0.2, 4.9), mat=steel, parent=root, name="shutter")
     for side in (-1, 1):
         st.block((0.6, 0.6, 4.4), (bx + side * 3.8, hy - hl / 2 - 0.2, 2.5), mat=paint, parent=root,
                  name="door_post")
