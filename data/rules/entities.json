@@ -27,8 +27,8 @@
       "roles": ["refinery"],
       "numbers": {
         "max_health": { "default": 900, "min": 1, "max": 100000 },
-        "width": { "default": 1, "min": 1, "max": 4 },
-        "height": { "default": 1, "min": 1, "max": 4 }
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
       }
     },
     "silo": {
@@ -133,6 +133,7 @@
     "wall": {
       "kind": "building",
       "status": "built",
+      "roles": ["wall"],
       "numbers": {
         "max_health": { "default": 200, "min": 1, "max": 100000 },
         "width": { "default": 1, "min": 1, "max": 4 },

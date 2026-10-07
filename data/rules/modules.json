@@ -7,8 +7,8 @@
     "placement": {
       "status": "built",
       "numbers": {
-        "max_gap": { "default": 1, "min": 0, "max": 4 },
-        "rock_only": { "default": 0, "min": 0, "max": 1 }
+        "max_gap": { "default": 0, "min": 0, "max": 4 },
+        "rock_only": { "default": 1, "min": 0, "max": 1 }
       }
     },
     "production": { "status": "planned" },

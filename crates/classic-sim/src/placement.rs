@@ -1,6 +1,8 @@
-//! Where a building may go. A footprint must sit inside the map on firm, empty ground (no cliff, no resource,
-//! rock only when the rules say so), touch no other building or unit, and lie within `max_gap` empty tiles of a
-//! building its owner already has. The numbers come from the `placement` module in the rules data.
+//! Where a building may go (rules-base-building-power.md, "Placement rules"). A footprint must sit inside the map
+//! on firm, empty ground (rock only, unless a pack tunes `rock_only` off), with no resource, building or unit on it,
+//! within `max_gap` empty tiles of a building its owner already has (walls don't extend the area; 0 means touching,
+//! diagonals included), and a refinery's dock must not be a cliff. The numbers come from the `placement` module in
+//! the rules data.
 
 use crate::map::{MapData, Terrain};
 use crate::units::{Kind, Rules};
@@ -28,6 +30,8 @@ pub enum PlaceError {
     },
     /// Too far from any building the player owns (or the player owns none).
     TooFar,
+    /// The building's exit (a refinery's dock) would be off the map or on a cliff.
+    BadExit,
 }
 
 impl PlaceError {
@@ -39,6 +43,7 @@ impl PlaceError {
             PlaceError::OnResource { .. } => "on_resource",
             PlaceError::Blocked { .. } => "blocked",
             PlaceError::TooFar => "too_far",
+            PlaceError::BadExit => "bad_exit",
         }
     }
 }
@@ -104,7 +109,16 @@ pub fn check(
     let near = state
         .entities
         .iter()
-        .filter(|e| e.owner == player && rules.kind(e.kind).building)
+        .filter(|e| e.owner == player && rules.kind(e.kind).building && !rules.kind(e.kind).wall)
         .any(|e| footprint(e).gap(new) <= rules.placement.max_gap);
-    if near { Ok(()) } else { Err(PlaceError::TooFar) }
+    if !near {
+        return Err(PlaceError::TooFar);
+    }
+    if k.refinery {
+        let dock = crate::world::dock_at(k, x, y);
+        if !map.passable(dock.x, dock.y) {
+            return Err(PlaceError::BadExit);
+        }
+    }
+    Ok(())
 }

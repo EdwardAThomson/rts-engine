@@ -2,10 +2,14 @@
 //! before the port). Matching them shows the port plays exactly the same games: same paths, same node counts,
 //! same state hashes, tick for tick.
 //!
-//! Two rule changes since then re-recorded values on purpose, each checked to change nothing else:
+//! Three rule changes since then re-recorded values on purpose, each checked to change nothing else:
 //! - the tank's generic id became `battle_tank` (the hash spells each entity's id): state hashes only;
 //! - buildings block ground movement, so units and harvesters path round each refinery: state hashes and the
-//!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged.
+//!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged;
+//! - the tick runs in phases (commands, movement, economy, world) and the refinery is 3x2 with its dock under the
+//!   middle column (rules-movement.md, rules-base-building-power.md): state hashes, the nodes expanded during ticks,
+//!   and one bench scene's credits (seed 1 ends on 2,000, not 2,200, as harvesters drive to the new dock). Standalone
+//!   paths, path checksums and the scripted tank's position are unchanged.
 
 use classic_sim::path::Pathfinder;
 use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
@@ -20,10 +24,10 @@ fn game(seed: i32) -> Game {
 #[test]
 fn idle_games_match_the_recorded_hashes() {
     let golden: [(i32, [&str; 8]); 4] = [
-        (1, ["33528fb8", "358d0787", "14bf8c8b", "1147d7aa", "131452e6", "69501ac6", "1b23771b", "d8d1c3e7"]),
-        (2, ["9cd24813", "562179a0", "beee7dec", "cf9560c9", "ad2c3bc1", "0654cce3", "c05845ce", "dd23649f"]),
-        (3, ["cfc27d36", "a5bb9189", "f49552dd", "a7a371a4", "9ad335d4", "1a754a6a", "f7a4979a", "92268245"]),
-        (4, ["f0bb2ffa", "afcfd349", "8aba83dd", "030fc4e6", "dddf4ff6", "8bf9f7e0", "e76ccdf6", "bbeee783"]),
+        (1, ["6ce9136e", "bee3fbd2", "da99395d", "2a69950d", "9fda22a4", "5bea6f41", "f49130dd", "6abb57a9"]),
+        (2, ["10355211", "0d528a9d", "95a2bb1e", "60cc84d2", "d1c11e87", "966e7c5e", "a32e78ea", "e2f925c0"]),
+        (3, ["2b8bfa68", "71887760", "a5523e33", "ba65d287", "8cdeb046", "f51a9f97", "67b0e57c", "cad3e1aa"]),
+        (4, ["a7b315a8", "45f8b1f6", "1fc4e0a7", "696bd307", "316251cc", "4fcb54c1", "e0bc55cc", "d72b1066"]),
     ];
     let ticks = [0u32, 1, 449, 450, 451, 900, 3000, 10000];
     for (seed, hashes) in golden {
@@ -62,15 +66,15 @@ fn scripted(game: &mut Game, ticks: u32) {
 fn scripted_games_and_the_old_replay_hash_match() {
     let mut a = game(7);
     scripted(&mut a, 10_000);
-    assert_eq!(a.hash(), "c5875534");
+    assert_eq!(a.hash(), "be542f1e");
     let mut b = game(3);
     scripted(&mut b, 6_000);
-    assert_eq!(b.hash(), "06d3ddde", "the replay hash every earlier change was checked against");
+    assert_eq!(b.hash(), "e294aed5", "the replay hash every earlier change was checked against");
     assert_eq!(b.command_log().len(), 24);
     let mut m = game(1);
     m.order(0, &[3], CommandOrder::Move { x: 20, y: 9 });
     m.step(600);
-    assert_eq!(m.hash(), "c127daf0");
+    assert_eq!(m.hash(), "f2acad0d");
     let tank = m.state.entity(3).unwrap();
     assert_eq!((tank.x, tank.y), (5248, 2432));
 }
@@ -153,9 +157,9 @@ fn bench_scene_seed_1_matches() {
         path_check: 0x3b120bc1,
         path_nulls: 23,
         path_nodes: 167_392,
-        tick_nodes: 1_054_992,
-        hashes: ["c375efb9", "d02980b2", "ad73ee8a", "589276de", "8abaf645", "66ced2c3"],
-        credits: [200, 2200],
+        tick_nodes: 1_060_606,
+        hashes: ["5a7414ab", "e227424c", "f5fde499", "5321f042", "55ffc9a0", "74463f42"],
+        credits: [200, 2000],
     });
 }
 
@@ -168,8 +172,8 @@ fn bench_scene_seed_2_matches() {
         path_check: 0x388dc4f4,
         path_nulls: 22,
         path_nodes: 584_041,
-        tick_nodes: 3_969_304,
-        hashes: ["9e8fb429", "726096a2", "f8fd7a7b", "b3d09bd9", "d575b8d9", "b37ac865"],
+        tick_nodes: 3_962_960,
+        hashes: ["72cdfb6a", "60cfdfb6", "9c2e4c49", "f69cd5dc", "12688311", "f9145f53"],
         credits: [200, 1000],
     });
 }

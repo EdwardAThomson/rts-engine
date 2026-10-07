@@ -45,7 +45,7 @@ const ENTITIES: &str = include_str!("../../../data/rules/entities.json");
 const MODULES: &str = include_str!("../../../data/rules/modules.json");
 const KINDS: [&str; 5] = ["building", "unit", "power", "feature", "terrain"];
 /// Roles the simulation has code for. A new role is an engine change first.
-pub const ROLES: [&str; 2] = ["harvester", "refinery"];
+pub const ROLES: [&str; 3] = ["harvester", "refinery", "wall"];
 
 /// A generic id: lowercase ASCII letters, digits and underscores.
 pub fn is_generic_id(id: &str) -> bool {
@@ -255,7 +255,7 @@ mod tests {
         assert!(!r.entities["hazard"].built);
         assert_eq!(r.entities["refinery"].roles, ["refinery"]);
         assert!(r.modules["harvesting"].built);
-        assert_eq!(r.module_number("placement", "max_gap"), Some(1));
+        assert_eq!(r.module_number("placement", "max_gap"), Some(0));
     }
 
     #[test]
@@ -269,10 +269,10 @@ mod tests {
         let errors = r.apply_tuning(&bad);
         assert_eq!(errors.len(), 5, "{errors:?}");
         assert_eq!(r.hash(), before, "a rejected tuning changes nothing");
-        let good = json::parse(r#"{"harvester":{"capacity":250},"modules":{"placement":{"rock_only":1}}}"#).unwrap();
+        let good = json::parse(r#"{"harvester":{"capacity":250},"modules":{"placement":{"rock_only":0}}}"#).unwrap();
         assert!(r.apply_tuning(&good).is_empty());
         assert_eq!(r.number("harvester", "capacity"), Some(250));
-        assert_eq!(r.module_number("placement", "rock_only"), Some(1));
+        assert_eq!(r.module_number("placement", "rock_only"), Some(0));
         assert_ne!(r.hash(), before);
     }
 }

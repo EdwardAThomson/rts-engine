@@ -36,6 +36,8 @@ pub struct KindRules {
     pub harvester: Option<HarvesterStats>,
     /// Kinds with the `refinery` role take harvesters' cargo at their dock.
     pub refinery: bool,
+    /// Kinds with the `wall` role block movement but don't extend their owner's building area.
+    pub wall: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,7 +48,8 @@ pub struct Regrowth {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Placement {
-    /// The most empty tiles allowed between a new building and the nearest building its owner already has.
+    /// The most empty tiles allowed between a new building and the nearest building its owner already has (walls
+    /// don't count). 0 means touching, diagonals included.
     pub max_gap: i32,
     /// Buildings may only stand on rock, not open ground.
     pub rock_only: bool,
@@ -92,6 +95,7 @@ impl Rules {
                 height,
                 harvester,
                 refinery: role("refinery"),
+                wall: role("wall"),
             });
         }
         if kinds.len() > u16::MAX as usize {

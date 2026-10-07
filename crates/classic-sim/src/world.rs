@@ -196,8 +196,8 @@ pub enum Event {
     HarvesterIdle { tick: u32, unit: u32, reason: IdleReason },
     Delivered { tick: u32, unit: u32, player: u32, credits: i64 },
     Regrowth { tick: u32, x: i32, y: i32, amount: i64 },
-    Placed { tick: u32, building: u32, player: u32, x: i32, y: i32 },
-    PlaceRefused { tick: u32, player: u32, reason: PlaceError },
+    BuildingPlaced { tick: u32, entity: u32, kind: Kind, owner: u32, x: i32, y: i32 },
+    PlacementRejected { tick: u32, player: u32, kind: Kind, x: i32, y: i32, reason: PlaceError },
 }
 
 impl Event {
@@ -206,8 +206,8 @@ impl Event {
             Event::HarvesterIdle { .. } => "harvester_idle",
             Event::Delivered { .. } => "delivered",
             Event::Regrowth { .. } => "regrowth",
-            Event::Placed { .. } => "placed",
-            Event::PlaceRefused { .. } => "place_refused",
+            Event::BuildingPlaced { .. } => "building_placed",
+            Event::PlacementRejected { .. } => "placement_rejected",
         }
     }
 
@@ -216,8 +216,8 @@ impl Event {
             Event::HarvesterIdle { tick, .. }
             | Event::Delivered { tick, .. }
             | Event::Regrowth { tick, .. }
-            | Event::Placed { tick, .. }
-            | Event::PlaceRefused { tick, .. } => tick,
+            | Event::BuildingPlaced { tick, .. }
+            | Event::PlacementRejected { tick, .. } => tick,
         }
     }
 }
@@ -246,10 +246,15 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
     id
 }
 
-/// The tile a harvester parks on to unload: just below the refinery's bottom-left tile.
+/// The tile a harvester parks on to unload: just below the middle column of the refinery's footprint.
 pub fn dock_of(rules: &Rules, refinery: &Entity) -> Tile {
     let t = refinery.tile();
-    Tile { x: t.x, y: t.y + rules.kind(refinery.kind).height }
+    dock_at(rules.kind(refinery.kind), t.x, t.y)
+}
+
+/// The dock of a refinery kind whose top-left tile is at (x, y).
+pub fn dock_at(k: &crate::units::KindRules, x: i32, y: i32) -> Tile {
+    Tile { x: x + k.width / 2, y: y + k.height }
 }
 
 /// Mark a building's footprint as blocked (or clear again) for ground movement. Units block nothing.
@@ -287,12 +292,12 @@ pub fn apply_command(
         let tick = state.tick;
         match placement::check(map, state, rules, cmd.player, kind, x, y) {
             Ok(()) => {
-                let building = spawn(state, rules, kind, cmd.player, x, y);
+                let entity = spawn(state, rules, kind, cmd.player, x, y);
                 occupy(pf, rules, state.entities.last().expect("just spawned"), true);
                 reroute_around_new_building(pf, state);
-                events.push(Event::Placed { tick, building, player: cmd.player, x, y });
+                events.push(Event::BuildingPlaced { tick, entity, kind, owner: cmd.player, x, y });
             }
-            Err(reason) => events.push(Event::PlaceRefused { tick, player: cmd.player, reason }),
+            Err(reason) => events.push(Event::PlacementRejected { tick, player: cmd.player, kind, x, y, reason }),
         }
         return;
     }
@@ -326,28 +331,49 @@ pub fn step(
     commands: &[Command],
     events: &mut Vec<Event>,
 ) {
+    // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
+    // commands, combat (not built yet), movement, crush (not built yet), economy, world.
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
-    for i in 0..state.entities.len() {
-        let e = &state.entities[i];
-        if rules.kind(e.kind).harvester.is_some() && e.order == Order::Harvest {
-            harvest(map, pf, state, rules, i, events);
-        } else {
-            let speed = rules.kind(e.kind).speed;
-            move_along_path(&mut state.entities[i], speed);
-        }
-        let e = &mut state.entities[i];
-        if e.order == Order::Move && e.path.is_empty() {
-            e.order = Order::Idle;
-        }
-    }
+    movement(state, rules);
+    economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
     state.tick += 1;
 }
 
-/// Move toward the next path tile's centre. Returns true when the path is finished.
-fn move_along_path(e: &mut Entity, speed: i64) -> bool {
+/// Every ground unit with a path moves along it. A harvester on its loop moves only while travelling.
+fn movement(state: &mut GameState, rules: &Rules) {
+    for e in &mut state.entities {
+        let k = rules.kind(e.kind);
+        if k.building {
+            continue;
+        }
+        let travelling = !matches!(
+            (e.order, e.task),
+            (Order::Harvest, Some(Task::Seek | Task::Mining | Task::Unloading | Task::Stuck))
+        );
+        if travelling {
+            move_along_path(e, k.speed);
+        }
+        if e.order == Order::Move && e.path.is_empty() {
+            e.order = Order::Idle;
+        }
+    }
+}
+
+/// Harvesters on their loop: find a field, mine, return, unload.
+fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+    for i in 0..state.entities.len() {
+        let e = &state.entities[i];
+        if rules.kind(e.kind).harvester.is_some() && e.order == Order::Harvest {
+            harvest(map, pf, state, rules, i, events);
+        }
+    }
+}
+
+/// Move toward the next path tile's centre, carrying leftover budget past centres.
+fn move_along_path(e: &mut Entity, speed: i64) {
     let mut budget = speed;
     while budget > 0 {
         let Some(&next) = e.path.front() else { break };
@@ -365,7 +391,6 @@ fn move_along_path(e: &mut Entity, speed: i64) -> bool {
             budget = 0;
         }
     }
-    e.path.is_empty()
 }
 
 fn harvest(
@@ -378,7 +403,7 @@ fn harvest(
 ) {
     let tick = state.tick;
     let kind = rules.kind(state.entities[i].kind);
-    let (Some(h), speed) = (&kind.harvester, kind.speed) else { return };
+    let Some(h) = &kind.harvester else { return };
     let here = state.entities[i].tile();
     let Some(task) = state.entities[i].task else { return };
     match task {
@@ -395,7 +420,7 @@ fn harvest(
         }
         Task::ToField => {
             let e = &mut state.entities[i];
-            if move_along_path(e, speed) {
+            if e.path.is_empty() {
                 e.task = Some(Task::Mining);
             }
         }
@@ -423,7 +448,7 @@ fn harvest(
         }
         Task::ToRefinery => {
             let e = &mut state.entities[i];
-            if move_along_path(e, speed) {
+            if e.path.is_empty() {
                 e.task = Some(Task::Unloading);
             }
         }
