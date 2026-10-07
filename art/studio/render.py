@@ -413,6 +413,7 @@ def main():
             "jobs": [], "images": 0, "model": str(path), "external": external(path)}
     if kind == "building":
         meta["footprint"] = list(mod.FOOTPRINT)
+        meta["decal"] = bool(getattr(mod, "DECAL", False))
     seen = {}
     frame_size = None
     t0 = time.time()
@@ -420,6 +421,12 @@ def main():
         ctx = build_scene(mod, kind, eid, args.style, args.samples, args.threads, v)
         if frame_size is None:
             b = ctx["intact_bounds"]
+            if getattr(mod, "JOINS", False):
+                # The first variant is the lone post (joins 0); size the canvas for arms reaching every tile edge.
+                T = st.STUDIO["metres_per_tile"]
+                fw, fh = mod.FOOTPRINT[0] * T, mod.FOOTPRINT[1] * T
+                b = dict(b, min=[min(b["min"][0], 0), min(b["min"][1], -fh)],
+                         max=[max(b["max"][0], fw), max(b["max"][1], 0)])
             area = canvas(kind, b, kind == "building")
             size, origin = st.camera(ctx["scene"], *area)
             frame_size = area
