@@ -18,8 +18,9 @@ jobs:
             ~/.cargo/registry
             target
           key: cargo-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-      # The renderer's tests draw offscreen on Mesa's software GPU; the player's smoke run needs a virtual display.
-      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libxkbcommon-x11-0 xvfb
+      # The renderer's tests draw offscreen on Mesa's software GPU; the player's smoke run needs a virtual display;
+      # the sound device (cpal) builds against ALSA's headers.
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libxkbcommon-x11-0 xvfb libasound2-dev
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --target wasm32-unknown-unknown -p classic-wasm -- -D warnings

@@ -8,7 +8,8 @@ publish.workspace = true
 
 # The renderer is the one part of the engine with third-party dependencies (Ed chose wgpu, 2026-10-07): wgpu draws
 # on every desktop GPU API and on the web, winit opens the window, pollster waits for wgpu's async set-up, and png
-# reads the setting pack's art. The simulation crates still have none.
+# reads the setting pack's art; cpal plays sound on every desktop OS's audio API (and on the web, later). The
+# simulation crates still have none.
 [dependencies]
 classic-sim = { path = "../classic-sim" }
 classic-data = { path = "../classic-data" }
@@ -17,3 +18,10 @@ wgpu = "30"
 pollster = "1"
 png = "0.18"
 winit = "0.30"
+cpal = { version = "0.18", optional = true }
+
+# `device` opens the sound card (cpal). Without it the player is silent, and on Linux nothing needs ALSA's headers
+# (`libasound2-dev`) to build: `cargo build --no-default-features -p classic-render`.
+[features]
+default = ["device"]
+device = ["dep:cpal"]

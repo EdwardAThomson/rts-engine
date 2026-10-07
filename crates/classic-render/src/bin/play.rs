@@ -2,17 +2,18 @@
 //!   cargo run --release --bin play -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--player 0]
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
-//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. Space pauses and
-//! Escape quits. The window title shows the tick, your credits and your power. There is no sidebar or computer
+//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. Space pauses, M
+//! mutes the sound (or start with `--mute`) and Escape quits. The window title shows the tick, your credits and your power. There is no sidebar or computer
 //! opponent yet. `--frames N` quits after N frames, for smoke tests.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use classic_render::art::{self, Art};
-use classic_render::platform::{Gpu, Rect, SpriteBatch};
-use classic_render::{Camera, Scene};
+use classic_render::platform::{Gpu, Mixer, Rect, SpriteBatch};
+use classic_render::sound::Cue;
+use classic_render::{Camera, Listener, Scene, SoundBoard};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use classic_tools::setting;
@@ -60,9 +61,27 @@ struct App {
     drag: Option<(f32, f32)>,
     frames: u64,
     max_frames: Option<u64>,
+    sound: SoundBoard,
+    /// Shared with the sound card's thread, which pulls the mix from it.
+    mixer: Arc<Mutex<Mixer>>,
+    #[cfg(feature = "device")]
+    _speaker: Option<classic_render::platform::Speaker>,
 }
 
 impl App {
+    fn hear(&self, cues: Vec<Cue>) {
+        if let Ok(mut m) = self.mixer.lock() {
+            for c in cues {
+                m.play(c.sound);
+            }
+        }
+    }
+
+    fn ui_sound(&mut self, id: &str) {
+        let cue = self.sound.ui(id);
+        self.hear(cue.into_iter().collect());
+    }
+
     fn world_px(&self) -> f32 {
         self.run.as_ref().map_or(32.0, |r| r.art.tile) / TILE as f32
     }
@@ -99,6 +118,9 @@ impl App {
         };
         if (from.0 - to.0).abs() < 4.0 && (from.1 - to.1).abs() < 4.0 {
             self.scene.selected = self.pick(to.0, to.1).filter(|&id| mine(id)).into_iter().collect();
+            if !self.scene.selected.is_empty() {
+                self.ui_sound("ui_select");
+            }
             return;
         }
         let (a, b) = (self.cam.to_world(from.0, from.1), self.cam.to_world(to.0, to.1));
@@ -117,6 +139,9 @@ impl App {
             })
             .map(|e| e.id)
             .collect();
+        if !self.scene.selected.is_empty() {
+            self.ui_sound("ui_select");
+        }
     }
 
     fn command(&mut self, sx: f32, sy: f32) {
@@ -134,6 +159,7 @@ impl App {
             }
         };
         self.game.order(self.player, &ids, order);
+        self.ui_sound("ui_order");
     }
 
     /// Advance the game by the ticks owed since the last frame, at most a few at once so a stall doesn't snowball.
@@ -145,11 +171,15 @@ impl App {
             return 1.0;
         }
         self.owed = (self.owed + dt).min(TICK * 5);
+        let screen = self.run.as_ref().map_or((1280.0, 800.0), |r| (r.config.width as f32, r.config.height as f32));
+        let listener = Listener::from_camera(&self.cam, screen, self.world_px());
         while self.owed >= TICK {
             self.owed -= TICK;
             self.scene.before_step(&self.game);
             self.game.step(1);
             self.scene.after_step(&self.game);
+            let cues = self.sound.after_step(&self.game, &listener);
+            self.hear(cues);
         }
         // Events have been turned into effects; don't let them pile up.
         if self.game.events.len() > 10_000 {
@@ -281,6 +311,12 @@ impl ApplicationHandler for App {
                     match code {
                         KeyCode::Escape => event_loop.exit(),
                         KeyCode::Space if !event.repeat => self.paused = !self.paused,
+                        KeyCode::KeyM if !event.repeat => {
+                            if let Ok(mut m) = self.mixer.lock() {
+                                m.muted = !m.muted;
+                                m.stop_all();
+                            }
+                        }
                         _ => {}
                     }
                 } else {
@@ -341,11 +377,32 @@ fn main() {
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
     let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
     let game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
+    let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let mut mixer = Mixer::new(48_000);
+    mixer.muted = std::env::args().any(|a| a == "--mute");
+    let generic = setting::root().join("settings/generic");
+    let sound = SoundBoard::load(&pack.dir, &generic, player, seed as u64, &mut mixer);
+    for w in &sound.warnings {
+        eprintln!("sound: {w}");
+    }
+    let mixer = Arc::new(Mutex::new(mixer));
+    // No sound card (a server, a CI runner) just means a silent game.
+    #[cfg(feature = "device")]
+    let speaker = match classic_render::platform::Speaker::open(mixer.clone()) {
+        Ok(s) => {
+            println!("sound on {}", s.describe);
+            Some(s)
+        }
+        Err(e) => {
+            eprintln!("playing without sound: {e}");
+            None
+        }
+    };
     let mut app = App {
         game,
         scene: Scene::default(),
         pack,
-        player: arg("player").and_then(|s| s.parse().ok()).unwrap_or(0),
+        player,
         cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
         run: None,
         last: Instant::now(),
@@ -356,6 +413,10 @@ fn main() {
         drag: None,
         frames: 0,
         max_frames: arg("frames").and_then(|s| s.parse().ok()),
+        sound,
+        mixer,
+        #[cfg(feature = "device")]
+        _speaker: speaker,
     };
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
