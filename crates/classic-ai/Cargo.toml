@@ -1,0 +1,11 @@
+[package]
+name = "classic-ai"
+version = "0.1.0"
+description = "The Classic engine's computer opponent: a player without a mouse that issues the same commands a player does."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+classic-sim = { path = "../classic-sim" }
+rts-core = { workspace = true }
