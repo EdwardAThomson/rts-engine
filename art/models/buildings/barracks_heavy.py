@@ -66,7 +66,7 @@ def build(root):
         st.block((0.3, 1.6, 0.35), (bx + bw / 2 + 0.05, by + bl / 2 - 2.0 - k * 2.6, 3.4), mat=dark, parent=root,
                  name="slit")
     # Sloped armour skirts against the south and east walls, either side of the door.
-    for x0, x1 in ((bx - bw / 2, DOOR_X - DOOR_W / 2 - 0.6), (DOOR_X + DOOR_W / 2 + 0.6, bx + bw / 2)):
+    for x0, x1 in ((bx - bw / 2 + 0.02, DOOR_X - DOOR_W / 2 - 0.6), (DOOR_X + DOOR_W / 2 + 0.6, bx + bw / 2)):
         st.block((x1 - x0, 1.0, 2.2), ((x0 + x1) / 2, by - bl / 2 - 0.35, 1.2), rot=(math.radians(-25), 0, 0),
                  mat=armour, parent=root, bevel=0.06, name="skirt")
     st.block((1.0, bl, 2.2), (bx + bw / 2 + 0.35, by, 1.2), rot=(0, math.radians(25), 0), mat=armour,
