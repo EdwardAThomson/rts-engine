@@ -12,6 +12,7 @@ use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
+use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
 use crate::units::{Kind, Rules};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +84,8 @@ pub struct Entity {
     pub cargo: Option<i64>,
     /// The refinery this harvester delivers to.
     pub home_id: Option<u32>,
+    /// Producing buildings only: what it is building, the head first.
+    pub queue: Vec<QueueEntry>,
 }
 
 impl Entity {
@@ -97,6 +100,7 @@ struct EntityCanon<'a>(&'a Entity, &'a [String]);
 impl Canon for EntityCanon<'_> {
     fn canon(&self, w: &mut CanonHasher) {
         let e = self.0;
+        let queue: Vec<EntryCanon> = e.queue.iter().map(|q| EntryCanon(q, self.1)).collect();
         w.object()
             .opt("cargo", e.cargo.as_ref())
             .field("health", &e.health)
@@ -105,6 +109,8 @@ impl Canon for EntityCanon<'_> {
             .field("order", &e.order)
             .field("owner", &e.owner)
             .array("path", &e.path)
+            // Written only while something is queued, so a game with no production hashes as it did before.
+            .opt("queue", (!queue.is_empty()).then_some(&queue))
             .opt("task", e.task.as_ref())
             .field("type", self.1[e.kind.0 as usize].as_str())
             .field("x", &e.x)
@@ -169,12 +175,20 @@ pub enum CommandOrder {
         y: i32,
     },
     Harvest,
-    /// Place a building with its top-left tile here. Takes no units; for now it costs nothing and needs nothing
-    /// built first, until production adds both.
+    /// Place a ready building, with its top-left tile here. Takes no units.
     Place {
         kind: Kind,
         x: i32,
         y: i32,
+    },
+    /// Add an item to the end of a factory's queue: the building in `ids` if one is given, otherwise the player's
+    /// primary (first built) building that makes it.
+    Produce {
+        kind: Kind,
+    },
+    /// Remove the last queued entry of this kind from the same factory and refund what was paid for it.
+    Cancel {
+        kind: Kind,
     },
 }
 
@@ -227,6 +241,42 @@ pub enum Event {
         y: i32,
         reason: PlaceError,
     },
+    ProductionQueued {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+    },
+    ProductionRejected {
+        tick: u32,
+        player: u32,
+        kind: Kind,
+        reason: ProduceError,
+    },
+    /// The head entry stopped for want of credits; it resumes by itself.
+    ProductionPaused {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+    },
+    ProductionCancelled {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+        refund: i64,
+    },
+    /// A building finished at a yard and waits to be placed.
+    BuildingReady {
+        tick: u32,
+        player: u32,
+        factory: u32,
+        kind: Kind,
+    },
+    UnitBuilt {
+        tick: u32,
+        factory: u32,
+        entity: u32,
+        kind: Kind,
+    },
     /// A player's power supply, demand or shortfall differs from the previous tick's.
     PowerChanged {
         tick: u32,
@@ -246,6 +296,12 @@ impl Event {
             Event::BuildingPlaced { .. } => "building_placed",
             Event::PlacementRejected { .. } => "placement_rejected",
             Event::PowerChanged { .. } => "power_changed",
+            Event::ProductionQueued { .. } => "production_queued",
+            Event::ProductionRejected { .. } => "production_rejected",
+            Event::ProductionPaused { .. } => "production_paused",
+            Event::ProductionCancelled { .. } => "production_cancelled",
+            Event::BuildingReady { .. } => "building_ready",
+            Event::UnitBuilt { .. } => "unit_built",
         }
     }
 
@@ -256,7 +312,13 @@ impl Event {
             | Event::Regrowth { tick, .. }
             | Event::BuildingPlaced { tick, .. }
             | Event::PlacementRejected { tick, .. }
-            | Event::PowerChanged { tick, .. } => tick,
+            | Event::PowerChanged { tick, .. }
+            | Event::ProductionQueued { tick, .. }
+            | Event::ProductionRejected { tick, .. }
+            | Event::ProductionPaused { tick, .. }
+            | Event::ProductionCancelled { tick, .. }
+            | Event::BuildingReady { tick, .. }
+            | Event::UnitBuilt { tick, .. } => tick,
         }
     }
 }
@@ -281,6 +343,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         task: harvester.then_some(Task::Seek),
         cargo: harvester.then_some(0),
         home_id: None,
+        queue: Vec::new(),
     });
     id
 }
@@ -327,10 +390,17 @@ pub fn apply_command(
     cmd: &Command,
     events: &mut Vec<Event>,
 ) {
+    match cmd.order {
+        CommandOrder::Produce { kind } => return production::produce(state, rules, cmd.player, &cmd.ids, kind, events),
+        CommandOrder::Cancel { kind } => return production::cancel(state, rules, cmd.player, &cmd.ids, kind, events),
+        _ => {}
+    }
     if let CommandOrder::Place { kind, x, y } = cmd.order {
         let tick = state.tick;
-        match placement::check(map, state, rules, cmd.player, kind, x, y) {
+        let ready = if production::has_ready(state, cmd.player, kind) { Ok(()) } else { Err(PlaceError::NotReady) };
+        match ready.and_then(|()| placement::check(map, state, rules, cmd.player, kind, x, y)) {
             Ok(()) => {
+                production::take_ready(state, cmd.player, kind);
                 let entity = spawn(state, rules, kind, cmd.player, x, y);
                 occupy(pf, rules, state.entities.last().expect("just spawned"), true);
                 reroute_around_new_building(pf, state);
@@ -356,7 +426,10 @@ pub fn apply_command(
                 e.task = Some(Task::Seek);
                 e.path.clear();
             }
-            CommandOrder::Harvest | CommandOrder::Place { .. } => {}
+            CommandOrder::Harvest
+            | CommandOrder::Place { .. }
+            | CommandOrder::Produce { .. }
+            | CommandOrder::Cancel { .. } => {}
         }
     }
 }
@@ -413,7 +486,7 @@ fn movement(state: &mut GameState, rules: &Rules) {
     }
 }
 
-/// Harvesters on their loop: find a field, mine, return, unload.
+/// Harvesters on their loop (find a field, mine, return, unload), then every production queue.
 fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     for i in 0..state.entities.len() {
         let e = &state.entities[i];
@@ -421,6 +494,7 @@ fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Ru
             harvest(map, pf, state, rules, i, events);
         }
     }
+    production::tick(map, pf, state, rules, events);
 }
 
 /// Move toward the next path tile's centre, carrying leftover budget past centres.

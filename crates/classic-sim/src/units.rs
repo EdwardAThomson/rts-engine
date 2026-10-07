@@ -38,6 +38,14 @@ pub struct KindRules {
     pub refinery: bool,
     /// Kinds with the `wall` role block movement but don't extend their owner's building area.
     pub wall: bool,
+    /// Credits, paid while it builds.
+    pub cost: i64,
+    /// Ticks to build at full power.
+    pub build_ticks: i64,
+    /// The building kind that produces it; `None` for kinds no player can build.
+    pub built_at: Option<Kind>,
+    /// Building kinds its owner must have before it can be built.
+    pub requires: Vec<Kind>,
     /// Added to the owner's power supply when positive, drawn from it when negative; zero for units.
     pub power: i64,
 }
@@ -58,6 +66,16 @@ pub struct Placement {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductionRules {
+    /// The most entries one building's queue holds, the one in progress included.
+    pub queue_size: usize,
+    /// Each player's credits at the start of a skirmish.
+    pub starting_credits: i64,
+    /// A test switch: every entry finishes, paid in full, on the tick it reaches the head of its queue.
+    pub instant_build: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
     pub min_factor: i64,
@@ -70,6 +88,7 @@ pub struct Rules {
     pub regrowth: Regrowth,
     pub placement: Placement,
     pub power: PowerRules,
+    pub production: ProductionRules,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -106,10 +125,27 @@ impl Rules {
                 refinery: role("refinery"),
                 wall: role("wall"),
                 power: if building { num("power")? } else { 0 },
+                cost: t.number(id, "cost").unwrap_or(0),
+                build_ticks: t.number(id, "build_ticks").unwrap_or(0),
+                built_at: None,
+                requires: Vec::new(),
             });
         }
         if kinds.len() > u16::MAX as usize {
             return Err("too many kinds".into());
+        }
+        // What builds each kind and what it requires, as kinds. The rules table has checked they are built buildings.
+        let index = |id: &str| kinds.binary_search_by(|k| k.id.as_str().cmp(id)).ok().map(|i| Kind(i as u16));
+        let links: Vec<(Option<Kind>, Vec<Kind>)> = kinds
+            .iter()
+            .map(|k| {
+                let e = &t.entities[&k.id];
+                (e.built_at.as_deref().and_then(index), e.requires.iter().filter_map(|r| index(r)).collect())
+            })
+            .collect();
+        for (k, (built_at, requires)) in kinds.iter_mut().zip(links) {
+            k.built_at = built_at;
+            k.requires = requires;
         }
         let num = |id: &str, name: &str| t.number(id, name).ok_or(format!("rules data has no {id}.{name}"));
         let module = |id: &str, name: &str| t.module_number(id, name).ok_or(format!("rules data has no {id}.{name}"));
@@ -128,6 +164,11 @@ impl Rules {
                 rock_only: module("placement", "rock_only")? != 0,
             },
             power: PowerRules { min_factor: module("power", "min_factor")? },
+            production: ProductionRules {
+                queue_size: module("production", "queue_size")? as usize,
+                instant_build: module("production", "instant_build")? != 0,
+                starting_credits: module("production", "starting_credits")?,
+            },
             hash: t.hash(),
         })
     }
