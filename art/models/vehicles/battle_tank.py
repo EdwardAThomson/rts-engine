@@ -12,9 +12,18 @@ HULL_Z = 0.55            # hull belly height
 DECK_Z = 1.55            # top of hull deck
 TURRET_Z = DECK_Z
 TURRET_HEIGHT = 0
+# The glacis: a 0.3 m plate tilted down at the front, centred GLACIS_Y forward. Its rear top edge meets the deck,
+# so no lip stands proud of it with a hollow underneath (seen from low angles in a 3D export).
+GLACIS_Y, GLACIS_TILT = 2.3, math.radians(24)
+GLACIS_Z = DECK_Z - 0.75 * math.sin(GLACIS_TILT) - 0.15 * math.cos(GLACIS_TILT)
 # Small parts the classic style leaves out, for the simpler, bolder shapes of early 90s sprites.
 DETAIL = {"link", "spare_link", "cable", "antenna", "rack_bar", "rack_rail", "sight", "sight_glass", "vision",
           "driver_hatch", "hatch", "deck_plate", "sprocket", "exhaust", "stowage"}
+
+
+def glacis_top(y):
+    """Height of the glacis's upper face at `y`, for parts that sit on it."""
+    return GLACIS_Z + (GLACIS_Y - y) * math.tan(GLACIS_TILT) + 0.15 / math.cos(GLACIS_TILT)
 
 
 def build_hull(root):
@@ -50,13 +59,15 @@ def build_hull(root):
     body_w = W - 2 * TRACK_W + 0.5
     st.block((body_w, L - 1.6, DECK_Z - HULL_Z), (0, -0.3, (HULL_Z + DECK_Z) / 2), mat=paint, bevel=0.06,
              parent=root, name="body")
-    st.block((body_w, 1.5, 0.3), (0, 2.3, DECK_Z - 0.35), rot=(math.radians(-24), 0, 0), mat=paint, bevel=0.05,
-             parent=root, name="glacis")
+    # 4 cm narrower than the body: sides flush with the body's fight over the same plane and render black.
+    st.block((body_w - 0.04, 1.5, 0.3), (0, GLACIS_Y, GLACIS_Z), rot=(-GLACIS_TILT, 0, 0), mat=paint,
+             bevel=0.05, parent=root, name="glacis")
     st.block((body_w - 0.1, 1.4, 0.7), (0, 2.2, 0.95), mat=paint, bevel=0.06, parent=root, name="nose")
     # driver's hatch and vision block on the glacis
     st.cylinder(0.26, 0.12, (-0.55, 1.75, DECK_Z + 0.02), mat=paint, verts=16, bevel=0.02, parent=root,
                 name="driver_hatch")
-    st.block((0.4, 0.12, 0.12), (-0.55, 2.05, DECK_Z - 0.02), mat=dark, bevel=0.01, parent=root, name="vision")
+    st.block((0.4, 0.12, 0.12), (-0.55, 2.05, glacis_top(2.05) + 0.03), mat=dark, bevel=0.01, parent=root,
+             name="vision")
     # engine deck: grille slats, two exhausts and a stowage box
     for i in range(7):
         st.block((1.5, 0.1, 0.05), (0, -1.9 - 0.17 * i, DECK_Z + 0.03), mat=dark, bevel=0.01, parent=root,
@@ -68,8 +79,9 @@ def build_hull(root):
     st.block((0.9, 0.45, 0.35), (0.6, -1.25, DECK_Z + 0.17), mat=paint, bevel=0.04, parent=root, name="stowage")
     # spare track links on the front plate and a tow cable coil, for small-scale detail
     for i in range(4):
-        st.block((0.35, 0.09, 0.05), (0.5 + 0.0 * i, 2.45 - 0.13 * i, DECK_Z - 0.08 - 0.05 * i),
-                 rot=(math.radians(-24), 0, 0), mat=steel, bevel=0.01, parent=root, name="spare_link")
+        y = 2.45 - 0.13 * i
+        st.block((0.35, 0.09, 0.05), (0.5, y, glacis_top(y) + 0.025), rot=(-GLACIS_TILT, 0, 0), mat=steel,
+                 bevel=0.01, parent=root, name="spare_link")
     st.cylinder(0.25, 0.08, (-0.7, -1.3, DECK_Z + 0.04), mat=steel, verts=16, caps=False, parent=root,
                 name="cable")
 
