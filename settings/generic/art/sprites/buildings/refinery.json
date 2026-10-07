@@ -1,0 +1,1 @@
+{"id": "refinery", "atlas": "buildings-0", "facings": 1, "scale": 2, "parts": {"building": {"facings": 1, "anims": {"idle": {"frames": [[87, 0, 67, 80, 0, 13]]}}, "shadow": {"frames": [[0, 0, 87, 93, 0, 18]]}}}, "footprint": [1, 1]}
