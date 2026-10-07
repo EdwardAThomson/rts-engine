@@ -53,8 +53,8 @@ def build(root):
     st.block((3.6, 3.6, 3.4), (W / 2, -H / 2, 2.0), mat=st.armour(), parent=root, name="pump_house")
     st.block((3.8, 3.8, 0.4), (W / 2, -H / 2, 3.8), mat=paint, parent=root, name="pump_roof")
     st.block((1.2, 1.2, 3.8), (W / 2, -H / 2, 5.8), mat=steel, parent=root, name="catwalk_post")
-    for rot in (0, math.pi / 2):
-        st.block((W * 0.46, 1.0, 0.3), (W / 2, -H / 2, 0.8 + TANK_H + 0.9), rot=(0, 0, rot), mat=steel,
+    for rot, t in ((0, 0.3), (math.pi / 2, 0.26)):  # different thicknesses: crossing tops in one plane render dark
+        st.block((W * 0.46, 1.0, t), (W / 2, -H / 2, 0.8 + TANK_H + 0.9), rot=(0, 0, rot), mat=steel,
                  parent=root, name="catwalk")
     for side in (-1, 1):
         st.block((W * 0.46, 0.25, 0.6), (W / 2, -H / 2 + side * 0.5, 0.8 + TANK_H + 1.3), mat=dark,
