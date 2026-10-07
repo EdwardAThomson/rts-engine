@@ -49,7 +49,8 @@ def build_hull(root):
     body_w = W - 2 * TRACK_W + 0.5
     st.block((body_w, L - 1.7, DECK_Z - HULL_Z), (0, HULL_Y - 0.35, (HULL_Z + DECK_Z) / 2), mat=paint,
              bevel=0.06, parent=root, name="body")
-    st.wedge((body_w, 1.6, DECK_Z - HULL_Z), (0, HULL_Y + L / 2 - 1.15, (HULL_Z + DECK_Z) / 2), slope_front=0.65,
+    # 4 cm narrower than the body, so their sides don't share a plane (coincident faces render dark).
+    st.wedge((body_w - 0.04, 1.6, DECK_Z - HULL_Z), (0, HULL_Y + L / 2 - 1.15, (HULL_Z + DECK_Z) / 2), slope_front=0.65,
              mat=paint, parent=root, name="glacis")
     st.block((body_w, 0.5, 0.3), (0, HULL_Y + L / 2 - 0.25, HULL_Z + 0.15), mat=paint, bevel=0.05, parent=root,
              name="nose")
