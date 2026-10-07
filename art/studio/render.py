@@ -198,7 +198,15 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
     elif variant.startswith("build-"):
         b = ctx["intact_bounds"]
         frac = BUILD_STAGES[int(variant.split("-")[1])]
-        st.construction(root, frac, b["top"], (b["min"][0], b["min"][1], b["max"][0], b["max"][1]))
+        area = (b["min"][0], b["min"][1], b["max"][0], b["max"][1])
+        if kind == "building":
+            # Scaffold the footprint, not the intact bounds: a turret's barrel reaching past the tile must not
+            # stretch the scaffold over the next tile.
+            T = st.STUDIO["metres_per_tile"]
+            fw, fh = mod.FOOTPRINT[0] * T, mod.FOOTPRINT[1] * T
+            inset = st.STUDIO["footprint_inset_m"]
+            area = (max(area[0], inset), max(area[1], -fh + inset), min(area[2], fw - inset), min(area[3], -inset))
+        st.construction(root, frac, b["top"], area)
     st.apply_style(scene, root, style, detail)
     import bpy
     bpy.context.view_layer.update()
