@@ -5,7 +5,7 @@
 //! same order as the TypeScript bench it replaces, so the two give the same maps, orders and state hashes.
 
 use classic_sim::map::MapData;
-use classic_sim::{CommandOrder, Game, GameOptions, UnitType, parse_map};
+use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
 
 pub const SIZE: i32 = 128;
 
@@ -198,12 +198,13 @@ pub fn populate(scene: &Scene, rnd: &mut Rnd, seed: i32, n: usize) -> (Game, Vec
     let mut game =
         Game::new(GameOptions { map: &scene.text, seed, players: Some(2), rules: None }).expect("scene game");
     let mut owners: [Vec<u32>; 2] = [Vec::new(), Vec::new()];
+    let (harvester, tank) = (game.kind("harvester").expect("rules"), game.kind("battle_tank").expect("rules"));
     for i in 0..n {
         let owner = (i % 2) as u32;
         let t = scene.random_reachable(rnd);
-        let kind = if i % 10 == 9 { UnitType::Harvester } else { UnitType::BattleTank };
+        let kind = if i % 10 == 9 { harvester } else { tank };
         let id = game.spawn(kind, owner, t as i32 % SIZE, t as i32 / SIZE);
-        if kind == UnitType::BattleTank {
+        if kind == tank {
             owners[owner as usize].push(id);
         }
     }

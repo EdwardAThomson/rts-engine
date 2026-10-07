@@ -1,31 +1,162 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile.",
   "entities": {
-    "construction_yard": { "kind": "building", "status": "planned" },
-    "slab": { "kind": "building", "status": "planned" },
-    "slab_large": { "kind": "building", "status": "planned" },
-    "power_plant": { "kind": "building", "status": "planned" },
-    "refinery": {
+    "construction_yard": {
       "kind": "building",
       "status": "built",
       "numbers": {
-        "max_health": { "default": 900, "min": 1, "max": 100000 }
+        "max_health": { "default": 1200, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
       }
     },
-    "silo": { "kind": "building", "status": "planned" },
-    "radar": { "kind": "building", "status": "planned" },
-    "barracks": { "kind": "building", "status": "planned" },
-    "barracks_heavy": { "kind": "building", "status": "planned" },
-    "light_factory": { "kind": "building", "status": "planned" },
-    "heavy_factory": { "kind": "building", "status": "planned" },
-    "air_factory": { "kind": "building", "status": "planned" },
-    "repair_pad": { "kind": "building", "status": "planned" },
-    "starport": { "kind": "building", "status": "planned" },
-    "research_lab": { "kind": "building", "status": "planned" },
-    "palace": { "kind": "building", "status": "planned" },
-    "wall": { "kind": "building", "status": "planned" },
-    "gun_turret": { "kind": "building", "status": "planned" },
-    "rocket_turret": { "kind": "building", "status": "planned" },
+    "slab": { "kind": "building", "status": "planned" },
+    "slab_large": { "kind": "building", "status": "planned" },
+    "power_plant": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 500, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "refinery": {
+      "kind": "building",
+      "status": "built",
+      "roles": ["refinery"],
+      "numbers": {
+        "max_health": { "default": 900, "min": 1, "max": 100000 },
+        "width": { "default": 1, "min": 1, "max": 4 },
+        "height": { "default": 1, "min": 1, "max": 4 }
+      }
+    },
+    "silo": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 400, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "radar": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 600, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "barracks": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 500, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "barracks_heavy": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 600, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "light_factory": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 700, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "heavy_factory": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 900, "min": 1, "max": 100000 },
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "air_factory": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 900, "min": 1, "max": 100000 },
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "repair_pad": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 600, "min": 1, "max": 100000 },
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "starport": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 1000, "min": 1, "max": 100000 },
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 3, "min": 1, "max": 4 }
+      }
+    },
+    "research_lab": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 700, "min": 1, "max": 100000 },
+        "width": { "default": 2, "min": 1, "max": 4 },
+        "height": { "default": 2, "min": 1, "max": 4 }
+      }
+    },
+    "palace": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 1500, "min": 1, "max": 100000 },
+        "width": { "default": 3, "min": 1, "max": 4 },
+        "height": { "default": 3, "min": 1, "max": 4 }
+      }
+    },
+    "wall": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 200, "min": 1, "max": 100000 },
+        "width": { "default": 1, "min": 1, "max": 4 },
+        "height": { "default": 1, "min": 1, "max": 4 }
+      }
+    },
+    "gun_turret": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 600, "min": 1, "max": 100000 },
+        "width": { "default": 1, "min": 1, "max": 4 },
+        "height": { "default": 1, "min": 1, "max": 4 }
+      }
+    },
+    "rocket_turret": {
+      "kind": "building",
+      "status": "built",
+      "numbers": {
+        "max_health": { "default": 700, "min": 1, "max": 100000 },
+        "width": { "default": 1, "min": 1, "max": 4 },
+        "height": { "default": 1, "min": 1, "max": 4 }
+      }
+    },
 
     "infantry": { "kind": "unit", "status": "planned" },
     "infantry_squad": { "kind": "unit", "status": "planned" },
@@ -37,6 +168,7 @@
     "harvester": {
       "kind": "unit",
       "status": "built",
+      "roles": ["harvester"],
       "numbers": {
         "speed": { "default": 14, "min": 1, "max": 128 },
         "max_health": { "default": 450, "min": 1, "max": 100000 },
@@ -80,6 +212,7 @@
     },
     "resource_bloom": { "kind": "feature", "status": "planned" },
     "hazard": { "kind": "feature", "status": "planned" },
+
     "rock": { "kind": "terrain", "status": "built" },
     "open": { "kind": "terrain", "status": "built" }
   }

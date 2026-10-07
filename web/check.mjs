@@ -30,7 +30,7 @@ function check(name, got, want) {
 {
   const g = newGame(1);
   api.game_step(g, 9000);
-  check("seed 1, 9,000 ticks", hex(g), "ecdb8b5b");
+  check("seed 1, 9,000 ticks", hex(g), "2554309d");
   check("player 1 credits", Number(api.game_credits(g, 0)), 4800);
   api.game_free(g);
 }
@@ -42,7 +42,7 @@ function check(name, got, want) {
     tanks.forEach(([id, owner], k) => api.game_order_move(g, owner, id, (t / 50 + 7 * k) % 30, (t / 100 + 3 * k) % 18));
     api.game_step(g, 500);
   }
-  check("seed 3 scripted, 6,000 ticks", hex(g), "1bcfbaae");
+  check("seed 3 scripted, 6,000 ticks", hex(g), "06d3ddde");
   check("tick count", api.game_tick(g), 6000);
   api.game_free(g);
 }

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use classic_sim::{Game, GameOptions, Rules, UnitType};
+use classic_sim::{Game, GameOptions, Rules};
 use classic_tools::setting;
 
 fn main() {
@@ -29,7 +29,7 @@ fn main() {
     }
     let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
     let names: Vec<String> =
-        UnitType::ALL.iter().map(|k| format!("\"{}\":{}", k.id(), json_string(pack.name(k.id())))).collect();
+        rules.kinds.iter().map(|k| format!("\"{}\":{}", k.id, json_string(pack.name(&k.id)))).collect();
     println!(
         "{{\"setting\":{},\"title\":{},\"rules\":\"{}\",\"names\":{{{}}}}}",
         json_string(&pack.id),
@@ -50,7 +50,7 @@ fn main() {
         let harvesters: Vec<String> = s
             .entities
             .iter()
-            .filter(|e| e.kind == UnitType::Harvester)
+            .filter(|e| game.rules.kind(e.kind).harvester.is_some())
             .map(|e| format!("\"{}:{}:{}\"", e.id, e.task.map_or("undefined", |t| t.id()), e.cargo.unwrap_or(0)))
             .collect();
         println!(

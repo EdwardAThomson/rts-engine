@@ -2,12 +2,13 @@
 //! before the port). Matching them shows the port plays exactly the same games: same paths, same node counts,
 //! same state hashes, tick for tick.
 //!
-//! The state hashes were re-recorded once, on purpose, when the tank's generic id became `battle_tank` (the hash
-//! spells each entity's id). That rename changed nothing else: paths, node counts, credits and positions are still
-//! the TypeScript engine's, and the hashes matched it exactly with the old id.
+//! Two rule changes since then re-recorded values on purpose, each checked to change nothing else:
+//! - the tank's generic id became `battle_tank` (the hash spells each entity's id): state hashes only;
+//! - buildings block ground movement, so units and harvesters path round each refinery: state hashes and the
+//!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged.
 
 use classic_sim::path::Pathfinder;
-use classic_sim::{CommandOrder, Game, GameOptions, UnitType, parse_map};
+use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
 use classic_tools::scene::{Rnd, Scene, fnv_pair, populate, send_due};
 
 const MAP: &str = include_str!("../../../maps/test-01.txt");
@@ -19,10 +20,10 @@ fn game(seed: i32) -> Game {
 #[test]
 fn idle_games_match_the_recorded_hashes() {
     let golden: [(i32, [&str; 8]); 4] = [
-        (1, ["33528fb8", "a8fbc7c6", "0ec811be", "b8cc3f4b", "7a7d9742", "a2a5af54", "8e12f34a", "ac480570"]),
-        (2, ["9cd24813", "b4333959", "fec9c8f9", "f29a9518", "e32c020d", "893828f9", "7fb404fb", "43ecee0f"]),
-        (3, ["cfc27d36", "acfcd794", "99bad2f4", "46ec3f39", "9e30a958", "ba4322b4", "24a067bb", "91b17386"]),
-        (4, ["f0bb2ffa", "1860569a", "991104c2", "6b6ebcad", "defd01c2", "1ca44f06", "8f52e807", "e559ab54"]),
+        (1, ["33528fb8", "358d0787", "14bf8c8b", "1147d7aa", "131452e6", "69501ac6", "1b23771b", "d8d1c3e7"]),
+        (2, ["9cd24813", "562179a0", "beee7dec", "cf9560c9", "ad2c3bc1", "0654cce3", "c05845ce", "dd23649f"]),
+        (3, ["cfc27d36", "a5bb9189", "f49552dd", "a7a371a4", "9ad335d4", "1a754a6a", "f7a4979a", "92268245"]),
+        (4, ["f0bb2ffa", "afcfd349", "8aba83dd", "030fc4e6", "dddf4ff6", "8bf9f7e0", "e76ccdf6", "bbeee783"]),
     ];
     let ticks = [0u32, 1, 449, 450, 451, 900, 3000, 10000];
     for (seed, hashes) in golden {
@@ -35,8 +36,13 @@ fn idle_games_match_the_recorded_hashes() {
 }
 
 fn scripted(game: &mut Game, ticks: u32) {
-    let tanks: Vec<(u32, u32)> =
-        game.state.entities.iter().filter(|e| e.kind == UnitType::BattleTank).map(|e| (e.id, e.owner)).collect();
+    let tanks: Vec<(u32, u32)> = game
+        .state
+        .entities
+        .iter()
+        .filter(|e| game.rules.kind(e.kind).id == "battle_tank")
+        .map(|e| (e.id, e.owner))
+        .collect();
     let mut t = 0;
     while t < ticks {
         for (k, &(id, owner)) in tanks.iter().enumerate() {
@@ -56,15 +62,15 @@ fn scripted(game: &mut Game, ticks: u32) {
 fn scripted_games_and_the_old_replay_hash_match() {
     let mut a = game(7);
     scripted(&mut a, 10_000);
-    assert_eq!(a.hash(), "38b07f23");
+    assert_eq!(a.hash(), "c5875534");
     let mut b = game(3);
     scripted(&mut b, 6_000);
-    assert_eq!(b.hash(), "1bcfbaae", "the replay hash every earlier change was checked against");
+    assert_eq!(b.hash(), "06d3ddde", "the replay hash every earlier change was checked against");
     assert_eq!(b.command_log().len(), 24);
     let mut m = game(1);
     m.order(0, &[3], CommandOrder::Move { x: 20, y: 9 });
     m.step(600);
-    assert_eq!(m.hash(), "d62fd39c");
+    assert_eq!(m.hash(), "c127daf0");
     let tank = m.state.entity(3).unwrap();
     assert_eq!((tank.x, tank.y), (5248, 2432));
 }
@@ -147,8 +153,8 @@ fn bench_scene_seed_1_matches() {
         path_check: 0x3b120bc1,
         path_nulls: 23,
         path_nodes: 167_392,
-        tick_nodes: 1_051_074,
-        hashes: ["9783632d", "786b4b89", "585b6bd4", "8fdc15ba", "81aac016", "c65b1d1e"],
+        tick_nodes: 1_054_992,
+        hashes: ["c375efb9", "d02980b2", "ad73ee8a", "589276de", "8abaf645", "66ced2c3"],
         credits: [200, 2200],
     });
 }
@@ -162,8 +168,8 @@ fn bench_scene_seed_2_matches() {
         path_check: 0x388dc4f4,
         path_nulls: 22,
         path_nodes: 584_041,
-        tick_nodes: 3_967_322,
-        hashes: ["4f5e867a", "3f0caf55", "b537ea9a", "5f32fb1f", "33c230ad", "bdd59243"],
+        tick_nodes: 3_969_304,
+        hashes: ["9e8fb429", "726096a2", "f8fd7a7b", "b3d09bd9", "d575b8d9", "b37ac865"],
         credits: [200, 1000],
     });
 }

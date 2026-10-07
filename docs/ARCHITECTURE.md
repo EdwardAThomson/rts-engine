@@ -68,7 +68,7 @@ Two rules keep this honest:
 | Part | Folder | Does | Status |
 |---|---|---|---|
 | Shared core | `rts-core` repository, `rts-core` crate | Genre-neutral parts: integer maths, the seeded generator, the canonical state hash, the command queue and log. Knows nothing about tiles or units; the 3D engine builds on it too. Pinned by commit in `Cargo.toml` | Built |
-| Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, harvesting, movement, regrowth |
+| Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, harvesting, movement, regrowth, buildings with footprints and placement |
 | Game API | `crates/classic-sim/src/game.rs` | `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. Tests, the tools, the AI and the front ends all drive the game through it | Built |
 | Web build | `crates/classic-wasm` | The same simulation compiled to WebAssembly, with a plain function interface for JavaScript. `web/check.mjs` proves it gives the native build's hashes | Built: step, orders, hash |
 | Rules data | `data/rules/` | Every generic id the engine knows (`entities.json`) and the mechanics a pack can switch (`modules.json`), with each built entity's default numbers and the allowed range for each. Footprints and prerequisites come with placement and production | Built: ids, kinds, numbers and ranges |
