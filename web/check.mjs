@@ -30,19 +30,19 @@ function check(name, got, want) {
 {
   const g = newGame(1);
   api.game_step(g, 9000);
-  check("seed 1, 9,000 ticks", hex(g), "b2236971");
-  check("player 1 credits", Number(api.game_credits(g, 0)), 5400);
+  check("seed 1, 9,000 ticks", hex(g), "182e2ffd");
+  check("player 1 credits", Number(api.game_credits(g, 0)), 7400);
   api.game_free(g);
 }
 // The scripted orders from the tests (seed 3, 6,000 ticks): the replay hash every earlier change was checked by.
 {
   const g = newGame(3);
-  const tanks = [[3, 0], [6, 1]];
+  const tanks = [[5, 0], [10, 1]];
   for (let t = 0; t < 6000; t += 500) {
     tanks.forEach(([id, owner], k) => api.game_order_move(g, owner, id, (t / 50 + 7 * k) % 30, (t / 100 + 3 * k) % 18));
     api.game_step(g, 500);
   }
-  check("seed 3 scripted, 6,000 ticks", hex(g), "e294aed5");
+  check("seed 3 scripted, 6,000 ticks", hex(g), "3e9c48fc");
   check("tick count", api.game_tick(g), 6000);
   api.game_free(g);
 }
@@ -74,8 +74,9 @@ function check(name, got, want) {
   const count = api.game_entities(g, buf, 64 * fields);
   const e = new Int32Array(api.memory.buffer, buf, count * fields);
   check("entities", count, api.game_entity_count(g));
-  // Player 1's refinery is entity 1, its top-left tile on the start tile (3, 2), at that tile's centre.
-  check("refinery 1", [...e.subarray(0, 5)].join(","), `1,${kinds.indexOf("refinery")},0,${3 * 256 + 128},${2 * 256 + 128}`);
+  // Entity 1 is player 1's first building, its top-left tile on the start tile (3, 2), at that tile's centre.
+  check("entity 1", [...e.subarray(0, 5)].map((v, i) => (i === 1 ? kinds[v] && api.game_kind_building(g, v) : v)).join(","),
+    `1,1,0,${3 * 256 + 128},${2 * 256 + 128}`);
   check("reading changes nothing", hex(g), hashBefore);
   api.dealloc(buf, 4 * 64 * fields);
   api.game_free(g);

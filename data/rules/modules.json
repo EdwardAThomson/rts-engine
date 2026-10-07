@@ -3,7 +3,12 @@
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
-    "power": { "status": "planned" },
+    "power": {
+      "status": "built",
+      "numbers": {
+        "min_factor": { "default": 25, "min": 0, "max": 100 }
+      }
+    },
     "placement": {
       "status": "built",
       "numbers": {
@@ -11,8 +16,57 @@
         "rock_only": { "default": 1, "min": 0, "max": 1 }
       }
     },
-    "production": { "status": "planned" },
-    "combat": { "status": "planned" },
+    "production": {
+      "status": "built",
+      "numbers": {
+        "queue_size": { "default": 5, "min": 1, "max": 20 },
+        "starting_credits": { "default": 1200, "min": 0, "max": 100000 },
+        "instant_build": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "combat": {
+      "status": "built",
+      "numbers": {
+        "bullet_vs_infantry": { "default": 100, "min": 0, "max": 400 },
+        "bullet_vs_light": { "default": 60, "min": 0, "max": 400 },
+        "bullet_vs_heavy": { "default": 25, "min": 0, "max": 400 },
+        "bullet_vs_building": { "default": 20, "min": 0, "max": 400 },
+        "bullet_vs_wall": { "default": 10, "min": 0, "max": 400 },
+        "bullet_vs_air": { "default": 50, "min": 0, "max": 400 },
+        "shell_vs_infantry": { "default": 50, "min": 0, "max": 400 },
+        "shell_vs_light": { "default": 100, "min": 0, "max": 400 },
+        "shell_vs_heavy": { "default": 100, "min": 0, "max": 400 },
+        "shell_vs_building": { "default": 75, "min": 0, "max": 400 },
+        "shell_vs_wall": { "default": 60, "min": 0, "max": 400 },
+        "shell_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "rocket_vs_infantry": { "default": 40, "min": 0, "max": 400 },
+        "rocket_vs_light": { "default": 100, "min": 0, "max": 400 },
+        "rocket_vs_heavy": { "default": 125, "min": 0, "max": 400 },
+        "rocket_vs_building": { "default": 70, "min": 0, "max": 400 },
+        "rocket_vs_wall": { "default": 60, "min": 0, "max": 400 },
+        "rocket_vs_air": { "default": 100, "min": 0, "max": 400 },
+        "sonic_vs_infantry": { "default": 150, "min": 0, "max": 400 },
+        "sonic_vs_light": { "default": 100, "min": 0, "max": 400 },
+        "sonic_vs_heavy": { "default": 100, "min": 0, "max": 400 },
+        "sonic_vs_building": { "default": 60, "min": 0, "max": 400 },
+        "sonic_vs_wall": { "default": 40, "min": 0, "max": 400 },
+        "sonic_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "blast_vs_infantry": { "default": 100, "min": 0, "max": 400 },
+        "blast_vs_light": { "default": 100, "min": 0, "max": 400 },
+        "blast_vs_heavy": { "default": 100, "min": 0, "max": 400 },
+        "blast_vs_building": { "default": 100, "min": 0, "max": 400 },
+        "blast_vs_wall": { "default": 100, "min": 0, "max": 400 },
+        "blast_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "crush_vs_infantry": { "default": 100, "min": 0, "max": 400 },
+        "crush_vs_light": { "default": 0, "min": 0, "max": 400 },
+        "crush_vs_heavy": { "default": 0, "min": 0, "max": 400 },
+        "crush_vs_building": { "default": 0, "min": 0, "max": 400 },
+        "crush_vs_wall": { "default": 0, "min": 0, "max": 400 },
+        "crush_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "own_splash_percent": { "default": 50, "min": 0, "max": 100 },
+        "scan_every_ticks": { "default": 8, "min": 1, "max": 60 }
+      }
+    },
     "fog": { "status": "planned" },
     "hazard": { "status": "planned" },
     "blooms": { "status": "planned" },

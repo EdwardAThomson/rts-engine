@@ -1,13 +1,15 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn) and `sight` in tiles.",
   "entities": {
     "construction_yard": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
       "numbers": {
         "max_health": { "default": 1200, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": 0, "min": -500, "max": 500 }
       }
     },
     "slab": { "kind": "building", "status": "planned" },
@@ -15,147 +17,247 @@
     "power_plant": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": [],
       "numbers": {
         "max_health": { "default": 500, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": 100, "min": -500, "max": 500 },
+        "cost": { "default": 300, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
       }
     },
     "refinery": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["power_plant"],
       "roles": ["refinery"],
       "numbers": {
         "max_health": { "default": 900, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -30, "min": -500, "max": 500 },
+        "cost": { "default": 400, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 750, "min": 1, "max": 100000 }
       }
     },
     "silo": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["power_plant", "refinery"],
       "numbers": {
         "max_health": { "default": 400, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -5, "min": -500, "max": 500 },
+        "cost": { "default": 150, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 }
       }
     },
     "radar": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["power_plant"],
       "numbers": {
         "max_health": { "default": 600, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -30, "min": -500, "max": 500 },
+        "cost": { "default": 400, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
       }
     },
     "barracks": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["power_plant"],
       "numbers": {
         "max_health": { "default": 500, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -10, "min": -500, "max": 500 },
+        "cost": { "default": 300, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
       }
     },
     "barracks_heavy": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["barracks"],
       "numbers": {
         "max_health": { "default": 600, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -15, "min": -500, "max": 500 },
+        "cost": { "default": 400, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
       }
     },
     "light_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["refinery"],
       "numbers": {
         "max_health": { "default": 700, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -20, "min": -500, "max": 500 },
+        "cost": { "default": 400, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
       }
     },
     "heavy_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["light_factory"],
       "numbers": {
         "max_health": { "default": 900, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -35, "min": -500, "max": 500 },
+        "cost": { "default": 600, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
       }
     },
     "air_factory": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["heavy_factory"],
       "numbers": {
         "max_health": { "default": 900, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -35, "min": -500, "max": 500 },
+        "cost": { "default": 800, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
       }
     },
     "repair_pad": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["heavy_factory"],
       "numbers": {
         "max_health": { "default": 600, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -20, "min": -500, "max": 500 },
+        "cost": { "default": 700, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
       }
     },
     "starport": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["heavy_factory"],
       "numbers": {
         "max_health": { "default": 1000, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 3, "min": 1, "max": 4 }
+        "height": { "default": 3, "min": 1, "max": 4 },
+        "power": { "default": -50, "min": -500, "max": 500 },
+        "cost": { "default": 1000, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 1050, "min": 1, "max": 100000 }
       }
     },
     "research_lab": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["radar"],
       "numbers": {
         "max_health": { "default": 700, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
-        "height": { "default": 2, "min": 1, "max": 4 }
+        "height": { "default": 2, "min": 1, "max": 4 },
+        "power": { "default": -40, "min": -500, "max": 500 },
+        "cost": { "default": 600, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
       }
     },
     "palace": {
       "kind": "building",
       "status": "built",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["research_lab"],
       "numbers": {
         "max_health": { "default": 1500, "min": 1, "max": 100000 },
         "width": { "default": 3, "min": 1, "max": 4 },
-        "height": { "default": 3, "min": 1, "max": 4 }
+        "height": { "default": 3, "min": 1, "max": 4 },
+        "power": { "default": -60, "min": -500, "max": 500 },
+        "cost": { "default": 1500, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 1350, "min": 1, "max": 100000 }
       }
     },
     "wall": {
       "kind": "building",
       "status": "built",
+      "armour": "wall",
+      "built_at": "construction_yard",
+      "requires": [],
       "roles": ["wall"],
       "numbers": {
         "max_health": { "default": 200, "min": 1, "max": 100000 },
         "width": { "default": 1, "min": 1, "max": 4 },
-        "height": { "default": 1, "min": 1, "max": 4 }
+        "height": { "default": 1, "min": 1, "max": 4 },
+        "power": { "default": 0, "min": -500, "max": 500 },
+        "cost": { "default": 25, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 30, "min": 1, "max": 100000 }
       }
     },
     "gun_turret": {
       "kind": "building",
       "status": "built",
+      "weapon": "turret_gun",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["radar"],
       "numbers": {
         "max_health": { "default": 600, "min": 1, "max": 100000 },
         "width": { "default": 1, "min": 1, "max": 4 },
-        "height": { "default": 1, "min": 1, "max": 4 }
+        "height": { "default": 1, "min": 1, "max": 4 },
+        "power": { "default": -5, "min": -500, "max": 500 },
+        "cost": { "default": 150, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 }
       }
     },
     "rocket_turret": {
       "kind": "building",
       "status": "built",
+      "weapon": "turret_rocket",
+      "armour": "building",
+      "built_at": "construction_yard",
+      "requires": ["radar"],
       "numbers": {
         "max_health": { "default": 700, "min": 1, "max": 100000 },
         "width": { "default": 1, "min": 1, "max": 4 },
-        "height": { "default": 1, "min": 1, "max": 4 }
+        "height": { "default": 1, "min": 1, "max": 4 },
+        "power": { "default": -20, "min": -500, "max": 500 },
+        "cost": { "default": 250, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 }
       }
     },
 
@@ -169,22 +271,37 @@
     "harvester": {
       "kind": "unit",
       "status": "built",
+      "death": "blast_vehicle",
+      "armour": "heavy",
+      "built_at": "heavy_factory",
+      "requires": [],
       "roles": ["harvester"],
       "numbers": {
         "speed": { "default": 14, "min": 1, "max": 128 },
         "max_health": { "default": 450, "min": 1, "max": 100000 },
         "capacity": { "default": 200, "min": 1, "max": 10000 },
         "mine_rate": { "default": 4, "min": 1, "max": 1000 },
-        "unload_rate": { "default": 10, "min": 1, "max": 1000 }
+        "unload_rate": { "default": 10, "min": 1, "max": 1000 },
+        "cost": { "default": 300, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
       }
     },
     "mcv": { "kind": "unit", "status": "planned" },
     "battle_tank": {
       "kind": "unit",
       "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "cannon",
+      "armour": "heavy",
+      "built_at": "heavy_factory",
+      "requires": [],
       "numbers": {
         "speed": { "default": 22, "min": 1, "max": 128 },
-        "max_health": { "default": 300, "min": 1, "max": 100000 }
+        "max_health": { "default": 300, "min": 1, "max": 100000 },
+        "cost": { "default": 600, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 8, "min": 1, "max": 128 },
+        "sight": { "default": 5, "min": 1, "max": 16 }
       }
     },
     "siege_tank": { "kind": "unit", "status": "planned" },

@@ -6,15 +6,20 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+pub mod combat;
 pub mod game;
 pub mod map;
 pub mod path;
 pub mod placement;
+pub mod power;
+pub mod production;
 pub mod units;
 pub mod world;
 
 pub use game::{Game, GameOptions, hash_state};
 pub use map::{MapData, Terrain, Tile, parse_map};
 pub use placement::PlaceError;
-pub use units::{Kind, Rules};
+pub use power::Power;
+pub use production::{EntryState, ProduceError, QueueEntry};
+pub use units::{Kind, Rules, WeaponId};
 pub use world::{Command, CommandOrder, Entity, Event, GameState, Order, Task};

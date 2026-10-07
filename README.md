@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 35 checks, about 1 s after the first build
+cargo test                                                    # 62 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with settings-private/'s pack
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
@@ -24,6 +24,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `data/rules/` | Every generic id the engine knows, the switchable modules, and each built entity's numbers with their allowed ranges. Our own placeholder numbers, to be tuned later by AI-vs-AI runs. |
 | `crates/classic-data` | A small JSON reader (whole numbers only), the rules table and tuning, and the setting pack loader with its checks. |
 | `crates/classic-sim/src/units.rs` | Kinds and the typed rules the tick reads: every built unit and building in the rules data is a kind, and its roles say which mechanics it joins. |
+| `crates/classic-sim/src/power.rs` | Each player's power supply and demand, worked out from the buildings standing; producers give power in proportion to their health. |
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
@@ -42,7 +43,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   points in four seeds' games, for scripted orders (including the old replay hash `e0342eba`), and every 150 ticks
   of two 500-unit bench games; identical paths, node counts and path checksums. Hashes were re-recorded on purpose
   when the tank's id became `battle_tank`, when buildings began to block movement, and when the tick split into
-  phases with a 3x2 refinery (the replay hash is now `e294aed5`); each time standalone paths and path checksums
+  phases with a 3x2 refinery, and when players began with a yard, a power plant and 1,200 credits (the replay hash
+  is now `f3cc6748`); each time standalone paths and path checksums
   were checked unchanged; the credit totals that moved as harvesters use the new dock were recorded on purpose.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
@@ -52,18 +54,35 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Paths never enter a cliff and go round the ridge; a cliff tile is refused as a goal; a sealed-off goal is
   refused without searching.
 - Orders for another player's units or for buildings are ignored.
-- The start refinery is 3x2 with its dock under the middle column. Placement accepts a building on rock touching
+- Each player starts with a construction yard, a power plant, a 3x2 refinery with its harvester at the dock under
+  its middle column, a tank and 1,200 credits; the base has a power margin of 70. Placement accepts a building on rock touching
   its owner's base (diagonals count, walls don't) and refuses each broken rule with its reason, including a
   refinery whose dock is a cliff; tuning can allow open ground or let a base reach further; a tank already moving drives round a building placed on
   its path; a bigger refinery moves its dock and harvesters still deliver; placements replay from the command log.
+- Power adds up from the buildings standing, a damaged plant gives less, the power factor stops at its 25%
+  floor, `power_changed` reports supply, demand and shortfall only when they change, and a pack's tuning changes
+  the numbers and the floor.
+- Production: each factory queues up to five items and builds the head one, paying as it goes (a 600-credit,
+  450-tick tank costs 300 by tick 225 and exactly 600 at the end); a power shortfall slows it to the power factor;
+  it pauses without losing progress when credits run out and resumes by itself; cancelling refunds exactly what
+  was paid; a finished building waits at the yard until placed, and only a ready building can be placed; a
+  finished unit leaves by the exit tile or waits until one frees up; prerequisites, the primary factory and replay
+  from the command log all hold.
+- Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
+  heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
+  nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
+  closes to within range and stands; a moving unit ignores enemies; a rocket turret needs power and a gun turret
+  doesn't; a destroyed building frees its tiles; guards prefer armed units to buildings; a pack can tune weapons
+  and the damage table; combat replays from the command log.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 ## Not verified / not built yet
 
 - Units pass through each other; there's no collision or tile reservation yet.
-- No buildings beyond a 1×1 refinery, no building placement, power, combat or AI.
-- No setting pack loader yet; names in code are the generic ids.
+- Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
+  a stand-in until vision exists, and the weapon numbers are first guesses.
+- No AI; no storage cap, tech levels, factory upgrades or starport.
 - No real renderer, UI or audio yet. The web viewer draws plain shapes on a 2D canvas, for watching and debugging
   games; it has no sprites, camera, sidebar or sound, and its smoothness has only been checked in headless Chromium.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

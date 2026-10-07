@@ -8,6 +8,8 @@ use rts_core::rng::seed_state;
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
+use crate::power::Power;
+use crate::production::{self, ProduceError, QueueEntry};
 use crate::units::{Kind, Rules};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
@@ -44,12 +46,16 @@ pub struct EntityView {
     pub task: Option<Task>,
     pub cargo: Option<i64>,
     pub path_left: usize,
+    /// A producing building's queue, the head first.
+    pub queue: Vec<QueueEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
     pub tick: u32,
     pub players: Vec<Player>,
+    /// Each player's power, in player order.
+    pub power: Vec<Power>,
     pub entities: Vec<EntityView>,
     pub resource_left: i64,
 }
@@ -59,7 +65,9 @@ impl Game {
         let map = parse_map(opts.map)?;
         let rules = opts.rules.cloned().unwrap_or_default();
         let kind = |id: &str| rules.kind_id(id).ok_or(format!("the rules have no built {id}"));
-        let (refinery_kind, harvester_kind, tank_kind) = (kind("refinery")?, kind("harvester")?, kind("battle_tank")?);
+        let [yard, plant, refinery, harvester, tank] =
+            ["construction_yard", "power_plant", "refinery", "harvester", "battle_tank"].map(kind);
+        let (yard, plant, refinery, harvester, tank) = (yard?, plant?, refinery?, harvester?, tank?);
         let count = opts.players.unwrap_or(map.start.len());
         let mut state = GameState {
             tick: 0,
@@ -69,18 +77,26 @@ impl Game {
             players: Vec::new(),
             entities: Vec::new(),
             kind_ids: rules.kind_ids().into(),
+            weapon_ids: rules.weapons.iter().map(|w| w.id.clone()).collect::<Vec<_>>().into(),
+            projectiles: Vec::new(),
         };
-        // Each player starts with a refinery on its start tile, a harvester at the dock and a battle tank beside it.
+        // Each player starts with a construction yard on its start tile, a power plant to its right, a refinery
+        // below them both with a harvester at its dock, and a battle tank beside the dock, all laid out from the
+        // footprints in the rules (rules-base-building-power.md: "a starting base of yard, one power plant and a
+        // refinery"). Maps leave room for it.
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
-            state.players.push(Player { id: p as u32, credits: 0, delivered: 0 });
-            let refinery = world::spawn(&mut state, &rules, refinery_kind, p as u32, s.x, s.y);
-            let dock = world::dock_of(&rules, state.entities.last().expect("just spawned"));
-            world::spawn(&mut state, &rules, harvester_kind, p as u32, dock.x, dock.y);
-            state.entities.last_mut().expect("just spawned").home_id = Some(refinery);
-            // Diagonally past the refinery's bottom-right corner, clear of its footprint at any size.
-            let r = rules.kind(refinery_kind);
-            world::spawn(&mut state, &rules, tank_kind, p as u32, s.x + r.width, s.y + r.height);
+            let owner = p as u32;
+            state.players.push(Player { id: owner, credits: rules.production.starting_credits, delivered: 0 });
+            let (y, r) = (rules.kind(yard), rules.kind(refinery));
+            world::spawn(&mut state, &rules, yard, owner, s.x, s.y);
+            world::spawn(&mut state, &rules, plant, owner, s.x + y.width, s.y);
+            let below = s.y + y.height.max(rules.kind(plant).height);
+            let home = world::spawn(&mut state, &rules, refinery, owner, s.x, below);
+            let dock = world::dock_at(r, s.x, below);
+            world::spawn(&mut state, &rules, harvester, owner, dock.x, dock.y);
+            state.entities.last_mut().expect("just spawned").home_id = Some(home);
+            world::spawn(&mut state, &rules, tank, owner, dock.x + 2, dock.y);
         }
         let mut pathfinder = Pathfinder::new(&map);
         for e in &state.entities {
@@ -115,6 +131,16 @@ impl Game {
         self.rules.kind_id(id)
     }
 
+    /// A player's power now.
+    pub fn power(&self, player: u32) -> Power {
+        Power::of(&self.state, &self.rules, player)
+    }
+
+    /// Whether `player` may order `kind` built now. Changes nothing.
+    pub fn can_build(&self, player: u32, kind: Kind) -> Result<(), ProduceError> {
+        production::can_build(&self.state, &self.rules, player, kind)
+    }
+
     /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
     pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
@@ -126,6 +152,7 @@ impl Game {
         Snapshot {
             tick: s.tick,
             players: s.players.clone(),
+            power: Power::all(s, &self.rules),
             entities: s
                 .entities
                 .iter()
@@ -141,6 +168,7 @@ impl Game {
                     task: e.task,
                     cargo: e.cargo,
                     path_left: e.path.len(),
+                    queue: e.queue.clone(),
                 })
                 .collect(),
             resource_left: s.resource.iter().sum(),

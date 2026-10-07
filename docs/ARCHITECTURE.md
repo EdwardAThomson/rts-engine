@@ -68,10 +68,10 @@ Two rules keep this honest:
 | Part | Folder | Does | Status |
 |---|---|---|---|
 | Shared core | `rts-core` repository, `rts-core` crate | Genre-neutral parts: integer maths, the seeded generator, the canonical state hash, the command queue and log. Knows nothing about tiles or units; the 3D engine builds on it too. Pinned by commit in `Cargo.toml` | Built |
-| Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement; later combat, building, power, production, the hazard, fog | Built: map, A*, a phased tick, harvesting, movement, regrowth, buildings with footprints and placement |
+| Simulation | `crates/classic-sim` | The whole game state and the fixed 15-ticks-per-second step. Map, pathfinding, harvesting, movement, building, power, production, combat; later the hazard, fog | Built: map, A*, a phased tick, harvesting, movement, regrowth, buildings with footprints and placement, power, production queues, combat |
 | Game API | `crates/classic-sim/src/game.rs` | `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. Tests, the tools, the AI and the front ends all drive the game through it | Built |
 | Web build | `crates/classic-wasm` | The same simulation compiled to WebAssembly, with a plain function interface for JavaScript. `web/check.mjs` proves it gives the native build's hashes | Built: step, orders, hash, read-only views |
-| Rules data | `data/rules/` | Every generic id the engine knows (`entities.json`) and the mechanics a pack can switch (`modules.json`), with each built entity's default numbers and the allowed range for each. Footprints and prerequisites come with placement and production | Built: ids, kinds, numbers and ranges |
+| Rules data | `data/rules/` | Every generic id the engine knows (`entities.json`) and the mechanics a pack can switch (`modules.json`), with each built entity's default numbers and the allowed range for each. Footprints and prerequisites come with placement and production | Built: ids, kinds, numbers and ranges, costs, build times, what builds each item and what it requires |
 | Setting loader | `crates/classic-data` | A small JSON reader (whole numbers only), the rules table, and the pack loader: reads a pack, checks it against the rules, merges names and tuning (asset paths later). The tools find a pack with `--setting` | Built: names, factions, features, tuning, file-type check |
 | Computer opponent | `crates/` (new crate) | Issues the same commands a player would; never reads hidden state | Planned |
 | Renderer | `crates/` (new crate) | Sprite batcher reading a per-tick view of the state; never changes it. wgpu, which runs natively and on WebGPU, is the leading choice, so desktop and web share it. Until then `web/viewer/` draws games with coloured shapes on a canvas, reading the state through `classic-wasm`'s view functions | Planned; shape viewer built |
@@ -148,7 +148,7 @@ says `hazard`; a pack says what the hazard is.
 
 | Pack | Where | Used for |
 |---|---|---|
-| `generic` | `settings/generic/` in this repo | Plain names (placeholder art later), so this repo runs and its tests pass on its own. Two factions, on purpose |
+| `generic` | `settings/generic/` in this repo | Plain names and placeholder art drawn from code, so this repo runs and its tests pass on its own. Two factions, on purpose |
 | The private pack | A separate private repository, cloned into `settings-private/` (git-ignored) | Ed's own build; built and run locally only, never deployed |
 | Future shareable packs | New folders | Other settings and stories, with no engine changes |
 

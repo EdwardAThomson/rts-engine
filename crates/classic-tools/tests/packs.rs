@@ -33,7 +33,8 @@ fn replace(dir: &Path, file: &str, from: &str, to: &str) {
 fn play(pack: &Pack) -> String {
     let rules = Rules::from_table(&pack.rules).unwrap();
     let mut g = Game::new(GameOptions { map: MAP, seed: 3, players: None, rules: Some(&rules) }).unwrap();
-    g.order(0, &[3], CommandOrder::Move { x: 20, y: 9 });
+    let tank = g.state.entities.iter().find(|e| e.owner == 0 && g.rules.kind(e.kind).id == "battle_tank").unwrap().id;
+    g.order(0, &[tank], CommandOrder::Move { x: 20, y: 9 });
     g.step(100);
     g.hash()
 }

@@ -2,3 +2,4 @@
 # The private setting pack is a separate private repository, cloned here. Never commit it.
 settings-private/
 *.log
+__pycache__/
