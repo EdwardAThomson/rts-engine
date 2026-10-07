@@ -3,8 +3,8 @@
     python3 art/studio/pack.py RENDER_DIR [RENDER_DIR ...] --out settings/generic/art/sprites [--preview PNG]
 
 Each RENDER_DIR is one entity rendered by render.py. For every frame this:
-  1. finds team paint (the studio's green hue band), writes its strength to a mask and turns it neutral grey of
-     the same brightness, so the renderer can paint any player's ramp over it;
+  1. finds team paint (the studio's green hue band), writes its strength to a mask and turns it neutral grey,
+     scaled so the entity's typical paint sits mid-ramp, so the renderer can paint any player's ramp over it;
   2. downscales by the render scale, in premultiplied alpha, and stretches vertically by 1/sin(60), so the
      ground comes out square and footprints match tiles;
   3. trims to content plus a margin and records the pivot: the ground point under a unit's origin, or a
@@ -43,12 +43,22 @@ def team_mask(rgba):
     lo, hi = tp["hue_band"]
     s0 = tp["min_saturation"]
     mask = ((hue >= lo) & (hue <= hi)) * np.clip((sat - s0) / s0, 0, 1) * (rgba[..., 3] > 0)
-    luma = rgb @ np.array([0.299, 0.587, 0.114], np.float32)
-    # Paint is darker than the grey the ramp expects, so brighten it to sit mid-ramp.
-    grey = np.clip(luma * 1.6, 0, 1)[..., None]
-    out = rgba.copy()
-    out[..., :3] = rgb * (1 - mask[..., None]) + grey * mask[..., None]
-    return out, mask.astype(np.float32)
+    return rgba, mask.astype(np.float32)
+
+
+def neutralise(frames, target=0.5):
+    """Turn team paint grey, scaled so the entity's typical paint brightness lands at `target`, the middle of a
+    player's ramp. One scale per entity keeps its shading (lit and shadowed sides) intact."""
+    lum = np.array([0.299, 0.587, 0.114], np.float32)
+    paint = np.concatenate([(f[..., :3] @ lum)[m > 0.9] for f, m in frames])
+    k = target / max(float(np.median(paint)), 1e-3) if len(paint) else 1.0
+    out = []
+    for f, m in frames:
+        grey = np.clip((f[..., :3] @ lum) * k, 0, 1)[..., None]
+        g = f.copy()
+        g[..., :3] = f[..., :3] * (1 - m[..., None]) + grey * m[..., None]
+        out.append((g, m))
+    return out
 
 
 def resize(arr, size):
@@ -100,19 +110,18 @@ def trim(rgba, mask, pivot):
 def frames_of(rdir, meta):
     """Every frame of an entity: (part, kind, index, rgba, mask, pivot); kind is 'image' or 'shadow'."""
     style = STUDIO["styles"][meta.get("style", "detailed")]
+    names = [(part, i) for part, info in meta["parts"].items() for i in range(info["facings"])]
+    masked = neutralise([team_mask(load(rdir / f"{p}-idle-f{i:02d}-00.png")) for p, i in names])
     out = []
-    for part, info in meta["parts"].items():
-        for i in range(info["facings"]):
-            name = f"{part}-idle-f{i:02d}-00"
-            rgba, mask = team_mask(load(rdir / f"{name}.png"))
-            small, m, piv = shrink(rgba, mask, meta["origin_px"], style)
-            out.append((part, "image", i, *trim(small, m, piv)))
-            sp = rdir / f"{name}.shadow.png"
-            if sp.exists():
-                sh = load(sp)
-                sh[..., :3] = 0
-                small, _, piv = shrink(sh, None, meta["origin_px"], style)
-                out.append((part, "shadow", i, *trim(small, None, piv)))
+    for (part, i), (rgba, mask) in zip(names, masked):
+        small, m, piv = shrink(rgba, mask, meta["origin_px"], style)
+        out.append((part, "image", i, *trim(small, m, piv)))
+        sp = rdir / f"{part}-idle-f{i:02d}-00.shadow.png"
+        if sp.exists():
+            sh = load(sp)
+            sh[..., :3] = 0
+            small, _, piv = shrink(sh, None, meta["origin_px"], style)
+            out.append((part, "shadow", i, *trim(small, None, piv)))
     return out
 
 
