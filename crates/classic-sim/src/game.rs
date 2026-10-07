@@ -7,7 +7,8 @@ use rts_core::rng::seed_state;
 
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
-use crate::units::{Rules, UnitType};
+use crate::placement::{self, PlaceError};
+use crate::units::{Kind, Rules};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
 pub struct GameOptions<'a> {
@@ -33,7 +34,7 @@ pub struct Game {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntityView {
     pub id: u32,
-    pub kind: UnitType,
+    pub kind: Kind,
     pub owner: u32,
     pub tile: Tile,
     pub x: i64,
@@ -57,6 +58,8 @@ impl Game {
     pub fn new(opts: GameOptions) -> Result<Game, String> {
         let map = parse_map(opts.map)?;
         let rules = opts.rules.cloned().unwrap_or_default();
+        let kind = |id: &str| rules.kind_id(id).ok_or(format!("the rules have no built {id}"));
+        let (refinery_kind, harvester_kind, tank_kind) = (kind("refinery")?, kind("harvester")?, kind("battle_tank")?);
         let count = opts.players.unwrap_or(map.start.len());
         let mut state = GameState {
             tick: 0,
@@ -65,18 +68,24 @@ impl Game {
             resource: map.resource.clone(),
             players: Vec::new(),
             entities: Vec::new(),
+            kind_ids: rules.kind_ids().into(),
         };
         // Each player starts with a refinery on its start tile, a harvester at the dock and a battle tank beside it.
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
             state.players.push(Player { id: p as u32, credits: 0, delivered: 0 });
-            let refinery = world::spawn(&mut state, &rules, UnitType::Refinery, p as u32, s.x, s.y);
-            let dock = world::dock_of(state.entities.last().expect("just spawned"));
-            world::spawn(&mut state, &rules, UnitType::Harvester, p as u32, dock.x, dock.y);
+            let refinery = world::spawn(&mut state, &rules, refinery_kind, p as u32, s.x, s.y);
+            let dock = world::dock_of(&rules, state.entities.last().expect("just spawned"));
+            world::spawn(&mut state, &rules, harvester_kind, p as u32, dock.x, dock.y);
             state.entities.last_mut().expect("just spawned").home_id = Some(refinery);
-            world::spawn(&mut state, &rules, UnitType::BattleTank, p as u32, s.x + 1, s.y + 1);
+            // Diagonally past the refinery's bottom-right corner, clear of its footprint at any size.
+            let r = rules.kind(refinery_kind);
+            world::spawn(&mut state, &rules, tank_kind, p as u32, s.x + r.width, s.y + r.height);
         }
-        let pathfinder = Pathfinder::new(&map);
+        let mut pathfinder = Pathfinder::new(&map);
+        for e in &state.entities {
+            world::occupy(&mut pathfinder, &rules, e, true);
+        }
         Ok(Game { map, pathfinder, rules, state, events: Vec::new(), queue: CommandQueue::default() })
     }
 
@@ -93,9 +102,22 @@ impl Game {
         self.queue.push(self.state.tick, Command { player, ids: ids.to_vec(), order });
     }
 
-    /// Place a unit or building directly, for tests and tools.
-    pub fn spawn(&mut self, kind: UnitType, owner: u32, x: i32, y: i32) -> u32 {
-        world::spawn(&mut self.state, &self.rules, kind, owner, x, y)
+    /// Place a unit or building directly, skipping every rule, for tests and tools. Players place buildings with
+    /// `CommandOrder::Place` instead.
+    pub fn spawn(&mut self, kind: Kind, owner: u32, x: i32, y: i32) -> u32 {
+        let id = world::spawn(&mut self.state, &self.rules, kind, owner, x, y);
+        world::occupy(&mut self.pathfinder, &self.rules, self.state.entities.last().expect("just spawned"), true);
+        id
+    }
+
+    /// The kind with this generic id, if these rules have it.
+    pub fn kind(&self, id: &str) -> Option<Kind> {
+        self.rules.kind_id(id)
+    }
+
+    /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
+    pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
+        placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
     }
 
     /// One whole tick as plain data, for agents and tools to read.

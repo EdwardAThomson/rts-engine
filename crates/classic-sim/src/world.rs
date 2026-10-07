@@ -2,6 +2,7 @@
 //! generator in the state, entities kept in a vector in id order, and no clock or outside randomness.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use rts_core::hash::{Canon, CanonHasher};
 use rts_core::imath::isqrt;
@@ -9,7 +10,8 @@ use rts_core::rng::random_int;
 
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::path::Pathfinder;
-use crate::units::{Rules, UnitType};
+use crate::placement::{self, PlaceError};
+use crate::units::{Kind, Rules};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Order {
@@ -67,7 +69,7 @@ impl Canon for Task {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entity {
     pub id: u32,
-    pub kind: UnitType,
+    pub kind: Kind,
     pub owner: u32,
     /// Centre, in sub-tile units.
     pub x: i64,
@@ -88,20 +90,24 @@ impl Entity {
     }
 }
 
-impl Canon for Entity {
+/// An entity as the state hash writes it, with its kind spelt as the generic id.
+struct EntityCanon<'a>(&'a Entity, &'a [String]);
+
+impl Canon for EntityCanon<'_> {
     fn canon(&self, w: &mut CanonHasher) {
+        let e = self.0;
         w.object()
-            .opt("cargo", self.cargo.as_ref())
-            .field("health", &self.health)
-            .opt("homeId", self.home_id.as_ref())
-            .field("id", &self.id)
-            .field("order", &self.order)
-            .field("owner", &self.owner)
-            .array("path", &self.path)
-            .opt("task", self.task.as_ref())
-            .field("type", &self.kind)
-            .field("x", &self.x)
-            .field("y", &self.y)
+            .opt("cargo", e.cargo.as_ref())
+            .field("health", &e.health)
+            .opt("homeId", e.home_id.as_ref())
+            .field("id", &e.id)
+            .field("order", &e.order)
+            .field("owner", &e.owner)
+            .array("path", &e.path)
+            .opt("task", e.task.as_ref())
+            .field("type", self.1[e.kind.0 as usize].as_str())
+            .field("x", &e.x)
+            .field("y", &e.y)
             .end();
     }
 }
@@ -130,12 +136,15 @@ pub struct GameState {
     pub players: Vec<Player>,
     /// Always sorted by id.
     pub entities: Vec<Entity>,
+    /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
+    pub kind_ids: Arc<[String]>,
 }
 
 impl Canon for GameState {
     fn canon(&self, w: &mut CanonHasher) {
+        let entities: Vec<EntityCanon> = self.entities.iter().map(|e| EntityCanon(e, &self.kind_ids)).collect();
         w.object()
-            .field("entities", &self.entities)
+            .array("entities", &entities)
             .field("nextId", &self.next_id)
             .field("players", &self.players)
             .field("resource", &self.resource)
@@ -159,6 +168,13 @@ pub enum CommandOrder {
         y: i32,
     },
     Harvest,
+    /// Place a building with its top-left tile here. Takes no units; for now it costs nothing and needs nothing
+    /// built first, until production adds both.
+    Place {
+        kind: Kind,
+        x: i32,
+        y: i32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -180,6 +196,8 @@ pub enum Event {
     HarvesterIdle { tick: u32, unit: u32, reason: IdleReason },
     Delivered { tick: u32, unit: u32, player: u32, credits: i64 },
     Regrowth { tick: u32, x: i32, y: i32, amount: i64 },
+    BuildingPlaced { tick: u32, entity: u32, kind: Kind, owner: u32, x: i32, y: i32 },
+    PlacementRejected { tick: u32, player: u32, kind: Kind, x: i32, y: i32, reason: PlaceError },
 }
 
 impl Event {
@@ -188,12 +206,18 @@ impl Event {
             Event::HarvesterIdle { .. } => "harvester_idle",
             Event::Delivered { .. } => "delivered",
             Event::Regrowth { .. } => "regrowth",
+            Event::BuildingPlaced { .. } => "building_placed",
+            Event::PlacementRejected { .. } => "placement_rejected",
         }
     }
 
     pub fn tick(&self) -> u32 {
         match *self {
-            Event::HarvesterIdle { tick, .. } | Event::Delivered { tick, .. } | Event::Regrowth { tick, .. } => tick,
+            Event::HarvesterIdle { tick, .. }
+            | Event::Delivered { tick, .. }
+            | Event::Regrowth { tick, .. }
+            | Event::BuildingPlaced { tick, .. }
+            | Event::PlacementRejected { tick, .. } => tick,
         }
     }
 }
@@ -202,17 +226,17 @@ fn centre(t: i32) -> i64 {
     t as i64 * TILE + TILE / 2
 }
 
-pub fn spawn(state: &mut GameState, rules: &Rules, kind: UnitType, owner: u32, tx: i32, ty: i32) -> u32 {
+pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i32, ty: i32) -> u32 {
     let id = state.next_id;
     state.next_id += 1;
-    let harvester = kind == UnitType::Harvester;
+    let harvester = rules.kind(kind).harvester.is_some();
     state.entities.push(Entity {
         id,
         kind,
         owner,
         x: centre(tx),
         y: centre(ty),
-        health: rules.stats(kind).max_health,
+        health: rules.kind(kind).max_health,
         path: VecDeque::new(),
         order: if harvester { Order::Harvest } else { Order::Idle },
         task: harvester.then_some(Task::Seek),
@@ -222,21 +246,65 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: UnitType, owner: u32, t
     id
 }
 
-/// The tile a harvester parks on to unload: directly below the refinery.
-pub fn dock_of(refinery: &Entity) -> Tile {
+/// The tile a harvester parks on to unload: just below the middle column of the refinery's footprint.
+pub fn dock_of(rules: &Rules, refinery: &Entity) -> Tile {
     let t = refinery.tile();
-    Tile { x: t.x, y: t.y + 1 }
+    dock_at(rules.kind(refinery.kind), t.x, t.y)
+}
+
+/// The dock of a refinery kind whose top-left tile is at (x, y).
+pub fn dock_at(k: &crate::units::KindRules, x: i32, y: i32) -> Tile {
+    Tile { x: x + k.width / 2, y: y + k.height }
+}
+
+/// Mark a building's footprint as blocked (or clear again) for ground movement. Units block nothing.
+pub fn occupy(pf: &mut Pathfinder, rules: &Rules, e: &Entity, blocked: bool) {
+    let k = rules.kind(e.kind);
+    if k.building {
+        let t = e.tile();
+        pf.set_blocked(t.x, t.y, k.width, k.height, blocked);
+    }
 }
 
 fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeque<Tile> {
     pf.find(from.x, from.y, to.x, to.y).map(|p| p.tiles.into()).unwrap_or_default()
 }
 
-pub fn apply_command(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, cmd: &Command) {
+/// Units whose remaining path now crosses a blocked tile find a new way to the same end, in id order.
+fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState) {
+    for e in &mut state.entities {
+        if e.path.iter().any(|t| !pf.passable(t.x, t.y)) {
+            let end = *e.path.back().expect("a path that crosses something is not empty");
+            e.path = path_or_empty(pf, e.tile(), end);
+        }
+    }
+}
+
+pub fn apply_command(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &mut GameState,
+    rules: &Rules,
+    cmd: &Command,
+    events: &mut Vec<Event>,
+) {
+    if let CommandOrder::Place { kind, x, y } = cmd.order {
+        let tick = state.tick;
+        match placement::check(map, state, rules, cmd.player, kind, x, y) {
+            Ok(()) => {
+                let entity = spawn(state, rules, kind, cmd.player, x, y);
+                occupy(pf, rules, state.entities.last().expect("just spawned"), true);
+                reroute_around_new_building(pf, state);
+                events.push(Event::BuildingPlaced { tick, entity, kind, owner: cmd.player, x, y });
+            }
+            Err(reason) => events.push(Event::PlacementRejected { tick, player: cmd.player, kind, x, y, reason }),
+        }
+        return;
+    }
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
         let e = &mut state.entities[i];
-        if e.owner != cmd.player || rules.stats(e.kind).building {
+        if e.owner != cmd.player || rules.kind(e.kind).building {
             continue;
         }
         match cmd.order {
@@ -244,12 +312,12 @@ pub fn apply_command(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, 
                 e.path = path_or_empty(pf, e.tile(), Tile { x, y });
                 e.order = Order::Move;
             }
-            CommandOrder::Harvest if e.kind == UnitType::Harvester => {
+            CommandOrder::Harvest if rules.kind(e.kind).harvester.is_some() => {
                 e.order = Order::Harvest;
                 e.task = Some(Task::Seek);
                 e.path.clear();
             }
-            CommandOrder::Harvest => {}
+            CommandOrder::Harvest | CommandOrder::Place { .. } => {}
         }
     }
 }
@@ -263,28 +331,49 @@ pub fn step(
     commands: &[Command],
     events: &mut Vec<Event>,
 ) {
+    // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
+    // commands, combat (not built yet), movement, crush (not built yet), economy, world.
     for cmd in commands {
-        apply_command(pf, state, rules, cmd);
+        apply_command(map, pf, state, rules, cmd, events);
     }
-    for i in 0..state.entities.len() {
-        let e = &state.entities[i];
-        if e.kind == UnitType::Harvester && e.order == Order::Harvest {
-            harvest(map, pf, state, rules, i, events);
-        } else {
-            let speed = rules.stats(e.kind).speed;
-            move_along_path(&mut state.entities[i], speed);
+    movement(state, rules);
+    economy(map, pf, state, rules, events);
+    regrow(map, pf, state, rules, events);
+    state.tick += 1;
+}
+
+/// Every ground unit with a path moves along it. A harvester on its loop moves only while travelling.
+fn movement(state: &mut GameState, rules: &Rules) {
+    for e in &mut state.entities {
+        let k = rules.kind(e.kind);
+        if k.building {
+            continue;
         }
-        let e = &mut state.entities[i];
+        let travelling = !matches!(
+            (e.order, e.task),
+            (Order::Harvest, Some(Task::Seek | Task::Mining | Task::Unloading | Task::Stuck))
+        );
+        if travelling {
+            move_along_path(e, k.speed);
+        }
         if e.order == Order::Move && e.path.is_empty() {
             e.order = Order::Idle;
         }
     }
-    regrow(map, state, rules, events);
-    state.tick += 1;
 }
 
-/// Move toward the next path tile's centre. Returns true when the path is finished.
-fn move_along_path(e: &mut Entity, speed: i64) -> bool {
+/// Harvesters on their loop: find a field, mine, return, unload.
+fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+    for i in 0..state.entities.len() {
+        let e = &state.entities[i];
+        if rules.kind(e.kind).harvester.is_some() && e.order == Order::Harvest {
+            harvest(map, pf, state, rules, i, events);
+        }
+    }
+}
+
+/// Move toward the next path tile's centre, carrying leftover budget past centres.
+fn move_along_path(e: &mut Entity, speed: i64) {
     let mut budget = speed;
     while budget > 0 {
         let Some(&next) = e.path.front() else { break };
@@ -302,7 +391,6 @@ fn move_along_path(e: &mut Entity, speed: i64) -> bool {
             budget = 0;
         }
     }
-    e.path.is_empty()
 }
 
 fn harvest(
@@ -314,14 +402,14 @@ fn harvest(
     events: &mut Vec<Event>,
 ) {
     let tick = state.tick;
-    let h = &rules.harvester;
-    let speed = rules.stats(UnitType::Harvester).speed;
+    let kind = rules.kind(state.entities[i].kind);
+    let Some(h) = &kind.harvester else { return };
     let here = state.entities[i].tile();
     let Some(task) = state.entities[i].task else { return };
     match task {
         Task::Seek => {
             let e_id = state.entities[i].id;
-            let Some(field) = nearest_resource(map, state, here) else {
+            let Some(field) = nearest_resource(map, pf, state, here) else {
                 state.entities[i].task = Some(Task::Stuck);
                 events.push(Event::HarvesterIdle { tick, unit: e_id, reason: IdleReason::NoResource });
                 return;
@@ -332,7 +420,7 @@ fn harvest(
         }
         Task::ToField => {
             let e = &mut state.entities[i];
-            if move_along_path(e, speed) {
+            if e.path.is_empty() {
                 e.task = Some(Task::Mining);
             }
         }
@@ -344,7 +432,7 @@ fn harvest(
             let cargo = cargo + take;
             state.entities[i].cargo = Some(cargo);
             if cargo >= h.capacity {
-                let Some(home) = home_refinery(state, i) else {
+                let Some(home) = home_refinery(state, rules, i) else {
                     state.entities[i].task = Some(Task::Stuck);
                     let unit = state.entities[i].id;
                     events.push(Event::HarvesterIdle { tick, unit, reason: IdleReason::NoRefinery });
@@ -360,7 +448,7 @@ fn harvest(
         }
         Task::ToRefinery => {
             let e = &mut state.entities[i];
-            if move_along_path(e, speed) {
+            if e.path.is_empty() {
                 e.task = Some(Task::Unloading);
             }
         }
@@ -384,18 +472,18 @@ fn harvest(
 
 /// The harvester's refinery: its remembered one if that still stands, else its owner's first. Returns the dock
 /// tile, and remembers the choice.
-fn home_refinery(state: &mut GameState, i: usize) -> Option<Tile> {
+fn home_refinery(state: &mut GameState, rules: &Rules, i: usize) -> Option<Tile> {
     let (owner, home_id) = (state.entities[i].owner, state.entities[i].home_id);
-    let mut own = state.entities.iter().filter(|r| r.kind == UnitType::Refinery && r.owner == owner);
+    let mut own = state.entities.iter().filter(|r| rules.kind(r.kind).refinery && r.owner == owner);
     let first = own.clone().next();
     let chosen = own.find(|r| Some(r.id) == home_id).or(first)?;
-    let (id, dock) = (chosen.id, dock_of(chosen));
+    let (id, dock) = (chosen.id, dock_of(rules, chosen));
     state.entities[i].home_id = Some(id);
     Some(dock)
 }
 
-/// Breadth-first search outward over passable tiles; the first tile with resource left wins.
-fn nearest_resource(map: &MapData, state: &GameState, from: Tile) -> Option<Tile> {
+/// Breadth-first search outward over tiles ground units can enter; the first tile with resource left wins.
+fn nearest_resource(map: &MapData, pf: &Pathfinder, state: &GameState, from: Tile) -> Option<Tile> {
     let start = map.index(from.x, from.y);
     let mut seen = vec![false; state.resource.len()];
     seen[start] = true;
@@ -410,7 +498,7 @@ fn nearest_resource(map: &MapData, state: &GameState, from: Tile) -> Option<Tile
         let Tile { x, y } = map.tile_at(t);
         for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
             let (nx, ny) = (x + dx, y + dy);
-            if map.passable(nx, ny) {
+            if pf.passable(nx, ny) {
                 let n = map.index(nx, ny);
                 if !seen[n] {
                     seen[n] = true;
@@ -423,7 +511,7 @@ fn nearest_resource(map: &MapData, state: &GameState, from: Tile) -> Option<Tile
 }
 
 /// Every so often, a random tile next to an original resource field grows some resource back.
-fn regrow(map: &MapData, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+fn regrow(map: &MapData, pf: &Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     if !state.tick.is_multiple_of(rules.regrowth.every_ticks) || state.tick == 0 {
         return;
     }
@@ -432,7 +520,7 @@ fn regrow(map: &MapData, state: &mut GameState, rules: &Rules, events: &mut Vec<
     let near_field = [(0, 0), (0, -1), (1, 0), (0, 1), (-1, 0)]
         .into_iter()
         .any(|(dx, dy)| map.in_bounds(x + dx, y + dy) && map.resource[map.index(x + dx, y + dy)] > 0);
-    if !near_field || !map.passable(x, y) || map.terrain[i] != Terrain::Open {
+    if !near_field || !pf.passable(x, y) || map.terrain[i] != Terrain::Open {
         return;
     }
     state.resource[i] = RESOURCE_PER_TILE.min(state.resource[i] + rules.regrowth.amount);

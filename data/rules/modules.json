@@ -1,10 +1,16 @@
 {
-  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\". Built modules run today; planned ones are accepted in a pack and do nothing until they are written.",
+  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written.",
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
     "power": { "status": "planned" },
-    "placement": { "status": "planned" },
+    "placement": {
+      "status": "built",
+      "numbers": {
+        "max_gap": { "default": 0, "min": 0, "max": 4 },
+        "rock_only": { "default": 1, "min": 0, "max": 1 }
+      }
+    },
     "production": { "status": "planned" },
     "combat": { "status": "planned" },
     "fog": { "status": "planned" },
