@@ -136,10 +136,61 @@ def _noisy(name, base, scale, detail, spread, roughness, metallic=0.0, bump=0.25
     return m
 
 
-def team_paint():
+def team_paint(name="team"):
     """The one material the packer recolours per player. Keep every other material out of its hue band."""
     rgb = STUDIO["team_paint"]["rgb"]
-    return _noisy("team", rgb, 18, 4, 0.18, 0.55, bump=0.1)
+    return _noisy(name, rgb, 18, 6, 0.25, 0.55, bump=0.15)
+
+
+def armour(name="armour", base=(0.2, 0.14, 0.075)):
+    """Painted steel from the tank experiment (playbooks experiments/d2-tank): a sandy base with soft blotches and
+    fine grime, slightly glossy. The house look for vehicles: team paint is an accent on top of this."""
+    m, nt, bsdf = _mat(name)
+    m.diffuse_color = (*base, 1)
+    blotch = nt.nodes.new("ShaderNodeTexNoise")
+    blotch.inputs["Scale"].default_value = 2.5
+    blotch.inputs["Detail"].default_value = 3
+    grime = nt.nodes.new("ShaderNodeTexNoise")
+    grime.inputs["Scale"].default_value = 30
+    grime.inputs["Detail"].default_value = 8
+    mix = nt.nodes.new("ShaderNodeMath")
+    mix.operation = "MULTIPLY_ADD"
+    _link(nt, blotch, "Fac", mix, 0)
+    mix.inputs[1].default_value = 0.6
+    _link(nt, grime, "Fac", mix, 2)
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    els = ramp.color_ramp.elements
+    els[0].position, els[1].position = 0.45, 0.95
+    els[0].color = (*[c * 0.62 for c in base], 1)
+    els[1].color = (*[min(1, c * 1.2) for c in base], 1)
+    _link(nt, mix, "Value", ramp, "Fac")
+    _link(nt, ramp, "Color", bsdf, "Base Color")
+    bsdf.inputs["Metallic"].default_value = 0.3
+    bsdf.inputs["Roughness"].default_value = 0.55
+    b = nt.nodes.new("ShaderNodeBump")
+    b.inputs["Strength"].default_value = 0.2
+    b.inputs["Distance"].default_value = 0.02
+    _link(nt, grime, "Fac", b, "Height")
+    _link(nt, b, "Normal", bsdf, "Normal")
+    return m
+
+
+def metal(name="iron", base=(0.25, 0.24, 0.23), rust=(0.35, 0.16, 0.07)):
+    """Bare metal with a little rust, as in guide 03's studio."""
+    m, nt, bsdf = _mat(name)
+    m.diffuse_color = (*base, 1)
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 14
+    noise.inputs["Detail"].default_value = 6
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    els = ramp.color_ramp.elements
+    els[0].position, els[1].position = 0.45, 0.62
+    els[0].color, els[1].color = (*base, 1), (*rust, 1)
+    _link(nt, noise, "Fac", ramp, "Fac")
+    _link(nt, ramp, "Color", bsdf, "Base Color")
+    bsdf.inputs["Metallic"].default_value = 0.8
+    bsdf.inputs["Roughness"].default_value = 0.45
+    return m
 
 
 def steel(name="steel", base=(0.32, 0.31, 0.3)):
@@ -217,10 +268,18 @@ def block(size, loc, rot=(0, 0, 0), mat=None, parent=None, bevel=0.04, name="blo
     return _place(o, loc, rot, mat, parent, name, bevel)
 
 
-def cylinder(radius, depth, loc, rot=(0, 0, 0), mat=None, parent=None, verts=24, bevel=0.02, name="cyl"):
-    """Upright by default; rot=(pi/2, 0, 0) lays it along y."""
-    bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth)
+def cylinder(radius, depth, loc, rot=(0, 0, 0), mat=None, parent=None, verts=24, bevel=0.02, name="cyl",
+             caps=True, scale=None):
+    """Upright by default; rot=(pi/2, 0, 0) lays it along y. `scale` squashes it into an oval (applied to the
+    mesh), and caps=False leaves a thin open tube."""
+    bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth,
+                                        end_fill_type="NGON" if caps else "NOTHING")
     o = bpy.context.active_object
+    if scale:
+        o.scale = scale
+        bpy.ops.object.transform_apply(scale=True)
+    if not caps:
+        o.modifiers.new("solid", "SOLIDIFY").thickness = 0.02
     bpy.ops.object.shade_smooth()
     return _place(o, loc, rot, mat, parent, name, bevel)
 
