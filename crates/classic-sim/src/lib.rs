@@ -9,10 +9,12 @@
 pub mod game;
 pub mod map;
 pub mod path;
+pub mod placement;
 pub mod units;
 pub mod world;
 
 pub use game::{Game, GameOptions, hash_state};
 pub use map::{MapData, Terrain, Tile, parse_map};
-pub use units::{Rules, UnitType};
+pub use placement::PlaceError;
+pub use units::{Kind, Rules};
 pub use world::{Command, CommandOrder, Entity, Event, GameState, Order, Task};

@@ -3,7 +3,7 @@
 
 use classic_sim::path::Pathfinder;
 use classic_sim::world::Event;
-use classic_sim::{CommandOrder, Game, GameOptions, Terrain, Tile, UnitType, parse_map};
+use classic_sim::{CommandOrder, Game, GameOptions, Terrain, Tile, parse_map};
 
 const MAP: &str = include_str!("../../../maps/test-01.txt");
 
@@ -13,8 +13,13 @@ fn game(seed: i32) -> Game {
 
 /// A fixed script of player orders, so runs exercise commands as well as the automatic harvesters.
 pub fn scripted(game: &mut Game, ticks: u32) {
-    let tanks: Vec<(u32, u32)> =
-        game.state.entities.iter().filter(|e| e.kind == UnitType::BattleTank).map(|e| (e.id, e.owner)).collect();
+    let tanks: Vec<(u32, u32)> = game
+        .state
+        .entities
+        .iter()
+        .filter(|e| game.rules.kind(e.kind).id == "battle_tank")
+        .map(|e| (e.id, e.owner))
+        .collect();
     let mut t = 0;
     while t < ticks {
         for (k, &(id, owner)) in tanks.iter().enumerate() {
@@ -145,7 +150,7 @@ fn pathfinding_refuses_a_goal_in_a_sealed_off_region_without_searching() {
 #[test]
 fn move_order_a_tank_reaches_the_tile_it_was_sent_to() {
     let mut g = game(1);
-    let tank = g.state.entities.iter().find(|e| e.kind == UnitType::BattleTank && e.owner == 0).unwrap().id;
+    let tank = g.state.entities.iter().find(|e| g.rules.kind(e.kind).id == "battle_tank" && e.owner == 0).unwrap().id;
     g.order(0, &[tank], CommandOrder::Move { x: 20, y: 9 });
     g.step(600);
     let s = g.snapshot().entities.into_iter().find(|e| e.id == tank).unwrap();
