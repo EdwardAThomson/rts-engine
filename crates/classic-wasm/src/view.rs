@@ -4,9 +4,11 @@
 //! Map and kind facts are read one call at a time; the entities, which change every tick, are copied into a buffer
 //! the caller reserves with `alloc`, `ENTITY_FIELDS` signed 32-bit numbers per entity.
 
-use classic_sim::{Game, Task, Terrain, UnitType};
+use classic_sim::units::KindRules;
+use classic_sim::{Game, Task, Terrain};
 
-/// Numbers per entity in `game_entities`: id, kind, owner, x, y (centre, sub-tile units), health, order, task, cargo.
+/// Numbers per entity in `game_entities`: id, kind, owner, x, y (sub-tile units: a unit's centre, or the centre of
+/// a building's top-left tile), health, order, task, cargo.
 /// Order is 0 idle, 1 move, 2 harvest; task is the `Task` in declaration order, or -1; cargo is -1 when none.
 pub const ENTITY_FIELDS: u32 = 9;
 
@@ -72,8 +74,22 @@ pub unsafe extern "C" fn game_player_count(game: *const Game) -> u32 {
 /// # Safety
 /// `game` must be a live handle from `game_new`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn game_kind_count(_game: *const Game) -> u32 {
-    UnitType::ALL.len() as u32
+pub unsafe extern "C" fn game_kind_count(game: *const Game) -> u32 {
+    // SAFETY: a live handle from game_new.
+    unsafe { &*game }.rules.kinds.len() as u32
+}
+
+/// A kind's rules, if `kind` is one.
+///
+/// # Safety
+/// `game` must be a live handle from `game_new`.
+unsafe fn kind_rules<'a>(game: *const Game, kind: u32) -> Option<&'a KindRules> {
+    // SAFETY: a live handle from game_new, which outlives this call's use.
+    unsafe { &*game }.rules.kinds.get(kind as usize)
+}
+
+fn clamp(v: i64) -> i32 {
+    i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX })
 }
 
 /// Copy a kind's generic id (`harvester`, `refinery`, ...) to `out` as UTF-8, at most `cap` bytes. Returns its
@@ -83,9 +99,10 @@ pub unsafe extern "C" fn game_kind_count(_game: *const Game) -> u32 {
 /// `game` must be a live handle from `game_new`, and `out` must point to `cap` writable bytes, such as a buffer
 /// from `alloc(cap)`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn game_kind_id(_game: *const Game, kind: u32, out: *mut u8, cap: u32) -> u32 {
-    let Some(&k) = UnitType::ALL.get(kind as usize) else { return 0 };
-    let id = k.id().as_bytes();
+pub unsafe extern "C" fn game_kind_id(game: *const Game, kind: u32, out: *mut u8, cap: u32) -> u32 {
+    // SAFETY: a live handle from game_new.
+    let Some(k) = (unsafe { kind_rules(game, kind) }) else { return 0 };
+    let id = k.id.as_bytes();
     let n = id.len().min(cap as usize);
     // SAFETY: the caller gives `cap` writable bytes at `out`, and `n <= cap`.
     unsafe { std::ptr::copy_nonoverlapping(id.as_ptr(), out, n) };
@@ -99,8 +116,7 @@ pub unsafe extern "C" fn game_kind_id(_game: *const Game, kind: u32, out: *mut u
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn game_kind_building(game: *const Game, kind: u32) -> u32 {
     // SAFETY: a live handle from game_new.
-    let g = unsafe { &*game };
-    UnitType::ALL.get(kind as usize).map_or(0, |&k| u32::from(g.rules.stats(k).building))
+    unsafe { kind_rules(game, kind) }.map_or(0, |k| u32::from(k.building))
 }
 
 /// A kind's full health under the game's rules, for health bars.
@@ -110,8 +126,7 @@ pub unsafe extern "C" fn game_kind_building(game: *const Game, kind: u32) -> u32
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn game_kind_max_health(game: *const Game, kind: u32) -> i32 {
     // SAFETY: a live handle from game_new.
-    let g = unsafe { &*game };
-    UnitType::ALL.get(kind as usize).map_or(0, |&k| i32::try_from(g.rules.stats(k).max_health).unwrap_or(i32::MAX))
+    unsafe { kind_rules(game, kind) }.map_or(0, |k| clamp(k.max_health))
 }
 
 /// How much a kind can carry, for cargo bars: a harvester's capacity, or 0 for kinds that carry nothing.
@@ -121,11 +136,27 @@ pub unsafe extern "C" fn game_kind_max_health(game: *const Game, kind: u32) -> i
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn game_kind_capacity(game: *const Game, kind: u32) -> i32 {
     // SAFETY: a live handle from game_new.
-    let g = unsafe { &*game };
-    match UnitType::ALL.get(kind as usize) {
-        Some(UnitType::Harvester) => i32::try_from(g.rules.harvester.capacity).unwrap_or(i32::MAX),
-        _ => 0,
-    }
+    unsafe { kind_rules(game, kind) }.and_then(|k| k.harvester.as_ref()).map_or(0, |h| clamp(h.capacity))
+}
+
+/// A kind's footprint width in tiles, counted from its top-left tile; 1 for units, 0 for no such kind.
+///
+/// # Safety
+/// `game` must be a live handle from `game_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn game_kind_width(game: *const Game, kind: u32) -> i32 {
+    // SAFETY: a live handle from game_new.
+    unsafe { kind_rules(game, kind) }.map_or(0, |k| k.width)
+}
+
+/// A kind's footprint height in tiles; 1 for units, 0 for no such kind.
+///
+/// # Safety
+/// `game` must be a live handle from `game_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn game_kind_height(game: *const Game, kind: u32) -> i32 {
+    // SAFETY: a live handle from game_new.
+    unsafe { kind_rules(game, kind) }.map_or(0, |k| k.height)
 }
 
 /// # Safety
@@ -148,10 +179,8 @@ pub unsafe extern "C" fn game_entities(game: *const Game, out: *mut i32, cap: u3
     let g = unsafe { &*game };
     // SAFETY: the caller gives `cap` writable, aligned i32s at `out`.
     let buf = unsafe { std::slice::from_raw_parts_mut(out, cap as usize) };
-    let fit = |v: i64| i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX });
     let mut written = 0;
     for (e, row) in g.state.entities.iter().zip(buf.chunks_exact_mut(ENTITY_FIELDS as usize)) {
-        let kind = UnitType::ALL.iter().position(|&k| k == e.kind).unwrap_or(0);
         let task = e.task.map_or(-1, |t| match t {
             Task::Seek => 0,
             Task::ToField => 1,
@@ -162,14 +191,14 @@ pub unsafe extern "C" fn game_entities(game: *const Game, out: *mut i32, cap: u3
         });
         row.copy_from_slice(&[
             e.id as i32,
-            kind as i32,
+            i32::from(e.kind.0),
             e.owner as i32,
-            fit(e.x),
-            fit(e.y),
-            fit(e.health),
+            clamp(e.x),
+            clamp(e.y),
+            clamp(e.health),
             e.order as i32,
             task,
-            e.cargo.map_or(-1, fit),
+            e.cargo.map_or(-1, clamp),
         ]);
         written += 1;
     }

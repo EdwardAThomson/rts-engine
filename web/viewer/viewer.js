@@ -16,6 +16,7 @@ const RESOURCE_FULL = 300; // a full resource tile, for shading
 const ORDERS = ["idle", "move", "harvest"];
 const TASKS = ["seek", "to field", "mining", "to refinery", "unloading", "stuck"];
 const PLAYER_COLOURS = ["#4f8ef7", "#e5534b", "#57ab5a", "#c69026", "#a371f7", "#39c5cf", "#e0823d", "#d2a8ff"];
+const UNKNOWN_KIND = { id: "?", building: false, maxHealth: 1, capacity: 0, w: 1, h: 1 };
 const TERRAIN_COLOURS = ["#b89a68", "#77706a", "#3a302a"]; // open ground, rock, cliff
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +26,7 @@ const ctx = canvas.getContext("2d");
 let api;
 let game = 0;
 let map = { w: 0, h: 0, terrain: [] };
-let kinds = []; // { id, building, maxHealth, capacity }
+let kinds = []; // { id, building, maxHealth, capacity, w, h }
 let prev = new Map(); // entity id -> entity, one tick before `cur`
 let cur = new Map();
 let heading = new Map(); // entity id -> last direction of travel, in radians
@@ -71,7 +72,7 @@ async function newGame() {
     const len = Math.min(api.game_kind_id(game, k, nameBuf, 64), 64);
     const id = new TextDecoder().decode(new Uint8Array(api.memory.buffer, nameBuf, len));
     kinds.push({ id, building: api.game_kind_building(game, k) === 1, maxHealth: api.game_kind_max_health(game, k),
-      capacity: api.game_kind_capacity(game, k) });
+      capacity: api.game_kind_capacity(game, k), w: api.game_kind_width(game, k), h: api.game_kind_height(game, k) });
   }
   api.dealloc(nameBuf, 64);
 
@@ -161,20 +162,21 @@ function drawEntities(alpha) {
   // Buildings first, so units drive over them.
   const order = [...cur.values()].sort((a, b) => Number(kinds[b.kind]?.building) - Number(kinds[a.kind]?.building));
   for (const e of order) {
-    const k = kinds[e.kind] ?? { id: "?", building: false, maxHealth: 1, capacity: 0 };
+    const k = kinds[e.kind] ?? UNKNOWN_KIND;
     const p = prev.get(e.id) ?? e;
-    const cx = toPx(p.x + (e.x - p.x) * alpha);
-    const cy = toPx(p.y + (e.y - p.y) * alpha);
+    // A building's position is its top-left tile's centre; its box covers its whole footprint.
+    const { left, top, w, h } = box(e, k, p.x + (e.x - p.x) * alpha, p.y + (e.y - p.y) * alpha);
+    const cx = left + w / 2;
+    const cy = top + h / 2;
     const colour = PLAYER_COLOURS[e.owner % PLAYER_COLOURS.length];
     ctx.lineWidth = Math.max(1, t / 16);
     ctx.strokeStyle = "#111";
     ctx.fillStyle = colour;
     if (k.building) {
-      const s = t - 2;
-      ctx.fillRect(cx - s / 2, cy - s / 2, s, s);
-      ctx.strokeRect(cx - s / 2, cy - s / 2, s, s);
+      ctx.fillRect(left + 1, top + 1, w - 2, h - 2);
+      ctx.strokeRect(left + 1, top + 1, w - 2, h - 2);
       ctx.fillStyle = "#111";
-      ctx.font = `bold ${Math.floor(t * 0.5)}px system-ui, sans-serif`;
+      ctx.font = `bold ${Math.floor(t * 0.6)}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(k.id[0].toUpperCase(), cx, cy + 1);
@@ -199,18 +201,25 @@ function drawEntities(alpha) {
       ctx.lineTo(cx + Math.cos(a) * r * 1.5, cy + Math.sin(a) * r * 1.5);
       ctx.stroke();
     }
-    if (e.cargo > 0 && k.capacity > 0) bar(cx, cy + t * 0.42, e.cargo / k.capacity, "#e8a028");
-    if (e.health < k.maxHealth || selected === e.id) bar(cx, cy - t * 0.48, e.health / k.maxHealth, "#57ab5a");
+    if (e.cargo > 0 && k.capacity > 0) bar(cx, top + h - t * 0.08, w, e.cargo / k.capacity, "#e8a028");
+    if (e.health < k.maxHealth || selected === e.id) bar(cx, top + t * 0.02, w, e.health / k.maxHealth, "#57ab5a");
     if (selected === e.id) {
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(cx - t / 2, cy - t / 2, t, t);
+      ctx.strokeRect(left, top, w, h);
     }
   }
 }
 
-function bar(cx, y, f, colour) {
-  const w = tilePx * 0.8;
+// An entity's box in canvas pixels at sub-tile position (x, y): a building's footprint, or one tile round a unit.
+function box(e, k, x = e.x, y = e.y) {
+  const t = tilePx;
+  if (!k.building) return { left: (x / SUB) * t - t / 2, top: (y / SUB) * t - t / 2, w: t, h: t };
+  return { left: (x / SUB - 0.5) * t, top: (y / SUB - 0.5) * t, w: k.w * t, h: k.h * t };
+}
+
+function bar(cx, y, boxW, f, colour) {
+  const w = boxW - tilePx * 0.2;
   const h = Math.max(2, tilePx / 10);
   ctx.fillStyle = "#111";
   ctx.fillRect(cx - w / 2, y - h / 2, w, h);
@@ -287,12 +296,20 @@ function tileAt(ev) {
 
 canvas.addEventListener("click", (ev) => {
   const at = tileAt(ev);
+  // The nearest unit within most of a tile wins; otherwise the building whose footprint was clicked.
   let best = null;
   let bestD = 0.8 * 0.8;
   for (const e of cur.values()) {
+    const k = kinds[e.kind] ?? UNKNOWN_KIND;
+    if (k.building) {
+      const b = box(e, k);
+      const [px, py] = [at.x * tilePx, at.y * tilePx];
+      if (best === null && px >= b.left && px < b.left + b.w && py >= b.top && py < b.top + b.h) best = e.id;
+      continue;
+    }
     const dx = e.x / SUB - at.x;
     const dy = e.y / SUB - at.y;
-    const d = dx * dx + dy * dy - (kinds[e.kind]?.building ? 0.1 : 0); // prefer a unit over the building it's on
+    const d = dx * dx + dy * dy;
     if (d < bestD) { bestD = d; best = e.id; }
   }
   selected = best;

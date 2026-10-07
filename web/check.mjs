@@ -61,13 +61,20 @@ function check(name, got, want) {
     kinds.push(new TextDecoder().decode(new Uint8Array(api.memory.buffer, names, len)));
   }
   api.dealloc(names, 64);
-  check("kinds", kinds.join(","), "battle_tank,harvester,refinery");
+  // Every built unit and building in the rules data, in generic-id order, with its footprint.
+  const rules = JSON.parse(readFileSync(new URL("data/rules/entities.json", root), "utf8")).entities;
+  const built = Object.keys(rules).filter((id) => rules[id].status === "built" && ["unit", "building"].includes(rules[id].kind)).sort();
+  check("kinds", kinds.join(","), built.join(","));
+  const footprint = (id) => `${api.game_kind_width(g, kinds.indexOf(id))}x${api.game_kind_height(g, kinds.indexOf(id))}`;
+  const n = (id, name) => rules[id].numbers[name].default;
+  check("refinery footprint", footprint("refinery"), `${n("refinery", "width")}x${n("refinery", "height")}`);
+  check("unit footprint", footprint("battle_tank"), "1x1");
   const fields = 9;
   const buf = api.alloc(4 * 64 * fields);
-  const n = api.game_entities(g, buf, 64 * fields);
-  const e = new Int32Array(api.memory.buffer, buf, n * fields);
-  check("entities", n, api.game_entity_count(g));
-  // Player 1's refinery is entity 1, on its start tile (3, 2), centred in sub-tile units.
+  const count = api.game_entities(g, buf, 64 * fields);
+  const e = new Int32Array(api.memory.buffer, buf, count * fields);
+  check("entities", count, api.game_entity_count(g));
+  // Player 1's refinery is entity 1, its top-left tile on the start tile (3, 2), at that tile's centre.
   check("refinery 1", [...e.subarray(0, 5)].join(","), `1,${kinds.indexOf("refinery")},0,${3 * 256 + 128},${2 * 256 + 128}`);
   check("reading changes nothing", hex(g), hashBefore);
   api.dealloc(buf, 4 * 64 * fields);
