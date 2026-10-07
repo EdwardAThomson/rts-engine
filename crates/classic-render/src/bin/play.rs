@@ -6,15 +6,16 @@
 //!
 //! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
 //! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
-//! where it fits. Escape puts the building back, then clears the selection, then quits. Space pauses. There is no
-//! computer opponent yet. `--frames N` quits after N frames, for smoke tests.
+//! where it fits. The minimap at the rail's foot moves the view (click or drag), and a right click on it orders
+//! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses.
+//! There is no computer opponent yet. `--frames N` quits after N frames, for smoke tests.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use classic_render::art::{self, Art};
-use classic_render::hud::{Button, RAIL_W};
+use classic_render::hud::{Button, Click, RAIL_W};
 use classic_render::platform::{Font, Gpu, Rect, SpriteBatch};
 use classic_render::{Camera, Hud, Scene, View};
 use classic_sim::map::TILE;
@@ -64,6 +65,8 @@ struct App {
     mouse: (f32, f32),
     /// Where a left-button drag started, in screen pixels.
     drag: Option<(f32, f32)>,
+    /// The left button went down on the minimap: moving the mouse keeps moving the view.
+    minimap_drag: bool,
     frames: u64,
     max_frames: Option<u64>,
 }
@@ -82,13 +85,34 @@ impl App {
     fn hud_click(&mut self, button: Button) -> bool {
         let view = self.view();
         let shift = self.shift();
-        self.hud.click(&mut self.game, &view, self.mouse, button, shift)
+        let click = self.hud.click(&mut self.game, &view, self.mouse, button, shift);
+        let taken = click.taken();
+        match click {
+            Click::Centre { x, y } => {
+                self.minimap_drag = true;
+                self.centre_on(x, y);
+            }
+            Click::Order { x, y } => self.order_at(None, (x, y)),
+            Click::Taken | Click::World => {}
+        }
+        taken
+    }
+
+    /// Centre the world's part of the screen on a map point, in tiles.
+    fn centre_on(&mut self, x: f32, y: f32) {
+        let view = self.view();
+        let world_w = view.screen.0 - RAIL_W * self.hud.scale;
+        self.cam.x = x * view.tile - world_w / 2.0 / self.cam.zoom;
+        self.cam.y = y * view.tile - view.screen.1 / 2.0 / self.cam.zoom;
     }
 
     /// A right click goes to the HUD, else orders the selected units.
     fn right_click(&mut self) {
         if !self.hud_click(Button::Right) {
-            self.command(self.mouse.0, self.mouse.1);
+            let (wx, wy) = self.cam.to_world(self.mouse.0, self.mouse.1);
+            let tile = TILE as f32 * self.world_px();
+            let target = self.pick(self.mouse.0, self.mouse.1);
+            self.order_at(target, ((wx / tile).floor() as i32, (wy / tile).floor() as i32));
         }
     }
 
@@ -148,19 +172,16 @@ impl App {
             .collect();
     }
 
-    fn command(&mut self, sx: f32, sy: f32) {
+    /// The selected units' default order: attack `target` if it is an enemy, otherwise move to `tile`.
+    fn order_at(&mut self, target: Option<u32>, (x, y): (i32, i32)) {
         if self.scene.selected.is_empty() {
             return;
         }
         let ids = self.scene.selected.clone();
-        let enemy = self.pick(sx, sy).filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
+        let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
         let order = match enemy {
             Some(target) => CommandOrder::Attack { target },
-            None => {
-                let (wx, wy) = self.cam.to_world(sx, sy);
-                let tile = TILE as f32 * self.world_px();
-                CommandOrder::Move { x: (wx / tile).floor() as i32, y: (wy / tile).floor() as i32 }
-            }
+            None => CommandOrder::Move { x, y },
         };
         self.game.order(self.player, &ids, order);
     }
@@ -329,6 +350,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
                 self.mouse = (x as f32, y as f32);
+                if self.minimap_drag {
+                    let l = self.hud.layout(&self.game, self.view().screen);
+                    // Follow the mouse along the minimap's edge when it leaves it.
+                    let (mx, my) = (
+                        self.mouse.0.clamp(l.minimap.x, l.minimap.x + l.minimap.w - 0.01),
+                        self.mouse.1.clamp(l.minimap.y, l.minimap.y + l.minimap.h - 0.01),
+                    );
+                    if let Some((tx, ty)) = self.hud.minimap_point(&l, &self.game, mx, my) {
+                        self.centre_on(tx, ty);
+                    }
+                }
             }
             WindowEvent::CursorLeft { .. } => self.mouse = (-1.0e4, -1.0e4),
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
@@ -338,6 +370,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 (MouseButton::Left, ElementState::Released) => {
+                    self.minimap_drag = false;
                     if let Some(from) = self.drag.take() {
                         self.select(from, self.mouse);
                     }
@@ -405,6 +438,7 @@ fn main() {
         keys: BTreeSet::new(),
         mouse: (-1.0e4, -1.0e4),
         drag: None,
+        minimap_drag: false,
         frames: 0,
         max_frames: arg("frames").and_then(|s| s.parse().ok()),
     };

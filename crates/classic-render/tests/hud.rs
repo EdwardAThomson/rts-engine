@@ -3,7 +3,7 @@
 //! a software one will do) and writes it to `target/hud-test.png` for a person to look at.
 
 use classic_render::art::{self, Art};
-use classic_render::hud::{Button, Hud, Icon, RAIL_W, View};
+use classic_render::hud::{Button, Click, Hud, Icon, RAIL_W, View};
 use classic_render::platform::{Font, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
 use classic_render::{Camera, Scene};
 use classic_sim::world::Event;
@@ -75,10 +75,16 @@ fn the_rail_offers_what_the_players_factories_can_build() {
 fn clicks_on_the_rail_never_reach_the_world() {
     let (mut game, mut hud) = game();
     let v = view();
-    assert!(hud.click(&mut game, &v, (SCREEN.0 - RAIL_W + 2.0, SCREEN.1 - 2.0), Button::Left, false));
-    assert!(hud.click(&mut game, &v, (SCREEN.0 - 2.0, 2.0), Button::Left, false), "the readout is part of the rail");
-    assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Left, false), "the world gets clicks off the HUD");
-    assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Right, false));
+    assert!(hud.click(&mut game, &v, (SCREEN.0 - RAIL_W + 2.0, SCREEN.1 - 2.0), Button::Left, false).taken());
+    assert!(
+        hud.click(&mut game, &v, (SCREEN.0 - 2.0, 2.0), Button::Left, false).taken(),
+        "the readout is part of the rail"
+    );
+    assert!(
+        !hud.click(&mut game, &v, (600.0, 400.0), Button::Left, false).taken(),
+        "the world gets clicks off the HUD"
+    );
+    assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Right, false).taken());
     assert!(game.command_log().is_empty(), "empty rail and world clicks order nothing");
 }
 
@@ -128,7 +134,7 @@ fn a_ready_building_goes_where_the_simulation_allows_and_nowhere_else() {
     }
     println!("ready after {ticks} ticks");
     // Before picking it up, a world click is the world's.
-    assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Left, false));
+    assert!(!hud.click(&mut game, &v, (600.0, 400.0), Button::Left, false).taken());
     hud.click(&mut game, &v, at, Button::Left, false);
     assert_eq!(hud.placing, Some(plant), "clicking a ready icon picks the building up");
 
@@ -153,14 +159,14 @@ fn a_ready_building_goes_where_the_simulation_allows_and_nowhere_else() {
 
     // A click where it doesn't fit keeps it on the cursor and orders nothing.
     let orders = game.command_log().len();
-    assert!(hud.click(&mut game, &v, bad, Button::Left, false));
+    assert!(hud.click(&mut game, &v, bad, Button::Left, false).taken());
     assert_eq!(hud.placing, Some(plant));
     // A right click puts it back, still ready; picking it up again and clicking where it fits places it.
-    assert!(hud.click(&mut game, &v, bad, Button::Right, false));
+    assert!(hud.click(&mut game, &v, bad, Button::Right, false).taken());
     assert_eq!(hud.placing, None);
     hud.click(&mut game, &v, at, Button::Left, false);
     let g = hud.ghost(&game, &v, good.0, good.1).unwrap();
-    assert!(hud.click(&mut game, &v, good, Button::Left, false));
+    assert!(hud.click(&mut game, &v, good, Button::Left, false).taken());
     game.step(1);
     assert_eq!(game.command_log().len(), orders + 1, "one place order, after the produce order");
     let placed = game.events.iter().any(
@@ -215,6 +221,17 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     assert!(readout > 1000, "the readout is drawn");
     assert_eq!(middle, 0, "the world away from the HUD is untouched");
 
+    // The minimap shows the player's base in their colour, where the base is.
+    let yard = game.state.entities.iter().find(|e| e.owner == 0 && e.kind == game.kind("construction_yard").unwrap());
+    let t = yard.unwrap().tile();
+    let m = l.minimap;
+    let (bx, by) = (m.w / game.map.width as f32, m.h / game.map.height as f32);
+    let (px, py) = ((m.x + (t.x as f32 + 1.0) * bx) as u32, (m.y + (t.y as f32 + 1.0) * by) as u32);
+    let i = ((py * w + px) * 4) as usize;
+    let want = art.owner_colour(0);
+    println!("minimap at the yard: {:?}, player colour {want:?}", &image[i..i + 3]);
+    assert_eq!(image[i..i + 3], want);
+
     // Text: one glyph lights exactly its own pixels.
     let font_px = {
         batch.fill(Rect::new(0.0, 0.0, 32.0, 32.0), [0, 0, 0, 255]);
@@ -224,4 +241,31 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     };
     // The 8 has 17 inked pixels, each drawn 2 by 2.
     assert_eq!(font_px, 17 * 4);
+}
+
+#[test]
+fn the_minimap_moves_the_view_and_sends_orders_but_never_orders_itself() {
+    let (mut game, mut hud) = game();
+    let v = view();
+    let l = hud.layout(&game, SCREEN);
+    let m = l.minimap;
+    println!("minimap {m:?} for a {}x{} map", game.map.width, game.map.height);
+    assert!(l.rail.contains(m.x, m.y) && l.rail.contains(m.x + m.w - 1.0, m.y + m.h - 1.0), "inside the rail");
+    assert!((m.w / m.h - game.map.width as f32 / game.map.height as f32).abs() < 0.01, "keeps the map's shape");
+    // The minimap's centre is the map's centre; its corners are the map's corners.
+    let mid = centre(m);
+    let at = |x: f32, y: f32| hud.minimap_point(&l, &game, x, y).unwrap();
+    let (cx, cy) = at(mid.0, mid.1);
+    assert!((cx - game.map.width as f32 / 2.0).abs() < 0.5 && (cy - game.map.height as f32 / 2.0).abs() < 0.5);
+    let (x0, y0) = at(m.x, m.y);
+    assert!(x0 < 0.01 && y0 < 0.01);
+    assert_eq!(hud.minimap_point(&l, &game, m.x - 1.0, m.y), None);
+    // Left: centre there. Right: an order there, for the caller to give the selected units.
+    let left = hud.click(&mut game, &v, mid, Button::Left, false);
+    let right = hud.click(&mut game, &v, mid, Button::Right, false);
+    println!("left {left:?}, right {right:?}");
+    assert!(matches!(left, Click::Centre { x, y } if (x, y) == (cx, cy)));
+    assert_eq!(right, Click::Order { x: cx.floor() as i32, y: cy.floor() as i32 });
+    assert!(left.taken() && right.taken());
+    assert!(game.command_log().is_empty(), "the minimap itself orders nothing");
 }

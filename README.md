@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 85 checks, about 1 s after the first build
+cargo test                                                    # 86 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
@@ -30,7 +30,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `hud` is the production rail (a tab per factory kind, build grid, queue), the credits and power readout, and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font). |
+| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font). |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. The tests' map. |
@@ -91,7 +91,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   locked; shift-click queues five and right-clicks cancel them with every credit refunded; a ready building's
   ghost agrees with the simulation's placement check on every tile on screen, a bad spot orders nothing, a good
   one places it; clicks on the rail never reach the world; the HUD draws only in its own place, and a glyph
-  lights exactly its own pixels.
+  lights exactly its own pixels. The minimap keeps the map's shape, maps its corners and centre to the map's,
+  shows the player's base in their colour, and its clicks move the view or ask for an order without ordering
+  anything itself.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
@@ -102,7 +104,7 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - No AI; no storage cap, tech levels, factory upgrades or starport.
-- The renderer is desktop only so far, with no minimap, selection card, messages, menus, audio or computer
+- The renderer is desktop only so far, with no selection card, messages, menus, audio or computer
   opponent; the rail has no tabs by category, hotkeys, pause per item or primary factory choice yet; cliffs are
   plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.

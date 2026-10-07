@@ -1,5 +1,6 @@
 //! The heads-up display over the world: the production rail on the right (the economy readout at its top, then a
-//! tab per kind of factory the player owns, a grid of what it can build, and its queue), and the ghost of a
+//! tab per kind of factory the player owns, a grid of what it can build, its queue, and the minimap at the bottom),
+//! and the ghost of a
 //! finished building being placed. Design: `plans/rts/ui.md`, sections 2 to 4.
 //!
 //! The HUD is client state only. It reads the game to draw and turns clicks into the same commands any player
@@ -10,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use classic_sim::production::has_ready;
 use classic_sim::units::TICKS_PER_SECOND;
-use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError};
+use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
 use crate::platform::{Font, Rect, SpriteBatch};
@@ -26,6 +27,8 @@ const GAP: f32 = 4.0;
 const QUEUE_W: f32 = 36.0;
 const QUEUE_H: f32 = 27.0;
 const READOUT_H: f32 = 62.0;
+/// The minimap's square, at UI scale 1; the map is fitted inside it.
+const MINIMAP: f32 = 192.0;
 /// The most a shift-click queues at once.
 const SHIFT_COUNT: usize = 5;
 
@@ -57,6 +60,26 @@ impl View {
 pub enum Button {
     Left,
     Right,
+}
+
+/// What a click did.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Click {
+    /// Nothing: the click is the world's.
+    World,
+    /// The HUD took it.
+    Taken,
+    /// A left click on the minimap: centre the view on this point, in tiles.
+    Centre { x: f32, y: f32 },
+    /// A right click on the minimap: give the selected units their default order at this tile.
+    Order { x: i32, y: i32 },
+}
+
+impl Click {
+    /// Whether the HUD took the click, so the world should ignore it.
+    pub fn taken(self) -> bool {
+        self != Click::World
+    }
 }
 
 /// Where one item stands for the player, across every factory of the kind that makes it.
@@ -96,6 +119,8 @@ pub struct Layout {
     /// The open tab's primary factory queue, in order.
     pub queue: Vec<(Kind, Rect)>,
     pub readout: Rect,
+    /// Where the map is drawn on the minimap: one block per tile, fitted into the square at the rail's foot.
+    pub minimap: Rect,
 }
 
 /// A building being placed: where its top-left tile would go, and whether the simulation would take it there.
@@ -220,7 +245,13 @@ impl Hud {
             .collect();
         let open = self.tab.filter(|t| factories.contains(t)).or(factories.first().copied());
         let grid_top = tabs.last().map_or(readout.h + 6.0 * s, |t| t.rect.y + t.rect.h + 8.0 * s);
-        let queue_top = h - (QUEUE_H + 8.0) * s;
+        // The minimap, the map's shape fitted and centred in a square at the bottom of the rail.
+        // The minimap: the map's shape fitted into a square at the bottom of the rail, sitting on its foot.
+        let side = MINIMAP * s;
+        let block = side / game.map.width.max(game.map.height).max(1) as f32;
+        let (mw, mh) = (game.map.width as f32 * block, game.map.height as f32 * block);
+        let minimap = Rect::new(x0 + (rail.w - mw) / 2.0, h - 6.0 * s - mh, mw, mh);
+        let queue_top = minimap.y - (QUEUE_H + 10.0) * s;
         let mut icons = Vec::new();
         let mut queue = Vec::new();
         if let Some(factory) = open {
@@ -247,13 +278,19 @@ impl Hud {
                 }
             }
         }
-        Layout { rail, tabs, open, icons, queue, readout }
+        Layout { rail, tabs, open, icons, queue, readout, minimap }
     }
 
     /// Whether a screen point is on the HUD rather than the world.
     pub fn over(&self, game: &Game, screen: (f32, f32), x: f32, y: f32) -> bool {
         let l = self.layout(game, screen);
         l.rail.contains(x, y) || l.readout.contains(x, y)
+    }
+
+    /// The map point under a screen point on the minimap, in tiles.
+    pub fn minimap_point(&self, l: &Layout, game: &Game, x: f32, y: f32) -> Option<(f32, f32)> {
+        let m = l.minimap;
+        m.contains(x, y).then(|| ((x - m.x) / m.w * game.map.width as f32, (y - m.y) / m.h * game.map.height as f32))
     }
 
     /// Where the ready building on the cursor would go with the cursor at (x, y).
@@ -272,16 +309,22 @@ impl Hud {
         }
     }
 
-    /// A mouse click at (x, y), with shift held or not. Returns whether the HUD took it; if not, it is the world's.
+    /// A mouse click at (x, y), with shift held or not.
     ///
-    /// On an icon a left click orders one (shift: up to five, as the queue has room), or picks up a ready building;
+    /// On the minimap a left click asks to centre the view there and a right click asks for an order there. On an icon a left click orders one (shift: up to five, as the queue has room), or picks up a ready building;
     /// a right click cancels the last one queued, with its refund. A click on a queue entry cancels that item.
     /// With a building on the cursor, a left click on the world places it if the simulation allows, and a right
     /// click puts it back.
-    pub fn click(&mut self, game: &mut Game, view: &View, (x, y): (f32, f32), button: Button, shift: bool) -> bool {
+    pub fn click(&mut self, game: &mut Game, view: &View, (x, y): (f32, f32), button: Button, shift: bool) -> Click {
         self.check_placing(game);
         let l = self.layout(game, view.screen);
         if l.rail.contains(x, y) || l.readout.contains(x, y) {
+            if let Some((mx, my)) = self.minimap_point(&l, game, x, y) {
+                return match button {
+                    Button::Left => Click::Centre { x: mx, y: my },
+                    Button::Right => Click::Order { x: mx.floor() as i32, y: my.floor() as i32 },
+                };
+            }
             if let Some(t) = l.tabs.iter().find(|t| t.rect.contains(x, y)) {
                 self.tab = Some(t.factory);
                 self.scroll = 0;
@@ -290,9 +333,9 @@ impl Hud {
             } else if let Some(&(item, _)) = l.queue.iter().find(|(_, r)| r.contains(x, y)) {
                 game.order(self.player, &[], CommandOrder::Cancel { kind: item });
             }
-            return true;
+            return Click::Taken;
         }
-        let Some(ghost) = self.ghost(game, view, x, y) else { return false };
+        let Some(ghost) = self.ghost(game, view, x, y) else { return Click::World };
         match button {
             Button::Left if ghost.ok => {
                 game.order(self.player, &[], CommandOrder::Place { kind: ghost.kind, x: ghost.x, y: ghost.y });
@@ -301,7 +344,7 @@ impl Hud {
             Button::Left => {}
             Button::Right => self.placing = None,
         }
-        true
+        Click::Taken
     }
 
     fn click_icon(&mut self, game: &mut Game, icon: &Icon, button: Button, shift: bool) {
@@ -480,6 +523,7 @@ impl Hud {
             }
         }
 
+        self.draw_minimap(batch, art, game, view, l.minimap);
         self.draw_readout(batch, font, game, l.readout, text);
         if let Some(icon) = hovered {
             self.draw_tooltip(batch, font, game, icon, mouse, view.screen, text);
@@ -495,6 +539,66 @@ impl Hud {
         let fit = (r.w / strip.w).min(r.h / strip.h);
         let (w, h) = (strip.w * fit, strip.h * fit);
         batch.sprite(strip.tex, strip.frame(0), Rect::new(r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h), tint);
+    }
+
+    /// The whole map, one block per tile: terrain and resource in the art's own average colours, buildings and
+    /// units in their owners' colours, and the part of the map the view shows as a white box.
+    fn draw_minimap(&self, batch: &mut SpriteBatch, art: &Art, game: &Game, view: &View, m: Rect) {
+        let s = self.scale;
+        batch.fill(Rect::new(m.x - 2.0 * s, m.y - 2.0 * s, m.w + 4.0 * s, m.h + 4.0 * s), [0, 0, 0, 255]);
+        let (bw, bh) = (m.w / game.map.width as f32, m.h / game.map.height as f32);
+        let ground = |id: &str, fallback: [u8; 3]| {
+            let [r, g, b] = art.terrain(id).map_or(fallback, |t| t.colour);
+            [r, g, b, 255]
+        };
+        let open = ground("open", [180, 150, 100]);
+        let rock = ground("rock", [120, 110, 100]);
+        // A field's tile is mostly the ground it lies on, so take what stands out in it and push it further from
+        // the open ground, so a field still reads at a few pixels a tile.
+        let accent = art.terrain("resource").map_or([220, 150, 40], |t| t.accent);
+        let [r, g, b] = [0, 1, 2].map(|c| (3 * i32::from(accent[c]) - 2 * i32::from(open[c])).clamp(0, 255) as u8);
+        let resource = [r, g, b, 255];
+        for ty in 0..game.map.height {
+            for tx in 0..game.map.width {
+                let i = (ty * game.map.width + tx) as usize;
+                let colour = if game.state.resource[i] > 0 {
+                    resource
+                } else {
+                    match game.map.terrain[i] {
+                        Terrain::Open => open,
+                        Terrain::Rock => rock,
+                        Terrain::Cliff => [46, 40, 36, 255],
+                    }
+                };
+                batch.fill(Rect::new(m.x + tx as f32 * bw, m.y + ty as f32 * bh, bw, bh), colour);
+            }
+        }
+        for e in &game.state.entities {
+            let k = game.rules.kind(e.kind);
+            let t = e.tile();
+            let [r, g, b] = art.owner_colour(e.owner);
+            let (w, h) = if k.building { (k.width as f32, k.height as f32) } else { (1.0, 1.0) };
+            // Units a little larger than a tile, so they stay visible.
+            let grow = if k.building { 0.0 } else { 0.5 };
+            let rect = Rect::new(
+                m.x + (t.x as f32 - grow / 2.0) * bw,
+                m.y + (t.y as f32 - grow / 2.0) * bh,
+                (w + grow) * bw,
+                (h + grow) * bh,
+            );
+            batch.fill(rect, [r, g, b, 255]);
+        }
+        // The view, clipped to the map.
+        let (wx0, wy0) = view.cam.to_world(0.0, 0.0);
+        let (wx1, wy1) = view.cam.to_world(view.screen.0 - RAIL_W * s, view.screen.1);
+        let to_mini = |wx: f32, wy: f32| {
+            let fx = (wx / view.tile).clamp(0.0, game.map.width as f32);
+            let fy = (wy / view.tile).clamp(0.0, game.map.height as f32);
+            (m.x + fx * bw, m.y + fy * bh)
+        };
+        let (ax, ay) = to_mini(wx0, wy0);
+        let (bx, by) = to_mini(wx1, wy1);
+        batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), TEXT);
     }
 
     /// Credits, power in numbers and the game clock, and a power gauge: supply filled, demand marked.
