@@ -3,10 +3,12 @@
 //!     [--ai 1 | --ai none]
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
-//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there.
+//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. A click on a
+//! building or an enemy shows it on the selection card. Ctrl and a number key keeps the selected units as a group;
+//! the number selects them again, and a second press centres the view on them. H centres on your base.
 //!
 //! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
-//! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
+//! cancel one with a refund; Tab and shift-Tab change tabs. When a building is ready, click it and then a spot on the map; the ghost shows green
 //! where it fits. The minimap at the rail's foot moves the view (click or drag), and a right click on it orders
 //! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses, M
 //! mutes the sound (or start with `--mute`). Every other player is a computer opponent unless `--ai` lists which ones
@@ -38,6 +40,23 @@ const TICK: Duration = Duration::from_micros(1_000_000 / 15);
 const SCROLL: f32 = 600.0;
 /// How close to a screen edge the mouse scrolls the view.
 const EDGE: f32 = 8.0;
+
+/// The number a digit key stands for, 0 to 9.
+fn digit(code: KeyCode) -> Option<usize> {
+    const KEYS: [KeyCode; 10] = [
+        KeyCode::Digit0,
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
+    ];
+    KEYS.iter().position(|&k| k == code)
+}
 
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
@@ -127,6 +146,33 @@ impl App {
         }
     }
 
+    /// A number key: with ctrl held, keep the selection as that group; without, select the group, and centre on it
+    /// when it was already selected.
+    fn group_key(&mut self, n: usize) {
+        if self.keys.contains(&KeyCode::ControlLeft) || self.keys.contains(&KeyCode::ControlRight) {
+            self.scene.set_group(&self.game, self.player, n);
+        } else if self.scene.recall_group(n) {
+            if let Some((x, y)) = self.scene.selection_centre(&self.game) {
+                self.centre_on(x, y);
+            }
+        } else if !self.scene.groups[n].is_empty() {
+            self.ui_sound("ui_select");
+        }
+    }
+
+    /// H: centre the view on the player's base, the first building they own that builds other buildings (or any
+    /// building when none does).
+    fn centre_on_base(&mut self) {
+        let rules = &self.game.rules;
+        let makes_buildings = |k| rules.kinds.iter().any(|b| b.building && b.built_at == Some(k));
+        let own = || self.game.state.entities.iter().filter(|e| e.owner == self.player && rules.kind(e.kind).building);
+        let Some(e) = own().find(|e| makes_buildings(e.kind)).or_else(|| own().next()) else { return };
+        let k = rules.kind(e.kind);
+        let t = e.tile();
+        let (x, y) = (t.x as f32 + k.width as f32 / 2.0, t.y as f32 + k.height as f32 / 2.0);
+        self.centre_on(x, y);
+    }
+
     fn hear(&self, cues: Vec<Cue>) {
         if let Ok(mut m) = self.mixer.lock() {
             for c in cues {
@@ -175,7 +221,8 @@ impl App {
             self.game.state.entity(id).is_some_and(|e| e.owner == self.player && !self.game.rules.kind(e.kind).building)
         };
         if (from.0 - to.0).abs() < 4.0 && (from.1 - to.1).abs() < 4.0 {
-            self.scene.selected = self.pick(to.0, to.1).filter(|&id| mine(id)).into_iter().collect();
+            // One click takes anything, so the card can show a building or an enemy; only own units take orders.
+            self.scene.selected = self.pick(to.0, to.1).into_iter().collect();
             if !self.scene.selected.is_empty() {
                 self.ui_sound("ui_select");
             }
@@ -204,10 +251,21 @@ impl App {
 
     /// The selected units' default order: attack `target` if it is an enemy, otherwise move to `tile`.
     fn order_at(&mut self, target: Option<u32>, (x, y): (i32, i32)) {
-        if self.scene.selected.is_empty() {
+        let ids: Vec<u32> = self
+            .scene
+            .selected
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.game
+                    .state
+                    .entity(id)
+                    .is_some_and(|e| e.owner == self.player && !self.game.rules.kind(e.kind).building)
+            })
+            .collect();
+        if ids.is_empty() {
             return;
         }
-        let ids = self.scene.selected.clone();
         let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
         let order = match enemy {
             Some(target) => CommandOrder::Attack { target },
@@ -236,6 +294,7 @@ impl App {
             }
             self.game.step(1);
             self.scene.after_step(&self.game);
+            self.hud.after_step(&self.game);
             let cues = self.sound.after_step(&self.game, &listener);
             self.hear(cues);
         }
@@ -309,7 +368,7 @@ impl App {
         let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
         let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
-        self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse);
+        self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse, &self.scene.selected);
         if let Some(from) = self.drag {
             let (x0, y0) = (from.0.min(self.mouse.0), from.1.min(self.mouse.1));
             let r = Rect::new(x0, y0, (from.0 - self.mouse.0).abs(), (from.1 - self.mouse.1).abs());
@@ -385,6 +444,9 @@ impl ApplicationHandler for App {
                             self.scene.selected.clear();
                         }
                         KeyCode::Space if !event.repeat => self.paused = !self.paused,
+                        KeyCode::Tab if !event.repeat => self.hud.next_tab(&self.game, self.shift()),
+                        KeyCode::KeyH if !event.repeat => self.centre_on_base(),
+                        _ if !event.repeat && digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
                         KeyCode::KeyM if !event.repeat => {
                             if let Ok(mut m) = self.mixer.lock() {
                                 m.muted = !m.muted;
@@ -473,6 +535,9 @@ fn main() {
     let game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
     let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
     let hud = Hud::new(&pack, &game, player);
+    for w in &hud.feed.warnings {
+        eprintln!("messages: {w}");
+    }
     let ais: Vec<Ai> = match arg("ai").as_deref() {
         Some("none") => Vec::new(),
         Some(list) => {

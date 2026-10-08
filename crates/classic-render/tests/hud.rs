@@ -197,7 +197,11 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     scene.draw(&mut batch, &art, &game, &v.cam, SCREEN, 1.0);
     let world = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
     scene.draw(&mut batch, &art, &game, &v.cam, SCREEN, 1.0);
-    hud.draw(&mut batch, &art, &font, &game, &v, at);
+    // The player's harvester selected, and a line in the feed.
+    let harvester = game.kind("harvester").unwrap();
+    let picked = game.state.entities.iter().find(|e| e.owner == 0 && e.kind == harvester).unwrap().id;
+    hud.feed.say(&game, "low_power", None, classic_render::feed::Tone::Bad);
+    hud.draw(&mut batch, &art, &font, &game, &v, at, &[picked]);
     let image = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
     let out = setting::root().join("target/hud-test.png");
     std::fs::write(&out, classic_tools::art::png::encode(w as usize, h as usize, &image)).unwrap();
@@ -219,6 +223,14 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     assert_eq!(l.rail.x + l.rail.w, SCREEN.0, "the rail is on the right");
     println!("pixels changed: readout {readout}, middle of the world {middle}");
     assert!(readout > 1000, "the readout is drawn");
+    let card = differs(l.card);
+    let feed = differs(Rect::new(0.0, 0.0, 200.0, 24.0));
+    println!("pixels changed: card {card}, feed {feed}");
+    assert!(card > 1000, "the selection card is drawn");
+    assert!(feed > 200, "the feed's line is drawn");
+    // The card sits between the grid and the queue, inside the rail.
+    assert!(l.icons.iter().all(|i| i.rect.y + i.rect.h <= l.card.y), "the grid stops above the card");
+    assert!(l.card.y + l.card.h < l.minimap.y && l.rail.contains(l.card.x, l.card.y));
     assert_eq!(middle, 0, "the world away from the HUD is untouched");
 
     // The minimap shows the player's base in their colour, where the base is.

@@ -6,6 +6,7 @@
 //! and the sound board only read the game; the HUD changes it only by sending the same commands any player sends.
 
 pub mod art;
+pub mod feed;
 pub mod hud;
 pub mod platform;
 pub mod scene;

@@ -1,7 +1,7 @@
 //! The heads-up display over the world: the production rail on the right (the economy readout at its top, then a
-//! tab per kind of factory the player owns, a grid of what it can build, its queue, and the minimap at the bottom),
-//! and the ghost of a
-//! finished building being placed. Design: `plans/rts/ui.md`, sections 2 to 4.
+//! tab per kind of factory the player owns, a grid of what it can build, the selection card, the open factory's
+//! queue, and the minimap at the bottom), the ghost of a finished building being placed, and the message feed at the
+//! world's top left. Design: `plans/rts/ui.md`, sections 2 to 4 and 10.
 //!
 //! The HUD is client state only. It reads the game to draw and turns clicks into the same commands any player
 //! sends (`Produce`, `Cancel`, `Place`); it never decides a rule itself, so whether a building fits is always the
@@ -11,9 +11,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use classic_sim::production::has_ready;
 use classic_sim::units::TICKS_PER_SECOND;
+use classic_sim::world::{Entity, Order, Task};
 use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
+use crate::feed::{Feed, Tone};
 use crate::platform::{Font, Rect, SpriteBatch};
 use crate::scene::Camera;
 
@@ -29,6 +31,10 @@ const QUEUE_H: f32 = 27.0;
 const READOUT_H: f32 = 62.0;
 /// The minimap's square, at UI scale 1; the map is fitted inside it.
 const MINIMAP: f32 = 192.0;
+/// The selection card's height, above the queue.
+const CARD_H: f32 = 64.0;
+/// Units shown one by one on the card for a group; the rest are counted.
+const CHIPS: usize = 10;
 /// The most a shift-click queues at once.
 const SHIFT_COUNT: usize = 5;
 
@@ -119,6 +125,8 @@ pub struct Layout {
     /// The open tab's primary factory queue, in order.
     pub queue: Vec<(Kind, Rect)>,
     pub readout: Rect,
+    /// The selection card: what is selected, its health and what it is doing.
+    pub card: Rect,
     /// Where the map is drawn on the minimap: one block per tile, fitted into the square at the rail's foot.
     pub minimap: Rect,
 }
@@ -142,6 +150,8 @@ pub struct Hud {
     pub placing: Option<Kind>,
     /// Grid rows scrolled past.
     pub scroll: usize,
+    /// What the local player has been told lately.
+    pub feed: Feed,
     names: BTreeMap<String, String>,
     unused: BTreeSet<String>,
 }
@@ -150,13 +160,15 @@ impl Hud {
     /// A HUD for `player`, naming things as `pack` does and leaving out the entities it doesn't use.
     pub fn new(pack: &classic_data::Pack, game: &Game, player: u32) -> Hud {
         let ids = game.rules.kinds.iter().map(|k| k.id.clone());
+        let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
         Hud {
             player,
             scale: 1.0,
             tab: None,
             placing: None,
             scroll: 0,
-            names: ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect(),
+            feed: Feed::new(&pack.dir, names.clone(), player),
+            names,
             unused: ids.filter(|id| !pack.uses(id)).collect(),
         }
     }
@@ -252,10 +264,12 @@ impl Hud {
         let (mw, mh) = (game.map.width as f32 * block, game.map.height as f32 * block);
         let minimap = Rect::new(x0 + (rail.w - mw) / 2.0, h - 6.0 * s - mh, mw, mh);
         let queue_top = minimap.y - (QUEUE_H + 10.0) * s;
+        // The card sits above the queue's label.
+        let card = Rect::new(x0 + 4.0 * s, queue_top - (12.0 + CARD_H) * s, rail.w - 8.0 * s, CARD_H * s);
         let mut icons = Vec::new();
         let mut queue = Vec::new();
         if let Some(factory) = open {
-            let rows_fit = (((queue_top - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
+            let rows_fit = (((card.y - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
             let items = self.items(game, factory);
             let rows = items.len().div_ceil(2);
             let skip = self.scroll.min(rows.saturating_sub(rows_fit));
@@ -278,7 +292,7 @@ impl Hud {
                 }
             }
         }
-        Layout { rail, tabs, open, icons, queue, readout, minimap }
+        Layout { rail, tabs, open, icons, queue, readout, card, minimap }
     }
 
     /// Whether a screen point is on the HUD rather than the world.
@@ -383,12 +397,30 @@ impl Hud {
         self.placing.take().is_some()
     }
 
+    /// Tab (or shift-tab): open the next (or previous) factory's tab.
+    pub fn next_tab(&mut self, game: &Game, back: bool) {
+        let factories = self.factories(game);
+        if factories.is_empty() {
+            return;
+        }
+        let at = self.layout(game, (0.0, 0.0)).open.and_then(|o| factories.iter().position(|&f| f == o)).unwrap_or(0);
+        let n = factories.len();
+        self.tab = Some(factories[if back { (at + n - 1) % n } else { (at + 1) % n }]);
+        self.scroll = 0;
+    }
+
+    /// Call after each tick: the feed reads what happened.
+    pub fn after_step(&mut self, game: &Game) {
+        self.feed.after_step(game);
+    }
+
     /// The mouse wheel over the rail scrolls the grid by a row.
     pub fn wheel(&mut self, up: bool) {
         self.scroll = if up { self.scroll.saturating_sub(1) } else { self.scroll + 1 };
     }
 
-    /// Draw the HUD over the world, with the mouse at `mouse`.
+    /// Draw the HUD over the world, with the mouse at `mouse` and `selected` on the card.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         batch: &mut SpriteBatch,
@@ -397,6 +429,7 @@ impl Hud {
         game: &Game,
         view: &View,
         mouse: (f32, f32),
+        selected: &[u32],
     ) {
         self.check_placing(game);
         let s = self.scale;
@@ -523,8 +556,10 @@ impl Hud {
             }
         }
 
+        self.draw_card(batch, art, font, game, selected, l.card);
         self.draw_minimap(batch, art, game, view, l.minimap);
         self.draw_readout(batch, font, game, l.readout, text);
+        self.draw_feed(batch, font, game, text);
         if let Some(icon) = hovered {
             self.draw_tooltip(batch, font, game, icon, mouse, view.screen, text);
         }
@@ -532,13 +567,135 @@ impl Hud {
 
     /// An item's build icon fitted into `r`, or its sprite, or a plain box when the pack has neither.
     fn picture(&self, batch: &mut SpriteBatch, art: &Art, id: &str, r: Rect, tint: [u8; 4]) {
-        let Some(strip) = art.icon(id, self.player).or_else(|| art.sprite(id, self.player)) else {
-            batch.fill(Rect::new(r.x + r.w / 4.0, r.y + r.h / 4.0, r.w / 2.0, r.h / 2.0), [120, 120, 130, tint[3]]);
+        picture(batch, art, id, self.player, r, tint);
+    }
+
+    /// The selection card. One thing selected: its picture in its owner's colours, its name, a health bar with the
+    /// numbers, and what it is doing. A group: how many, and a chip with a health bar for each of the first few.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_card(&self, batch: &mut SpriteBatch, art: &Art, font: &Font, game: &Game, selected: &[u32], r: Rect) {
+        let s = self.scale;
+        let small = s.round().max(1.0);
+        let text = (2.0 * s).round().max(1.0);
+        let chosen: Vec<&Entity> = selected.iter().filter_map(|&id| game.state.entity(id)).collect();
+        let Some(&first) = chosen.first() else { return };
+        batch.fill(r, CELL);
+        batch.outline(r, 1.0, [70, 70, 80, 255]);
+        let pad = 4.0 * s;
+        if chosen.len() == 1 {
+            let e = first;
+            let k = game.rules.kind(e.kind);
+            let pic = Rect::new(r.x + pad, r.y + pad, 56.0 * s, r.h - 2.0 * pad);
+            batch.fill(pic, [0, 0, 0, 120]);
+            picture(batch, art, &k.id, e.owner, pic, [255; 4]);
+            let x = pic.x + pic.w + pad;
+            let w = r.x + r.w - pad - x;
+            let name = self.name(game, e.kind);
+            // The name in large letters when it fits, else small.
+            let size = if Font::width(&name, text) <= w { text } else { small };
+            let mut y = r.y + pad;
+            font.draw(batch, &name, x, y, size, if e.owner == self.player { TEXT } else { BAD });
+            y += Font::height(text) + 3.0 * s;
+            let share = (e.health.max(0) as f32 / k.max_health.max(1) as f32).min(1.0);
+            let bar = Rect::new(x, y, w, 5.0 * s);
+            batch.fill(bar, [0, 0, 0, 255]);
+            batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), health_colour(share));
+            y += bar.h + 3.0 * s;
+            font.draw(batch, &format!("{}/{}", e.health.max(0), k.max_health), x, y, small, DIM);
+            y += Font::height(small) + 4.0 * s;
+            let (doing, colour) = self.doing(game, e);
+            font.draw(batch, &doing, x, y, small, colour);
             return;
+        }
+        let head = format!("{} SELECTED", chosen.len());
+        font.draw(batch, &head, r.x + pad, r.y + pad, small, TEXT);
+        let (cols, gap) = (5, 2.0 * s);
+        let top = r.y + pad + Font::height(small) + 3.0 * s;
+        let cw = (r.w - 2.0 * pad - gap * (cols - 1) as f32) / cols as f32;
+        let ch = (r.y + r.h - pad - top - gap) / 2.0;
+        for (i, e) in chosen.iter().take(CHIPS).enumerate() {
+            let k = game.rules.kind(e.kind);
+            let (col, row) = ((i % cols) as f32, (i / cols) as f32);
+            let chip = Rect::new(r.x + pad + col * (cw + gap), top + row * (ch + gap), cw, ch);
+            batch.fill(chip, [0, 0, 0, 120]);
+            picture(batch, art, &k.id, e.owner, Rect::new(chip.x, chip.y, chip.w, chip.h - 3.0 * s), [255; 4]);
+            let share = (e.health.max(0) as f32 / k.max_health.max(1) as f32).min(1.0);
+            let bar = Rect::new(chip.x, chip.y + chip.h - 2.0 * s, chip.w, 2.0 * s);
+            batch.fill(bar, [0, 0, 0, 255]);
+            batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), health_colour(share));
+        }
+        if chosen.len() > CHIPS {
+            let more = format!("+{}", chosen.len() - CHIPS);
+            let w = Font::width(&more, small);
+            font.draw(batch, &more, r.x + r.w - pad - w, r.y + pad, small, DIM);
+        }
+    }
+
+    /// What an entity is doing, in a few words, for the card.
+    fn doing(&self, game: &Game, e: &Entity) -> (String, [u8; 4]) {
+        let k = game.rules.kind(e.kind);
+        if e.owner != self.player {
+            return ("ENEMY".to_string(), BAD);
+        }
+        if k.building {
+            if let Some(q) = e.queue.first() {
+                let total = (game.rules.kind(q.item).build_ticks * 100).max(1);
+                let share = (q.progress * 100 / total).min(100);
+                let name = self.name(game, q.item);
+                return match q.state {
+                    EntryState::Ready => (format!("{name} READY"), GOOD),
+                    EntryState::Paused => (format!("{name} ON HOLD"), WARN),
+                    EntryState::Blocked => (format!("{name}: EXIT BLOCKED"), WARN),
+                    EntryState::Building | EntryState::Waiting => (format!("{name} {share}%"), GOOD),
+                };
+            }
+            return match k.power {
+                p if p > 0 => (format!("POWER +{p}"), GOOD),
+                p if p < 0 => (format!("POWER {p}"), DIM),
+                _ => (String::new(), DIM),
+            };
+        }
+        let cargo = |c: i64| {
+            let cap = k.harvester.as_ref().map_or(1, |h| h.capacity).max(1);
+            format!("{}%", (c * 100 / cap).min(100))
         };
-        let fit = (r.w / strip.w).min(r.h / strip.h);
-        let (w, h) = (strip.w * fit, strip.h * fit);
-        batch.sprite(strip.tex, strip.frame(0), Rect::new(r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h), tint);
+        match (e.order, e.task) {
+            (Order::Harvest, Some(Task::Stuck)) => ("HARVESTER STUCK".to_string(), WARN),
+            (Order::Harvest, Some(Task::Mining)) => (format!("MINING {}", cargo(e.cargo.unwrap_or(0))), GOOD),
+            (Order::Harvest, Some(Task::ToRefinery | Task::Unloading)) => {
+                (format!("RETURNING {}", cargo(e.cargo.unwrap_or(0))), GOOD)
+            }
+            (Order::Harvest, _) => ("HARVESTING".to_string(), GOOD),
+            (Order::Move, _) => ("MOVING".to_string(), TEXT),
+            (Order::Attack, _) => ("ATTACKING".to_string(), WARN),
+            (Order::Idle, _) if e.target.is_some() => ("FIRING".to_string(), WARN),
+            (Order::Idle, _) => ("GUARDING".to_string(), DIM),
+        }
+    }
+
+    /// The feed's lines at the top left of the world, newest at the bottom, fading in their last second.
+    fn draw_feed(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, text: f32) {
+        let s = self.scale;
+        let line = Font::height(text) + 6.0 * s;
+        let now = game.state.tick;
+        for (i, l) in self.feed.lines.iter().enumerate() {
+            let left = crate::feed::LIFE.saturating_sub(now.saturating_sub(l.tick));
+            let fade = (left as f32 / TICKS_PER_SECOND as f32).min(1.0);
+            let mut colour = match l.tone {
+                Tone::Info => TEXT,
+                Tone::Good => GOOD,
+                Tone::Warn => WARN,
+                Tone::Bad => BAD,
+            };
+            colour[3] = (255.0 * fade) as u8;
+            let (x, y) = (8.0 * s, 8.0 * s + i as f32 * line);
+            let w = Font::width(&l.text, text);
+            batch.fill(
+                Rect::new(x - 3.0 * s, y - 3.0 * s, w + 6.0 * s, line - 2.0 * s),
+                [0, 0, 0, (150.0 * fade) as u8],
+            );
+            font.draw(batch, &l.text, x, y, text, colour);
+        }
     }
 
     /// The whole map, one block per tile: terrain and resource in the art's own average colours, buildings and
@@ -677,4 +834,26 @@ impl Hud {
             font.draw(batch, t, x + 6.0 * s, y + 6.0 * s + i as f32 * line, text, *colour);
         }
     }
+}
+
+fn health_colour(share: f32) -> [u8; 4] {
+    if share > 0.5 {
+        [60, 200, 70, 255]
+    } else if share > 0.25 {
+        [230, 200, 40, 255]
+    } else {
+        [220, 50, 40, 255]
+    }
+}
+
+/// An entity's build icon in `owner`'s colours fitted into `r`, or its sprite, or a plain box when the pack has
+/// neither.
+fn picture(batch: &mut SpriteBatch, art: &Art, id: &str, owner: u32, r: Rect, tint: [u8; 4]) {
+    let Some(strip) = art.icon(id, owner).or_else(|| art.sprite(id, owner)) else {
+        batch.fill(Rect::new(r.x + r.w / 4.0, r.y + r.h / 4.0, r.w / 2.0, r.h / 2.0), [120, 120, 130, tint[3]]);
+        return;
+    };
+    let fit = (r.w / strip.w).min(r.h / strip.h);
+    let (w, h) = (strip.w * fit, strip.h * fit);
+    batch.sprite(strip.tex, strip.frame(0), Rect::new(r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h), tint);
 }
