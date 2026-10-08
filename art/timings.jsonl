@@ -51,3 +51,8 @@
 {"id": "super_h", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [348, 316], "seconds": 169.7, "cores": 4, "partial": false, "date": "2026-10-08"}
 {"id": "super_o", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [269, 249], "seconds": 103.9, "cores": 4, "partial": false, "date": "2026-10-08"}
 {"id": "barracks", "category": "buildings", "style": "detailed", "render_scale": 3, "samples": 48, "images": 24, "render_size": [577, 550], "seconds": 107.8, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "elite_infantry", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [197, 186], "seconds": 130.6, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "guerrilla", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [177, 167], "seconds": 106.8, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "infantry", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [179, 169], "seconds": 108.1, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "rocket_infantry", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [192, 180], "seconds": 120.8, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "saboteur", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [160, 152], "seconds": 88.4, "cores": 4, "partial": false, "date": "2026-10-08"}
