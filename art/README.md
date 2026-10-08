@@ -115,7 +115,7 @@ pivot. Buildings have a `building` part with `idle`, `build` (4) and `damaged` a
 frames.
 
 The packer also draws a dark outline round the body frames of the categories `studio.json`'s `outline` lists
-(vehicles, aircraft, infantry and buildings; never shadows, icons or building overlays), two atlas pixels wide,
+(vehicles, aircraft, infantry and buildings; never shadows, icons, building overlays or decals), two atlas pixels wide,
 which is one pixel at game size. It keeps sprites readable on ground of any colour, sand included.
 
 ## Checks
