@@ -13,7 +13,7 @@
 //! reachable from the map edge wins (the "lanes" of the design doc, kept by a flood fill). A ready building with
 //! nowhere to go is cancelled, which refunds it.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 use classic_sim::world::dock_at;
 use classic_sim::{CommandOrder, EntryState, Game, Kind, Order, Task, Tile};
@@ -134,44 +134,6 @@ pub(crate) fn harvesters(game: &Game, view: &View, out: &mut Orders) {
     if !idle.is_empty() {
         out.push(idle, CommandOrder::Harvest);
     }
-}
-
-/// Two harvesters can wait on each other for ever (one on a refinery dock heading out, one queued for that dock).
-/// A player would nudge one aside, so the AI does too: a harvester travelling that hasn't moved or changed its cargo
-/// for `jam_thinks` thinks drives to a free tile nearby, and `harvesters` sends it back to work.
-pub(crate) fn unjam(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
-    let es = &game.state.entities;
-    let mut still = BTreeMap::new();
-    for &i in &view.mine {
-        let e = &es[i];
-        if e.order != Order::Harvest || !matches!(e.task, Some(Task::ToField | Task::ToRefinery)) {
-            continue;
-        }
-        let (tile, cargo) = (e.tile(), e.cargo.unwrap_or(0));
-        let n = match ai.still.get(&e.id) {
-            Some(&(t, c, n)) if t == tile && c == cargo => n + 1,
-            _ => 0,
-        };
-        if n >= ai.settings.jam_thinks
-            && let Some(to) = free_near(game, tile)
-        {
-            out.push(vec![e.id], CommandOrder::Move { x: to.x, y: to.y });
-            continue;
-        }
-        still.insert(e.id, (tile, cargo, n));
-    }
-    ai.still = still;
-}
-
-/// The nearest tile two or three steps away that a unit can enter and no unit stands on, in row order.
-fn free_near(game: &Game, at: Tile) -> Option<Tile> {
-    let taken = |t: Tile| game.state.entities.iter().any(|e| !game.rules.kind(e.kind).building && e.tile() == t);
-    (2..=3).find_map(|r: i32| {
-        (at.y - r..=at.y + r)
-            .flat_map(|y| (at.x - r..=at.x + r).map(move |x| Tile { x, y }))
-            .filter(|t| (t.x - at.x).abs().max((t.y - at.y).abs()) == r)
-            .find(|&t| game.pathfinder.passable(t.x, t.y) && !taken(t))
-    })
 }
 
 /// The best place for a ready building, or `None` if there is nowhere it may go.

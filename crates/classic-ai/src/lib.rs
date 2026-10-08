@@ -17,8 +17,6 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
-use std::collections::BTreeMap;
-
 mod army;
 mod base;
 
@@ -30,9 +28,6 @@ pub use army::Wave;
 /// The numbers that set how the opponent plays. Our own starting values, to tune by AI-versus-AI runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
-    /// A harvester on its way somewhere that hasn't moved for this many thinks is moved aside, then sent back to
-    /// work.
-    pub jam_thinks: u32,
     /// Ticks between thinks. Player `p` thinks on ticks where `(tick + 5 * p) % think_every == 0`, so two AIs
     /// rarely think on the same tick.
     pub think_every: u32,
@@ -78,7 +73,6 @@ impl Settings {
         ];
         Settings {
             think_every: 30,
-            jam_thinks: 8,
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
             power_margin: 20,
             harvesters_per_refinery: 2,
@@ -113,8 +107,6 @@ pub struct Ai {
     pub wave_size: usize,
     /// Waves sent so far.
     pub waves_sent: u32,
-    /// Harvesters on their way somewhere: where each was and with how much cargo, and for how many thinks in a row.
-    still: BTreeMap<u32, (Tile, i64, u32)>,
     /// Thinks so far, for the managers that think less often.
     thinks: u32,
 }
@@ -122,7 +114,7 @@ pub struct Ai {
 impl Ai {
     pub fn new(player: u32, settings: Settings) -> Ai {
         let wave_size = settings.first_wave;
-        Ai { player, settings, wave: None, wave_size, waves_sent: 0, still: BTreeMap::new(), thinks: 0 }
+        Ai { player, settings, wave: None, wave_size, waves_sent: 0, thinks: 0 }
     }
 
     /// Whether this AI thinks on the game's current tick.
@@ -149,7 +141,6 @@ impl Ai {
         let view = View::new(game, self.player);
         base::think(self, game, &view, &mut out);
         base::produce(self, game, &view, &mut out);
-        base::unjam(self, game, &view, &mut out);
         if self.thinks.is_multiple_of(4) {
             base::harvesters(game, &view, &mut out);
         }
