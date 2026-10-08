@@ -37,8 +37,8 @@ def build(root):
     for sy in (-1, 1):
         st.block((hw + 0.5, 0.6, 0.6), (hx, hy + sy * (hl / 2 + 0.05), HALL_H + 0.3), mat=paint, parent=root,
                  name="eave")
-    for sx in (-1, 1):
-        st.block((0.6, hl + 0.5, 0.6), (hx + sx * (hw / 2 + 0.05), hy, HALL_H + 0.3), mat=paint, parent=root,
+    for sx in (-1, 1):  # 4 cm slimmer than the north and south eaves, so the corners have no shared face planes
+        st.block((0.56, hl + 0.5, 0.56), (hx + sx * (hw / 2 + 0.05), hy, HALL_H + 0.3), mat=paint, parent=root,
                  name="eave")
     bay = hl / 3
     for k in range(3):
@@ -56,7 +56,7 @@ def build(root):
         st.block((2.4, 0.3, 0.3), (vx, vy, HALL_H + 2.15), mat=steel, parent=root, name="vent_cap")
     # Downpipes at the south corners.
     for sx in (-1, 1):
-        st.block((0.3, 0.3, HALL_H), (hx + sx * (hw / 2 - 0.4), hy - hl / 2 - 0.2, HALL_H / 2 + 0.3),
+        st.block((0.3, 0.26, HALL_H), (hx + sx * (hw / 2 - 0.4), hy - hl / 2 - 0.2, HALL_H / 2 + 0.3),
                  mat=dark, parent=root, bevel=0.02, name="downpipe")
 
     # Office annex on the west side, lower, with a strip of windows facing south.

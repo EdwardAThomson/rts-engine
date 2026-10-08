@@ -25,6 +25,14 @@ impl Files {
         }
     }
 
+    /// Where `path` is, for messages.
+    pub fn name(&self, path: &str) -> String {
+        match self {
+            Files::Dir(dir) => dir.join(path).display().to_string(),
+            Files::Memory { label, .. } => format!("{label}/{path}"),
+        }
+    }
+
     pub fn read_text(&self, path: &str) -> Result<String, String> {
         String::from_utf8(self.read(path)?).map_err(|e| format!("{path}: {e}"))
     }

@@ -1,0 +1,19 @@
+{
+  "about": "Every sound id the engine plays, and how: its bus (sfx, ui, voice, music), level in whole decibels, priority when the mixer is full (higher wins), how many may play at once, whether it is placed in the world (panned and quieter off screen) and how far each play's speed may wander, in percent. A setting pack supplies the files for these ids (its audio/sounds.json) but can't change these numbers or add ids. Our own starting values, to be tuned by ear.",
+  "sounds": {
+    "sfx_cannon": { "bus": "sfx", "gain_db": -4, "priority": 50, "max_instances": 3, "spatial": true, "jitter_percent": 6 },
+    "sfx_rocket": { "bus": "sfx", "gain_db": -5, "priority": 50, "max_instances": 3, "spatial": true, "jitter_percent": 6 },
+    "sfx_impact": { "bus": "sfx", "gain_db": -8, "priority": 40, "max_instances": 4, "spatial": true, "jitter_percent": 10 },
+    "sfx_explode_small": { "bus": "sfx", "gain_db": -2, "priority": 70, "max_instances": 3, "spatial": true, "jitter_percent": 8 },
+    "sfx_explode_large": { "bus": "sfx", "gain_db": 0, "priority": 80, "max_instances": 2, "spatial": true, "jitter_percent": 5 },
+    "sfx_build": { "bus": "sfx", "gain_db": -3, "priority": 60, "max_instances": 2, "spatial": true, "jitter_percent": 0 },
+    "ui_ready": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_unit_ready": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_error": { "bus": "ui", "gain_db": -8, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_select": { "bus": "ui", "gain_db": -12, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_order": { "bus": "ui", "gain_db": -10, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_credits": { "bus": "ui", "gain_db": -18, "priority": 30, "max_instances": 1, "spatial": false, "jitter_percent": 4 },
+    "ui_power_down": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "ui_power_up": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 }
+  }
+}

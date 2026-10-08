@@ -1,0 +1,31 @@
+{
+  "about": "Which game events play which sound id. For each event the first rule whose conditions all hold plays; no rule, no sound. Conditions: `warhead` or `weapon` (the generic id fired or bursting), `building` (true or false: what was destroyed or placed), `local` (true: only for the player at this screen) and `power` (`short`: the player just ran short of power; `restored`: they just stopped being short). `silent` lists the events that play nothing on purpose, so a new event can't be forgotten: every event is in a rule or in `silent`, and a test checks it.",
+  "rules": [
+    { "event": "fired", "warhead": "shell", "sound": "sfx_cannon" },
+    { "event": "fired", "warhead": "rocket", "sound": "sfx_rocket" },
+    { "event": "projectile_hit", "sound": "sfx_impact" },
+    { "event": "destroyed", "building": true, "sound": "sfx_explode_large" },
+    { "event": "destroyed", "building": false, "sound": "sfx_explode_small" },
+    { "event": "building_placed", "local": true, "sound": "sfx_build" },
+    { "event": "building_ready", "local": true, "sound": "ui_ready" },
+    { "event": "unit_built", "local": true, "sound": "ui_unit_ready" },
+    { "event": "placement_rejected", "local": true, "sound": "ui_error" },
+    { "event": "production_rejected", "local": true, "sound": "ui_error" },
+    { "event": "delivered", "local": true, "sound": "ui_credits" },
+    { "event": "power_changed", "local": true, "power": "short", "sound": "ui_power_down" },
+    { "event": "power_changed", "local": true, "power": "restored", "sound": "ui_power_up" }
+  ],
+  "silent": [
+    "harvester_idle",
+    "regrowth",
+    "production_queued",
+    "production_paused",
+    "production_cancelled",
+    "target_acquired",
+    "projectile_spawned",
+    "hit",
+    "move_ended",
+    "unit_yielded",
+    "unit_stuck"
+  ]
+}

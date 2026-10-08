@@ -43,8 +43,8 @@ def build(root):
     for sy in (-1, 1):
         st.block((hw + 0.3, 0.7, 0.9), (hx, hy + sy * (hl / 2 - 0.2), HALL_H + 0.75), mat=paint, parent=root,
                  name="parapet")
-    for sx in (-1, 1):
-        st.block((0.7, hl + 0.3, 0.9), (hx + sx * (hw / 2 - 0.2), hy, HALL_H + 0.75), mat=paint, parent=root,
+    for sx in (-1, 1):  # 4 cm slimmer than the north and south runs, so no corner has two faces in one plane
+        st.block((0.66, hl + 0.26, 0.86), (hx + sx * (hw / 2 - 0.2), hy, HALL_H + 0.75), mat=paint, parent=root,
                  name="parapet")
     st.block((hw - 1.2, hl - 1.2, 0.2), (hx, hy, HALL_H + 0.4), mat=dark, parent=root, name="roof")
     for k in range(2):

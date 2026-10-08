@@ -54,7 +54,7 @@ def build(root):
         st.block((1.4, 3.6, 0.5), (gx, gy, top + 0.6), mat=dark, parent=root, name="cap")
         st.cylinder(0.3, 0.3, (gx, gy + 1.4, top + 1.0), mat=st.plain("light", (0.9, 0.5, 0.1), emission=2.0),
                     parent=root, verts=12, name="light")
-    span = bw + 2 * 1.3 + 1.4
+    span = bw + 2 * 1.3 + 1.36  # 2 cm short of the caps' outer faces at each end
     st.block((span, 1.6, 1.2), (bx, gy, top + 1.3), mat=paint, parent=root, bevel=0.06, name="beam")
     st.block((span - 0.4, 0.3, 0.3), (bx, gy - 0.9, top + 0.9), mat=steel, parent=root, name="rail")
     st.block((1.8, 2.0, 1.2), (bx, gy, top + 0.1), mat=armour, parent=root, bevel=0.06, name="hoist")
@@ -64,7 +64,7 @@ def build(root):
     # Arm on each tower reaching over the bay, with a tool head, so the pad reads as a workshop at sprite size.
     for side in (-1, 1):
         ax = bx + side * (bw / 2 + 1.3)
-        st.block((3.6, 0.7, 0.7), (ax - side * 1.8, gy - 3.4, 5.0), mat=armour, parent=root, bevel=0.05, name="arm")
+        st.block((3.6, 0.7, 0.66), (ax - side * 1.8, gy - 3.4, 5.0), mat=armour, parent=root, bevel=0.05, name="arm")
         st.block((0.7, 2.4, 0.7), (ax, gy - 2.2, 5.0), mat=steel, parent=root, name="arm_root")
         st.cylinder(0.45, 1.4, (ax - side * 3.6, gy - 3.4, 4.2), mat=dark, parent=root, verts=12, name="tool_head")
 
