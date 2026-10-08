@@ -79,7 +79,8 @@ fn buildable(game: &Game, view: &View, player: u32, kind: Kind) -> bool {
     game.can_build(player, kind).is_ok() && view.mine.iter().any(|&i| Some(game.state.entities[i].kind) == maker)
 }
 
-/// Keep each factory's queue topped up: harvesters until every refinery has its share, then combat units.
+/// Keep each factory's queue topped up: harvesters until every refinery has its share, then combat units in the
+/// weighted mix of `Settings::unit_mix`.
 pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     let es = &game.state.entities;
     let rules = &game.rules;
@@ -90,6 +91,22 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     let mut harvesters = view.mine.iter().filter(|&&i| is_harvester(es[i].kind)).count() + queued_harvesters;
     let want = (refineries * ai.settings.harvesters_per_refinery).min(ai.settings.max_harvesters);
     let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
+    // How many of each kind it has or has queued, by kind index; and what everything queued still owes, plus the
+    // next building it wants if none is queued, so combat units are bought only from what is left over.
+    let mut army = vec![0usize; rules.kinds.len()];
+    let mut owed = 0;
+    let mut building_queued = false;
+    for &i in &view.mine {
+        army[es[i].kind.0 as usize] += 1;
+        for q in &es[i].queue {
+            army[q.item.0 as usize] += 1;
+            owed += rules.kind(q.item).cost - q.paid;
+            building_queued |= rules.kind(q.item).building;
+        }
+    }
+    if !building_queued && let Some(k) = next_building(ai, game, view) {
+        owed += rules.kind(k).cost;
+    }
     // With no harvester left, income has stopped for good unless one is built: cancel everything else not yet
     // finished, for the refund and the room in the queue.
     if starving(game, view) {
@@ -99,6 +116,8 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             }
         }
     }
+    // Factories with room in their queue, each with the units it can make now.
+    let mut factories: Vec<(u32, usize, Vec<Kind>)> = Vec::new();
     for &i in &view.mine {
         let f = &es[i];
         if f.queue.len() >= ai.settings.factory_queue {
@@ -119,15 +138,34 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             out.push(vec![f.id], CommandOrder::Produce { kind: h });
             continue;
         }
-        // The strongest armed unit it makes, by cost.
-        let fighter =
-            made_here.iter().filter(|&&k| rules.kind(k).weapon.is_some()).max_by_key(|&&k| rules.kind(k).cost);
-        if let Some(&k) = fighter
-            && credits >= ai.settings.unit_reserve
-        {
-            out.push(vec![f.id], CommandOrder::Produce { kind: k });
-        }
+        factories.push((f.id, f.queue.len(), made_here));
     }
+    // Then one combat unit at a time, each from a different factory: of every armed unit those factories make, the
+    // one the army has fewest of for its weight (ties to the dearer one), from the factory with the shortest queue.
+    // Everything is paid as it builds, so what is queued counts against the reserve until it is paid off.
+    while credits - owed >= ai.settings.unit_reserve {
+        let best = factories
+            .iter()
+            .enumerate()
+            .flat_map(|(n, (id, queued, made))| made.iter().map(move |&k| (n, *id, *queued, k)))
+            .filter(|&(_, _, _, k)| rules.kind(k).weapon.is_some() && !is_harvester(k))
+            .filter_map(|(n, id, queued, k)| {
+                let w = weight(ai, game, k);
+                (w > 0).then(|| ((army[k.0 as usize] * 1000 / w, -rules.kind(k).cost, k, queued, id), n))
+            })
+            .min();
+        let Some(((_, _, k, _, id), n)) = best else { break };
+        army[k.0 as usize] += 1;
+        owed += rules.kind(k).cost;
+        out.push(vec![id], CommandOrder::Produce { kind: k });
+        factories.remove(n);
+    }
+}
+
+/// A unit kind's weight in the army's mix: as `Settings::unit_mix` gives it, or 1 if the list leaves it out.
+fn weight(ai: &Ai, game: &Game, kind: Kind) -> usize {
+    let id = &game.rules.kind(kind).id;
+    ai.settings.unit_mix.iter().find(|(m, _)| m == id).map_or(1, |&(_, n)| n)
 }
 
 /// Whether it has a refinery but no harvester.

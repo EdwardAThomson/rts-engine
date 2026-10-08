@@ -8,7 +8,7 @@
 //!
 //! This first version is one "normal" opponent with three managers that share a small memory (`Ai`):
 //! - the base (`base.rs`): power, a build order of generic ids and where each building goes;
-//! - production and the economy: harvesters to fill its refineries, then combat units;
+//! - production and the economy: harvesters to fill its refineries, then combat units in a weighted mix;
 //! - the army (`army.rs`): gathers new units at a rally point, defends the base, and sends attack waves that grow
 //!   each time.
 //!
@@ -44,6 +44,10 @@ pub struct Settings {
     pub factory_queue: usize,
     /// Combat units are only queued while credits are at least this, so the base keeps growing.
     pub unit_reserve: i64,
+    /// The army's mix: a generic unit id and its weight. Each factory makes whichever armed unit it can that the
+    /// army has fewest of for its weight. An armed unit the rules have but this list leaves out weighs 1, so a pack
+    /// with other units still sees them built; weight 0 means never.
+    pub unit_mix: Vec<(String, usize)>,
     /// No attack wave before this tick.
     pub first_wave_tick: u32,
     /// Units a wave waits for: `first_wave`, then `wave_growth` more after each wave that comes home.
@@ -73,12 +77,14 @@ impl Settings {
             ("refinery", 1),
             ("light_factory", 1),
             ("heavy_factory", 1),
+            ("barracks", 1),
             ("radar", 1),
             ("refinery", 2),
             ("gun_turret", 2),
             ("heavy_factory", 2),
             ("gun_turret", 4),
         ];
+        let mix = [("battle_tank", 6), ("rocket_squad", 3), ("quad", 2), ("infantry_squad", 1), ("scout_bike", 1)];
         Settings {
             think_every: 30,
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
@@ -87,6 +93,7 @@ impl Settings {
             max_harvesters: 9,
             factory_queue: 2,
             unit_reserve: 300,
+            unit_mix: mix.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
             first_wave_tick: 15 * 60 * 6,
             first_wave: 4,
             wave_growth: 2,

@@ -115,6 +115,14 @@ impl Pathfinder {
         x >= 0 && y >= 0 && x < self.w && y < self.h && self.pass[(y * self.w + x) as usize] != 0
     }
 
+    /// Whether a ground unit could get from one tile to the other: both passable and in the same connected region.
+    /// Units standing in the way don't count.
+    pub fn connected(&self, a: (i32, i32), b: (i32, i32)) -> bool {
+        self.passable(a.0, a.1)
+            && self.passable(b.0, b.1)
+            && self.region[(a.1 * self.w + a.0) as usize] == self.region[(b.1 * self.w + b.0) as usize]
+    }
+
     fn label_regions(&mut self) {
         let n = self.pass.len();
         let w = self.w as usize;
