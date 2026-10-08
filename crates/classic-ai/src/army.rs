@@ -196,9 +196,29 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     // March in step: a unit more than three tiles nearer the target than the wave's rearmost waits where it is for
     // the slower ones, unless an armed enemy can already reach it or it them. Without this, fast units arrive alone
     // and die before slow infantry catch up.
+    let reach = |e: &Entity| rules.kind(e.kind).weapon.map_or(0, |w| rules.weapon(w).range);
+    // A unit told to attack that is out of range with no tile in range it can get to (boxed in at home, say) leaves
+    // the wave, so the others don't wait for it.
+    let stuck = |e: &Entity| {
+        let Some(t) = e.target.and_then(|t| game.state.entity(t)) else { return false };
+        let r = reach(e);
+        let in_range = |x: i64, y: i64| (t.x - x) * (t.x - x) + (t.y - y) * (t.y - y) <= r * r;
+        if e.order != Order::Attack || !e.path.is_empty() || in_range(e.x, e.y) {
+            return false;
+        }
+        let (here, n) = (e.tile(), (r / TILE) as i32 + 1);
+        let tt = t.tile();
+        !(tt.y - n..=tt.y + n).any(|y| {
+            (tt.x - n..=tt.x + n).any(|x| {
+                in_range(x as i64 * TILE + TILE / 2, y as i64 * TILE + TILE / 2)
+                    && game.pathfinder.connected((here.x, here.y), (x, y))
+            })
+        })
+    };
+    w.units.retain(|&id| game.state.entity(id).is_none_or(|e| !stuck(e)));
+    let units: Vec<&Entity> = units.into_iter().filter(|e| !stuck(e)).collect();
     let to_target = |e: &Entity| isqrt(d2(at(game, e), at(game, target)) as u64) as i64;
     let rear = units.iter().map(|e| to_target(e)).max().unwrap_or(0);
-    let reach = |e: &Entity| rules.kind(e.kind).weapon.map_or(0, |w| rules.weapon(w).range);
     let engaged = |e: &Entity| {
         enemies().any(|x| {
             let r = reach(x).max(reach(e)) + TILE;
@@ -208,7 +228,8 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     let ahead: BTreeSet<u32> =
         units.iter().filter(|e| to_target(e) + 3 * TILE < rear && !engaged(e)).map(|e| e.id).collect();
     for e in units.iter().filter(|e| ahead.contains(&e.id) && e.order == Order::Attack) {
-        let t = e.tile();
+        // The tile it is stepping into, not the one its centre is in, so mirrored units stop on mirrored tiles.
+        let t = classic_sim::movement::step_tile(e).unwrap_or(e.tile());
         out.push(vec![e.id], CommandOrder::Move { x: t.x, y: t.y });
     }
     let target_armed = armed(game, target);

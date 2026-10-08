@@ -79,7 +79,7 @@ fn its_army_mixes_infantry_light_vehicles_and_tanks() {
     for id in ["infantry_squad", "rocket_squad", "scout_bike", "quad", "battle_tank"] {
         assert!(n(id) >= 1, "it built a {id}");
     }
-    // Weighted 4 to 3 to 3 to 2 to 1 (Settings::normal), so the dearest kind isn't the only one bought.
+    // Weighted 6 to 3 to 2 to 1 to 1 (Settings::normal), so the dearest kind isn't the only one bought.
     assert!(n("battle_tank") < n("infantry_squad") + n("rocket_squad") + n("scout_bike") + n("quad"));
 }
 
@@ -218,8 +218,8 @@ fn odds(turrets: bool) -> (Game, [Ai; 1]) {
     }
     if turrets {
         let gun = g.kind("gun_turret").unwrap();
-        for x in 48..56 {
-            g.spawn(gun, 1, x, 27);
+        for x in 53..61 {
+            g.spawn(gun, 1, x, 29);
         }
     }
     g.state.entities.retain(|e| !(e.owner == 1 && g.rules.kind(e.kind).harvester.is_some()));
@@ -321,10 +321,25 @@ fn two_ais_on_a_mirrored_map_play_mirror_images_of_each_other() {
         v.sort();
         v
     };
-    for _ in 0..60 {
-        play(&mut g, &mut ais, 100);
+    // Until units of the two sides meet. Two mirrored units meeting head-on can't stay mirror images: movement goes
+    // in id order, so one of them finds its way round first.
+    let met = |g: &Game| {
+        let units: Vec<&classic_sim::Entity> =
+            g.state.entities.iter().filter(|e| !g.rules.kind(e.kind).building).collect();
+        units
+            .iter()
+            .any(|a| units.iter().any(|b| a.owner != b.owner && (a.x - b.x).abs().max((a.y - b.y).abs()) <= 3 * TILE))
+    };
+    while g.state.tick < 9000 && !met(&g) {
         assert_eq!(side(&g, 0), side(&g, 1), "tick {}", g.state.tick);
+        play(&mut g, &mut ais, 1);
     }
-    println!("6000 ticks with chance taken out: mirror images throughout, {} entities each", side(&g, 0).len());
+    let waves: Vec<u32> = ais.iter().map(|a| a.waves_sent).collect();
+    println!(
+        "with chance taken out: mirror images until the two sides met at tick {}, {} entities each, waves {waves:?}",
+        g.state.tick,
+        side(&g, 0).len()
+    );
     assert!(side(&g, 0).len() > 10);
+    assert!(waves.iter().all(|&w| w >= 1), "both sides' first waves went out as mirror images");
 }
