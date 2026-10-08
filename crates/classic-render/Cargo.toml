@@ -6,45 +6,31 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# The renderer is the one part of the engine with third-party dependencies (Ed chose wgpu, 2026-10-07): wgpu draws
-# on every desktop GPU API and on the web, winit opens the window (or the page's canvas), pollster waits for wgpu's
-# async set-up on the desktop, and png reads the setting pack's art; cpal plays sound on every desktop OS's audio API
-# and through Web Audio in the browser. The simulation crates still have none.
+# The renderer is the one part of the engine with third-party dependencies (Ed chose wgpu, 2026-10-07). The platform
+# layer (GPU, sprites, font, sound, files, the browser page) is `rts-platform` from the shared `rts-core`
+# repository, which brings wgpu and cpal. Here: wgpu draws the map, winit opens the window (or the page's canvas),
+# pollster waits for wgpu's async set-up on the desktop, and png reads the setting pack's art. The simulation crates
+# still have none.
 [dependencies]
 classic-ai = { path = "../classic-ai" }
 classic-sim = { path = "../classic-sim" }
 classic-data = { path = "../classic-data" }
 classic-tools = { path = "../classic-tools" }
+rts-platform = { workspace = true }
 wgpu = "30"
 png = "0.18"
 winit = "0.30"
-cpal = { version = "0.18", optional = true }
 
-# `device` opens the sound card (cpal). Without it the player is silent, and on Linux nothing needs ALSA's headers
-# (`libasound2-dev`) to build: `cargo build --no-default-features -p classic-render`.
+# `device` opens the sound card (cpal, in `rts-platform`). Without it the player is silent, and on Linux nothing needs
+# ALSA's headers (`libasound2-dev`) to build: `cargo build --no-default-features -p classic-render`.
 [features]
 default = ["device"]
-device = ["dep:cpal"]
+device = ["rts-platform/device"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = "1"
 
-# The browser build: WebGL2 as well as WebGPU, sound through Web Audio, and the bindings wgpu and winit already
-# use, to fetch files and talk to the page.
+# The browser build: WebGL2 as well as WebGPU, and running the player's start-up on the page's event loop.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "30", features = ["webgl"] }
-cpal = { version = "0.18", optional = true, features = ["wasm-bindgen"] }
-wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = [
-    "console",
-    "Document",
-    "Element",
-    "HtmlCanvasElement",
-    "Location",
-    "Performance",
-    "Response",
-    "UrlSearchParams",
-    "Window",
-] }

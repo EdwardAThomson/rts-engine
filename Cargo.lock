@@ -288,13 +288,10 @@ dependencies = [
  "classic-data",
  "classic-sim",
  "classic-tools",
- "cpal",
- "js-sys",
  "png",
  "pollster",
- "wasm-bindgen",
+ "rts-platform",
  "wasm-bindgen-futures",
- "web-sys",
  "wgpu",
  "winit",
 ]
@@ -1676,6 +1673,20 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 name = "rts-core"
 version = "0.1.0"
 source = "git+https://github.com/EdwardAThomson/rts-core?rev=da80e8730d22dcd6f34194787e168b565982af4c#da80e8730d22dcd6f34194787e168b565982af4c"
+
+[[package]]
+name = "rts-platform"
+version = "0.1.0"
+source = "git+https://github.com/EdwardAThomson/rts-core?rev=c7844f344840e2f8cf649ce5780e0a415e283fe6#c7844f344840e2f8cf649ce5780e0a415e283fe6"
+dependencies = [
+ "cpal",
+ "js-sys",
+ "pollster",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
+]
 
 [[package]]
 name = "rustc-hash"

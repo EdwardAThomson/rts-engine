@@ -8,9 +8,11 @@ license = "MIT"
 publish = false
 
 # The genre-neutral core shared with the 3D engine, pinned by commit: moving to a newer one is a deliberate change
-# that must keep the golden tests passing.
+# that must keep the golden tests passing. `rts-platform`, from the same repository, is the renderer's platform layer
+# (GPU, sprites, font, sound, files, the browser page), shared with the 3D engine's renderer.
 [workspace.dependencies]
 rts-core = { git = "https://github.com/EdwardAThomson/rts-core", rev = "da80e8730d22dcd6f34194787e168b565982af4c" }
+rts-platform = { git = "https://github.com/EdwardAThomson/rts-core", rev = "c7844f344840e2f8cf649ce5780e0a415e283fe6", default-features = false }
 
 # Tests replay thousands of ticks; a little optimisation keeps them quick without slowing builds much.
 [profile.test]
