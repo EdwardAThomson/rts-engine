@@ -71,8 +71,13 @@ pub struct Pathfinder {
 
 impl Pathfinder {
     pub fn new(map: &MapData) -> Self {
+        Self::with_ground(map, |t| t != Terrain::Cliff)
+    }
+
+    /// A pathfinder for something that can travel only the terrain `ground` allows (the hazard: open ground).
+    pub fn with_ground(map: &MapData, ground: impl Fn(Terrain) -> bool) -> Self {
         let n = (map.width * map.height) as usize;
-        let pass: Vec<u8> = map.terrain.iter().map(|&t| u8::from(t != Terrain::Cliff)).collect();
+        let pass: Vec<u8> = map.terrain.iter().map(|&t| u8::from(ground(t))).collect();
         let h_max = octile(0, 0, map.width, map.height) as i64;
         let mut pf = Self {
             w: map.width,

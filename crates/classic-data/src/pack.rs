@@ -217,6 +217,12 @@ impl Pack {
         if let Some(t) = read("tuning.json", &mut errors) {
             errors.extend(tuned.apply_tuning(&t));
         }
+        // A feature switches its module's `on` number, where it has one; a module without one is always on.
+        for (m, on) in &features {
+            if let Some(n) = tuned.modules.get_mut(m).and_then(|m| m.numbers.get_mut("on")) {
+                n.value = i64::from(*on);
+            }
+        }
 
         let pack = Pack {
             dir: dir.to_path_buf(),

@@ -18,6 +18,8 @@ pub fn folders(kind: &str) -> &'static [&'static str] {
         "aircraft" => &["air"],
         "unit" => &["units", "infantry"],
         "effect" => &["effects"],
+        // The hazard; resource blooms may join it here.
+        "feature" => &["creatures"],
         _ => &[],
     }
 }

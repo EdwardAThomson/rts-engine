@@ -8,6 +8,7 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::rng::random_int;
 
 use crate::combat::{self, Projectile, ProjectileCanon};
+use crate::hazard::{self, Hazards, LeftReason};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::movement;
 use crate::path::Pathfinder;
@@ -107,6 +108,8 @@ pub struct Entity {
     /// The unit that asked this one to step aside, and on which tick.
     pub yield_for: Option<u32>,
     pub yield_at: Option<u32>,
+    /// Noise made lately on open ground, halved each hazard scan window; stays 0 while the hazard is off.
+    pub noise: i64,
 }
 
 impl Entity {
@@ -133,6 +136,7 @@ impl Canon for EntityCanon<'_> {
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
             .opt("lastAttacker", attacker.as_ref())
+            .opt("noise", (e.noise != 0).then_some(&e.noise))
             .field("order", &e.order)
             .field("owner", &e.owner)
             .array("path", &e.path)
@@ -178,6 +182,8 @@ pub struct GameState {
     pub entities: Vec<Entity>,
     /// Shells and rockets in flight, sorted by id; they take ids from `next_id` like entities.
     pub projectiles: Vec<Projectile>,
+    /// Set when the rules turn the hazard on.
+    pub hazards: Option<Hazards>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -191,6 +197,8 @@ impl Canon for GameState {
             self.projectiles.iter().map(|p| ProjectileCanon(p, &self.weapon_ids)).collect();
         w.object()
             .array("entities", &entities)
+            // Written only when the hazard is on, so a game without it hashes as it did before.
+            .opt("hazards", self.hazards.as_ref())
             .field("nextId", &self.next_id)
             .field("players", &self.players)
             .opt("projectiles", (!projectiles.is_empty()).then_some(&projectiles))
@@ -414,6 +422,38 @@ pub enum Event {
         demand: i64,
         shortfall: i64,
     },
+    /// A hazard appeared, underground, at its centre (x, y).
+    HazardSpawned {
+        tick: u32,
+        hazard: u32,
+        x: i64,
+        y: i64,
+    },
+    /// A hazard rose out of the ground to strike at (x, y).
+    HazardSurfaced {
+        tick: u32,
+        hazard: u32,
+        x: i64,
+        y: i64,
+    },
+    /// A hazard swallowed a unit whole: no wreck, no blast.
+    HazardAte {
+        tick: u32,
+        hazard: u32,
+        unit: u32,
+        kind: Kind,
+        owner: u32,
+        x: i64,
+        y: i64,
+    },
+    /// A hazard left the map.
+    HazardLeft {
+        tick: u32,
+        hazard: u32,
+        reason: LeftReason,
+        x: i64,
+        y: i64,
+    },
 }
 
 impl Event {
@@ -440,6 +480,10 @@ impl Event {
             Event::MoveEnded { .. } => "move_ended",
             Event::UnitYielded { .. } => "unit_yielded",
             Event::UnitStuck { .. } => "unit_stuck",
+            Event::HazardSpawned { .. } => "hazard_spawned",
+            Event::HazardSurfaced { .. } => "hazard_surfaced",
+            Event::HazardAte { .. } => "hazard_ate",
+            Event::HazardLeft { .. } => "hazard_left",
         }
     }
 
@@ -465,7 +509,11 @@ impl Event {
             | Event::Destroyed { tick, .. }
             | Event::MoveEnded { tick, .. }
             | Event::UnitYielded { tick, .. }
-            | Event::UnitStuck { tick, .. } => tick,
+            | Event::UnitStuck { tick, .. }
+            | Event::HazardSpawned { tick, .. }
+            | Event::HazardSurfaced { tick, .. }
+            | Event::HazardAte { tick, .. }
+            | Event::HazardLeft { tick, .. } => tick,
         }
     }
 }
@@ -499,6 +547,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         repath_fails: 0,
         yield_for: None,
         yield_at: None,
+        noise: 0,
     });
     id
 }
@@ -644,23 +693,27 @@ pub fn apply_command(
     }
 }
 
-/// Advance one tick. `events` receives what happened; it never feeds back in.
+/// Advance one tick. `events` receives what happened; it never feeds back in. `hazard_pf` is the hazard's own
+/// pathfinder (`hazard::pathfinder`), used only while the rules turn it on.
+#[allow(clippy::too_many_arguments)]
 pub fn step(
     map: &MapData,
     pf: &mut Pathfinder,
+    hazard_pf: &mut Pathfinder,
     state: &mut GameState,
     rules: &Rules,
     commands: &[Command],
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat, movement, crush (not built yet), economy, world.
+    // commands, combat, movement, crush (not built yet), the hazard, economy, world.
     let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
     combat::tick(pf, state, rules, events);
     movement::tick(pf, state, rules, events);
+    hazard::tick(map, hazard_pf, state, rules, events);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
     report_power(state, rules, &power_before, events);

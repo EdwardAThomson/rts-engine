@@ -13,6 +13,7 @@
     "units_attacked": "Units under attack",
     "building_lost": "{name} destroyed",
     "unit_lost": "{name} lost",
+    "hazard_ate": "{name} swallowed by the hazard",
     "harvester_no_resource": "{name} idle: no resource left",
     "harvester_no_refinery": "{name} idle: no refinery"
   }

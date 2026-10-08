@@ -8,6 +8,7 @@
 
 pub mod combat;
 pub mod game;
+pub mod hazard;
 pub mod map;
 pub mod movement;
 pub mod path;
@@ -18,9 +19,10 @@ pub mod units;
 pub mod world;
 
 pub use game::{Game, GameOptions, hash_state};
+pub use hazard::{Hazard, Hazards, LeftReason};
 pub use map::{MapData, Terrain, Tile, parse_map};
 pub use placement::PlaceError;
 pub use power::Power;
 pub use production::{EntryState, ProduceError, QueueEntry};
-pub use units::{Kind, Rules, WeaponId};
+pub use units::{HazardRules, Kind, Rules, WeaponId};
 pub use world::{Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};

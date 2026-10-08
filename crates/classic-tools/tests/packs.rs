@@ -156,3 +156,17 @@ fn a_pack_offers_its_own_maps_and_each_must_be_in_it() {
     assert_eq!(errors.len(), expect.len(), "{errors:#?}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_pack_turns_the_hazard_on_with_its_features() {
+    assert!(Rules::from_table(&setting::load("generic").unwrap().rules).unwrap().hazard.is_none(), "off by default");
+    let dir = variant("hazard", |d| replace(d, "setting.json", "\"features\": {}", "\"features\": {\"hazard\": true}"));
+    let pack = Pack::load(&dir, &RulesTable::builtin()).unwrap();
+    assert_eq!(pack.rules.module_number("hazard", "on"), Some(1));
+    assert_ne!(pack.rules.hash(), RulesTable::builtin().hash(), "replays see the switch in the rules hash");
+    let rules = Rules::from_table(&pack.rules).unwrap();
+    assert_eq!(rules.hazard.as_ref().map(|h| h.max), Some(1));
+    let g = Game::new(GameOptions { map: MAP, seed: 3, players: None, rules: Some(&rules) }).unwrap();
+    assert!(g.state.hazards.is_some());
+    std::fs::remove_dir_all(dir).unwrap();
+}

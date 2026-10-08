@@ -333,3 +333,40 @@ fn a_packs_own_art_draws_over_the_generic_packs() {
     assert_eq!(art.layer_colour("open"), Some([0x10, 0x20, 0x30]), "the pack's tile set");
     assert!(art.sprite("power_plant", 0).is_some(), "the generic pack's art index and strips");
 }
+
+#[test]
+fn the_hazard_is_drawn_where_it_lies_and_when_it_strikes() {
+    // The generic pack leaves the hazard off; these rules turn it on and lay one under open ground at (12, 9).
+    let mut r = rig();
+    let pack = setting::load("generic").unwrap();
+    let mut table = pack.rules.clone();
+    table.modules.get_mut("hazard").unwrap().numbers.get_mut("on").unwrap().value = 1;
+    table.modules.get_mut("hazard").unwrap().numbers.get_mut("first_tick").unwrap().value = 100_000;
+    let rules = Rules::from_table(&table).unwrap();
+    r.game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let cam = Camera { x: 12.0 * 32.0 - 100.0, y: 9.0 * 32.0 - 100.0, zoom: 1.0 };
+    let mut scene = Scene::default();
+    let empty = frame(&mut r, &mut scene, &cam);
+    r.game.spawn_hazard(12, 9).unwrap();
+    let under = frame(&mut r, &mut scene, &cam);
+    // The generic pack's placeholder is a warning sign on its tile, about 100 pixels from the view's corner.
+    assert_ne!(under, empty, "drawn while under the sand");
+    let changed = |a: &[u8], b: &[u8], (x, y, w, h): (u32, u32, u32, u32)| {
+        (y..y + h)
+            .flat_map(|py| (x..x + w).map(move |px| ((py * W + px) * 4) as usize))
+            .filter(|&i| a[i..i + 3] != b[i..i + 3])
+            .count()
+    };
+    assert!(changed(&empty, &under, (84, 84, 32, 32)) > 50, "on its tile");
+    // A tank parked next to it is taken: it surfaces, and is still drawn while up.
+    let tank = r.game.kind("battle_tank").unwrap();
+    r.game.spawn(tank, 0, 13, 9);
+    for _ in 0..5 {
+        scene.before_step(&r.game);
+        r.game.step(1);
+        scene.after_step(&r.game);
+    }
+    assert!(r.game.state.hazards.as_ref().unwrap().list[0].surfaced > 0, "it struck");
+    let up = frame(&mut r, &mut scene, &cam);
+    assert_ne!(up, empty);
+}

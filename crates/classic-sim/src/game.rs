@@ -5,6 +5,7 @@ use rts_core::hash::hash_of;
 use rts_core::replay::{CommandQueue, Logged};
 use rts_core::rng::seed_state;
 
+use crate::hazard::{self, Hazards};
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
@@ -26,6 +27,8 @@ pub struct GameOptions<'a> {
 pub struct Game {
     pub map: MapData,
     pub pathfinder: Pathfinder,
+    /// The hazard's: open ground only.
+    pub hazard_pathfinder: Pathfinder,
     pub rules: Rules,
     pub state: GameState,
     pub events: Vec<Event>,
@@ -79,6 +82,7 @@ impl Game {
             kind_ids: rules.kind_ids().into(),
             weapon_ids: rules.weapons.iter().map(|w| w.id.clone()).collect::<Vec<_>>().into(),
             projectiles: Vec::new(),
+            hazards: rules.hazard.as_ref().map(|h| Hazards { list: Vec::new(), next_spawn: h.first_tick }),
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in
@@ -109,14 +113,24 @@ impl Game {
         for e in &state.entities {
             world::occupy(&mut pathfinder, &rules, e, true);
         }
-        Ok(Game { map, pathfinder, rules, state, events: Vec::new(), queue: CommandQueue::default() })
+        let hazard_pathfinder = hazard::pathfinder(&map);
+        Ok(Game {
+            map,
+            pathfinder,
+            hazard_pathfinder,
+            rules,
+            state,
+            events: Vec::new(),
+            queue: CommandQueue::default(),
+        })
     }
 
     /// Advance `n` ticks.
     pub fn step(&mut self, n: u32) {
         for _ in 0..n {
             let cmds = self.queue.take(self.state.tick);
-            world::step(&self.map, &mut self.pathfinder, &mut self.state, &self.rules, &cmds, &mut self.events);
+            let (pf, hpf) = (&mut self.pathfinder, &mut self.hazard_pathfinder);
+            world::step(&self.map, pf, hpf, &mut self.state, &self.rules, &cmds, &mut self.events);
         }
     }
 
@@ -131,6 +145,12 @@ impl Game {
         let id = world::spawn(&mut self.state, &self.rules, kind, owner, x, y);
         world::occupy(&mut self.pathfinder, &self.rules, self.state.entities.last().expect("just spawned"), true);
         id
+    }
+
+    /// Place a hazard, submerged, at the centre of tile (x, y), skipping every rule, for tests and tools. `None`
+    /// when the rules have the hazard off.
+    pub fn spawn_hazard(&mut self, x: i32, y: i32) -> Option<u32> {
+        hazard::place(&mut self.state, Tile { x, y })
     }
 
     /// The kind with this generic id, if these rules have it.

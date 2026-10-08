@@ -170,6 +170,9 @@ impl Feed {
                     let id = if game.rules.kind(kind).building { "building_lost" } else { "unit_lost" };
                     self.say(game, id, Some(kind), Tone::Bad);
                 }
+                Event::HazardAte { kind, owner, .. } if owner == local => {
+                    self.say(game, "hazard_ate", Some(kind), Tone::Bad)
+                }
                 Event::HarvesterIdle { unit, reason, .. } => {
                     let Some(e) = game.state.entity(unit).filter(|e| e.owner == local) else { continue };
                     let id = match reason {
@@ -197,7 +200,11 @@ impl Feed {
                 | Event::ProjectileHit { .. }
                 | Event::MoveEnded { .. }
                 | Event::UnitYielded { .. }
-                | Event::UnitStuck { .. } => {}
+                | Event::UnitStuck { .. }
+                | Event::HazardSpawned { .. }
+                | Event::HazardSurfaced { .. }
+                | Event::HazardAte { .. }
+                | Event::HazardLeft { .. } => {}
             }
         }
         self.seen = game.events.len();
