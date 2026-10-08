@@ -126,6 +126,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   When ties between equally good tiles began to turn round with the map (and a start in the right half to be laid
   out mirrored), every hash was re-recorded on purpose: the standalone path is the same tile for tile with one more
   node expanded, and the bench scenes' path checksums changed (`crates/classic-tools/tests/golden.rs` says what).
+  When units began to leave factories and harvesters to unload on any side, and a start in the bottom half to be
+  laid out turned round, every hash was re-recorded on purpose; standalone paths, path checksums, the scripted
+  command log and the lone tank's position were checked unchanged, and the bench scenes' credits rose.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
   different game; replaying seed, map and command log reproduces the live game.
@@ -134,10 +137,11 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Paths never enter a cliff and go round the ridge; a cliff tile is refused as a goal; a sealed-off goal is
   refused without searching.
 - Orders for another player's units or for buildings are ignored.
-- Each player starts with a construction yard, a power plant, a 3x2 refinery with its harvester at the dock under
-  its middle column, a tank and 1,200 credits; the base has a power margin of 70. Placement accepts a building on rock touching
+- Each player starts with a construction yard, a power plant, a 3x2 refinery with its harvester beside it, a tank
+  and 1,200 credits; the base has a power margin of 70, and a start in the bottom half of a map turned half round
+  is laid out as the half turn of one in the top half. Placement accepts a building on rock touching
   its owner's base (diagonals count, walls don't) and refuses each broken rule with its reason, including a
-  refinery whose dock is a cliff; tuning can allow open ground or let a base reach further; a tank already moving drives round a building placed on
+  refinery with no side to unload on; tuning can allow open ground or let a base reach further; a tank already moving drives round a building placed on
   its path; a bigger refinery moves its dock and harvesters still deliver; placements replay from the command log.
 - Power adds up from the buildings standing, a damaged plant gives less, the power factor stops at its 25%
   floor, `power_changed` reports supply, demand and shortfall only when they change, and a pack's tuning changes
@@ -146,7 +150,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   450-tick tank costs 300 by tick 225 and exactly 600 at the end); a power shortfall slows it to the power factor;
   it pauses without losing progress when credits run out and resumes by itself; cancelling refunds exactly what
   was paid; a finished building waits at the yard until placed, and only a ready building can be placed; a
-  finished unit leaves by the exit tile or waits until one frees up; prerequisites, the primary factory and replay
+  finished unit leaves by the free tile round its factory nearest the middle of the map (a factory in a corner
+  sends units out of the corner facing the middle) or waits until one frees up; prerequisites, the primary factory and replay
   from the command log all hold.
 - Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
   heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
@@ -158,8 +163,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   another instead of driving through it; a move to a taken tile ends next to it; nine tanks sent to one tile end
   on nine tiles round it; an idle own tank steps aside, and an enemy one never does, so the mover gives up; two
   tanks meeting head-on in a corridor get past each other; twelve tanks squeeze through a one-tile gap with none
-  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a harvester
-  queued for a dock steps aside for the one leaving it, and both keep delivering; a factory's new
+  stuck; a harvester unloads on another side when a tank stands under the refinery's pad; where cliffs leave one
+  side, an own tank on it gives way to the harvester while an enemy one blocks it, and a harvester queued for it
+  steps aside for the one leaving it, and both keep delivering; a factory's new
   units drive clear of its exit; collision replays from the command log.
 - Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
   colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same
@@ -227,13 +233,19 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
   in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
-  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` still end in a
-  stalemate in about one game in eleven (18 of 200 by 90 minutes), when the resource runs out with neither side
-  able to build an army; on the smaller `mirror-01` about one in five. In the desktop player it was checked only
+  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` end in a
+  stalemate in about one game in four (45 of 200 by 90 minutes), when the resource runs out with neither side
+  able to build an army; on the smaller `mirror-01` about two in three (see the fairness note below). In the desktop player it was checked only
   in a short smoke run, not played by a person.
-- Maps that are symmetric top to bottom (turned half round) are not fair: factory doors and refinery docks all face
-  south, so the bottom player's harvesters and units leave towards the map edge and travel further. A batch run on
-  such a map gave the top start 167 of 200 wins, and on another 199 of 200. Maps mirrored left to right are fair.
+- Units leave factories and harvesters unload on any side, so maps turned half round are now about as fair as
+  mirrored ones: on `skirmish-01`, with its second start moved to the exact half turn of the first, two computer
+  opponents went from 200 of 200 top wins to 70 top, 85 bottom and 45 stalemates in 200 games. The fairer games
+  stalemate more often: factories no longer jam (in 20 games on `mirror-01` the old south exits held finished units
+  for about 3,000 factory-ticks a side; now none), so both armies come out even and neither breaks through before
+  the resource runs out (129 of 200 on `mirror-01`, from 37). Of the decided games on `mirror-01`, the left start won
+  50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
+  acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
+  because the starting base doesn't turn with them.
 - No storage cap, tech levels, factory upgrades or starport.
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has

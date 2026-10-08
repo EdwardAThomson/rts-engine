@@ -3,8 +3,9 @@
 //!
 //! The map below is all rock with no resource, so no delivery ever changes a player's credits. Player 0 starts with
 //! its yard at (1, 1), a power plant at (3, 1), its 3x2 refinery at (1, 3) and its tank at (4, 5). The tests add a
-//! second power plant at (5, 1) and a heavy factory at (8, 1), whose exit tile is (9, 3). A battle tank costs 600
-//! and takes 450 ticks.
+//! second power plant at (5, 1) and a 3x2 heavy factory at (8, 1). Units leave a factory by whichever free tile round
+//! it is nearest the middle of the map, (8, 4) here: (7, 3), its lower-left corner. A battle tank costs 600 and takes
+//! 450 ticks.
 
 use classic_data::{RulesTable, json};
 use classic_sim::world::Event;
@@ -92,7 +93,7 @@ fn a_tank_is_paid_for_steadily_and_leaves_by_the_exit_when_done() {
     g.step(225);
     assert_eq!(credits(&g), 0, "paid in full, exactly");
     assert!(queue(&g, factory).is_empty());
-    assert_eq!(built_at(&g), [(449, Tile { x: 9, y: 3 })], "on the 450th tick, at the exit below the middle column");
+    assert_eq!(built_at(&g), [(449, Tile { x: 7, y: 3 })], "on the 450th tick, at the corner nearest the middle");
 }
 
 #[test]
@@ -206,17 +207,20 @@ fn a_unit_with_no_free_exit_waits_until_one_frees_up() {
     let rules = tuned(r#"{ "modules": { "production": { "instant_build": 1 } } }"#);
     let mut g = game(Some(&rules));
     let factory = base(&mut g, 1000);
-    // The exit (9, 3) and the open tiles round it; the row above is the factory itself.
+    // Every tile round the factory (8..=10, 1..=2): rows 0 and 3, and columns 7 and 11 between them.
     let tank = kind(&g, "battle_tank");
-    let blockers: Vec<u32> =
-        [(8, 3), (9, 3), (10, 3), (8, 4), (9, 4), (10, 4)].iter().map(|&(x, y)| g.spawn(tank, 0, x, y)).collect();
+    let ring: Vec<(i32, i32)> =
+        (7..=11).flat_map(|x| [(x, 0), (x, 3)]).chain((1..=2).flat_map(|y| [(7, y), (11, y)])).collect();
+    let blockers: Vec<u32> = ring.iter().map(|&(x, y)| g.spawn(tank, 0, x, y)).collect();
     produce(&mut g, "battle_tank");
     g.step(5);
     assert_eq!(queue(&g, factory)[0].1, EntryState::Blocked);
     assert!(built_at(&g).is_empty());
-    g.order(0, &[blockers[3]], CommandOrder::Move { x: 8, y: 7 });
+    // Free the corner furthest from the middle of the map: the only way out, so the unit takes it.
+    let far = blockers[ring.iter().position(|&t| t == (11, 0)).unwrap()];
+    g.order(0, &[far], CommandOrder::Move { x: 14, y: 6 });
     // Step until it comes out, and look before it drives clear of the exit.
-    for _ in 0..30 {
+    for _ in 0..60 {
         g.step(1);
         if !built_at(&g).is_empty() {
             break;
@@ -225,7 +229,23 @@ fn a_unit_with_no_free_exit_waits_until_one_frees_up() {
     let out = built_at(&g);
     println!("left at {out:?}");
     assert_eq!(out.len(), 1);
-    assert_eq!(out[0].1, Tile { x: 8, y: 4 }, "the first free tile in row order");
+    assert_eq!(out[0].1, Tile { x: 11, y: 0 }, "the one free tile round the factory");
+}
+
+#[test]
+fn a_factory_sends_units_out_on_the_side_facing_the_middle_of_the_map() {
+    let rules = tuned(r#"{ "modules": { "production": { "instant_build": 1 } } }"#);
+    let mut g = game(Some(&rules));
+    base(&mut g, 10_000);
+    // A second factory in the bottom right corner (12..=14, 5..=6): its drawn door faces the edge, its units don't.
+    let corner = g.spawn(kind(&g, "heavy_factory"), 0, 12, 5);
+    let tank = kind(&g, "battle_tank");
+    g.order(0, &[corner], CommandOrder::Produce { kind: tank });
+    g.step(2);
+    let out = built_at(&g);
+    println!("left at {out:?}");
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].1, Tile { x: 11, y: 4 }, "the upper-left corner, nearest the middle");
 }
 
 #[test]

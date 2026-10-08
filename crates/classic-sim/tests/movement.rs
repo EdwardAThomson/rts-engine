@@ -192,10 +192,34 @@ fn an_idle_own_unit_steps_aside_and_an_enemy_does_not() {
     );
 }
 
-/// Player 0's harvester, moved to (6, 6) with a full load, so it heads for its dock at (2, 5) next tick, and a
-/// tank of `owner`'s parked on that dock. Every gun is kept quiet.
-fn full_harvester_and_dock_blocker(owner: u32) -> (Game, u32, u32) {
-    let mut g = game(FIELD);
+/// Player 0's base with cliff round its refinery (1..=3, 3..=4) on every side but one tile, (2, 5), under its
+/// middle column: the one place a harvester can unload. Resource two rows down. The starting tank, put on the cliff
+/// at (4, 5) by the start layout, is moved out of the way by `boxed`.
+const DOCK_BOX: &str = "\
+########################
+#1################2#####
+X#######################
+X###X###################
+X###X###################
+XX#XX###################
+########################
+~~~~~~~~~~~~~~~~~~~~~~~~
+XXXXXXXXXXXXXXXXXXXXXXXX
+";
+
+/// A game on `map` with player 0's starting tank moved to (10, 5).
+fn boxed(map: &str) -> Game {
+    let mut g = game(map);
+    let t = g.state.entities.iter_mut().find(|e| e.owner == 0 && e.tile() == Tile { x: 4, y: 5 });
+    let t = t.expect("the starting tank");
+    (t.x, t.y) = (10 * 256 + 128, 5 * 256 + 128);
+    g
+}
+
+/// Player 0's harvester, moved to (6, 6) with a full load, so it heads for a dock next tick, and a tank of `owner`'s
+/// parked on (2, 5). Every gun is kept quiet.
+fn full_harvester_and_dock_blocker(map: &str, owner: u32) -> (Game, u32, u32) {
+    let mut g = boxed(map);
     let full = g.rules.kind(kind(&g, "harvester")).harvester.as_ref().unwrap().capacity;
     let h = g.state.entities.iter().find(|e| e.owner == 0 && e.cargo.is_some()).unwrap().id;
     let parked = tank(&mut g, owner, 2, 5);
@@ -211,8 +235,21 @@ fn full_harvester_and_dock_blocker(owner: u32) -> (Game, u32, u32) {
 }
 
 #[test]
-fn an_own_unit_on_a_dock_gives_way_and_an_enemy_one_blocks_it() {
-    let (mut g, h, parked) = full_harvester_and_dock_blocker(0);
+fn a_harvester_unloads_on_another_side_when_a_unit_stands_under_the_pad() {
+    for owner in [0, 1] {
+        let (mut g, h, parked) = full_harvester_and_dock_blocker(FIELD, owner);
+        run_checked(&mut g, 300);
+        let delivered = g.events.iter().any(|e| matches!(e, Event::Delivered { unit, .. } if *unit == h));
+        println!("tank of player {owner} under the pad: delivered {delivered}, tank at {:?}", at(&g, parked));
+        assert!(delivered);
+        assert_eq!(at(&g, parked), Tile { x: 2, y: 5 }, "nobody had to ask it to move");
+        assert_eq!(count(&g, "unit_yielded"), 0);
+    }
+}
+
+#[test]
+fn an_own_unit_on_the_only_dock_gives_way_and_an_enemy_one_blocks_it() {
+    let (mut g, h, parked) = full_harvester_and_dock_blocker(DOCK_BOX, 0);
     run_checked(&mut g, 300);
     println!("own: parked moved to {:?}", at(&g, parked));
     assert!(
@@ -220,13 +257,14 @@ fn an_own_unit_on_a_dock_gives_way_and_an_enemy_one_blocks_it() {
     );
     assert!(g.events.iter().any(|e| matches!(e, Event::Delivered { unit, .. } if *unit == h)));
 
-    let (mut g, h, parked) = full_harvester_and_dock_blocker(1);
+    let (mut g, h, parked) = full_harvester_and_dock_blocker(DOCK_BOX, 1);
     run_checked(&mut g, 300);
     let e = g.state.entity(h).unwrap();
     println!("enemy: harvester waits at {:?}, {:?}", e.tile(), e.task);
     assert_eq!(at(&g, parked), Tile { x: 2, y: 5 });
     assert_eq!(e.task, Some(Task::ToRefinery), "still queued for the dock");
-    assert_eq!(count(&g, "delivered") + count(&g, "unit_stuck"), 0);
+    let mine = |e: &&Event| matches!(e, Event::Delivered { unit, .. } | Event::UnitStuck { unit, .. } if *unit == h);
+    assert_eq!(g.events.iter().filter(mine).count(), 0);
     assert!(!g.events.iter().any(|e| matches!(e, Event::UnitYielded { unit, .. } if *unit == parked)));
 }
 
@@ -325,24 +363,11 @@ fn collision_replays_from_the_command_log() {
     assert_eq!(replay.hash(), live.hash());
 }
 
-/// Bases above; a resource row below the dock, two tiles down.
-const DOCK_FIELD: &str = "\
-########################
-#1################2#####
-########################
-########################
-########################
-########################
-########################
-~~~~~~~~~~~~~~~~~~~~~~~~
-XXXXXXXXXXXXXXXXXXXXXXXX
-";
-
-/// Two own harvesters share one dock: the first unloads on it while the second, also full, queues on the only
-/// tile between the dock and the field. The one leaving and the one queued must not wait on each other for good.
+/// Two own harvesters share a refinery with one free side: the first unloads on it while the second, also full,
+/// queues on the tile between the dock and the field. The one leaving and the one queued must not wait on each other for good.
 #[test]
 fn a_harvester_leaving_its_dock_and_the_next_one_queued_for_it_both_get_through() {
-    let mut g = game(DOCK_FIELD);
+    let mut g = boxed(DOCK_BOX);
     let hk = kind(&g, "harvester");
     let full = g.rules.kind(hk).harvester.as_ref().unwrap().capacity;
     let h1 = g.state.entities.iter().find(|e| e.owner == 0 && e.cargo.is_some()).unwrap().id;

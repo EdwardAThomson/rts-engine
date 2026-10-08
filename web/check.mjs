@@ -30,8 +30,8 @@ function check(name, got, want) {
 {
   const g = newGame(1);
   api.game_step(g, 9000);
-  check("seed 1, 9,000 ticks", hex(g), "1b059db3");
-  check("player 1 credits", Number(api.game_credits(g, 0)), 7400);
+  check("seed 1, 9,000 ticks", hex(g), "4e1d7a28");
+  check("player 1 credits", Number(api.game_credits(g, 0)), 8000);
   api.game_free(g);
 }
 // The scripted orders from the tests (seed 3, 6,000 ticks): the replay hash every earlier change was checked by.
@@ -42,7 +42,7 @@ function check(name, got, want) {
     tanks.forEach(([id, owner], k) => api.game_order_move(g, owner, id, (t / 50 + 7 * k) % 30, (t / 100 + 3 * k) % 18));
     api.game_step(g, 500);
   }
-  check("seed 3 scripted, 6,000 ticks", hex(g), "ec1cbce9");
+  check("seed 3 scripted, 6,000 ticks", hex(g), "0daccf8f");
   check("tick count", api.game_tick(g), 6000);
   api.game_free(g);
 }
