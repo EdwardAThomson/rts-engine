@@ -2,7 +2,7 @@
 //! recoloured from the pack's remap colours to that faction's ramp.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use classic_data::json::{self, Value};
 
@@ -126,14 +126,30 @@ pub struct Art {
 }
 
 impl Art {
-    /// Load the art of the pack in `dir`, recoloured for `ramps` (the ramp name of each player, in owner order).
-    pub fn load(gpu: &Gpu, batch: &mut SpriteBatch, dir: &Path, ramps: &[String]) -> Result<Art, String> {
-        Art::from_files(gpu, batch, &Files::Dir(dir.to_path_buf()), ramps)
+    /// Load the art in the pack folders `dirs` (as `art_dirs` gives them, the first over the rest), recoloured for
+    /// `ramps` (the ramp name of each player, in owner order).
+    pub fn load(gpu: &Gpu, batch: &mut SpriteBatch, dirs: &[PathBuf], ramps: &[String]) -> Result<Art, String> {
+        let layers: Vec<Files> = dirs.iter().cloned().map(Files::Dir).collect();
+        Art::from_files(gpu, batch, &layers, ramps)
     }
 
-    /// Load the art of the pack whose files are `files`, recoloured for `ramps`.
-    pub fn from_files(gpu: &Gpu, batch: &mut SpriteBatch, files: &Files, ramps: &[String]) -> Result<Art, String> {
-        let text = files.read_text(ART_INDEX)?;
+    /// Load the art whose files are `layers`, recoloured for `ramps`. Each file comes from the first layer that has
+    /// it, so a pack's own art draws over the generic pack's: the art index, each picture it names, each studio
+    /// sprite (with the atlas page beside it) and the terrain tile set.
+    pub fn from_files(gpu: &Gpu, batch: &mut SpriteBatch, layers: &[Files], ramps: &[String]) -> Result<Art, String> {
+        // The first layer with `path`, and its bytes.
+        let read = |path: &str| -> Result<(usize, Vec<u8>), String> {
+            let mut missing = format!("{path}: no art layers");
+            for (i, files) in layers.iter().enumerate() {
+                match files.read(path) {
+                    Ok(bytes) => return Ok((i, bytes)),
+                    Err(e) => missing = e,
+                }
+            }
+            Err(missing)
+        };
+        let (_, index) = read(ART_INDEX)?;
+        let text = String::from_utf8(index).map_err(|e| format!("{ART_INDEX}: {e}"))?;
         let doc = json::parse(&text).map_err(|e| format!("{ART_INDEX}: {e:?}"))?;
         let tile = doc.get("tile").and_then(Value::as_int).ok_or("art.json: no tile size")? as f32;
         let colours = |v: Option<&Value>| -> Result<Vec<[u8; 3]>, String> {
@@ -146,7 +162,7 @@ impl Art {
         }
         let load = |batch: &mut SpriteBatch, entry: &Value, ramp: Option<&[[u8; 3]]>| -> Result<Strip, String> {
             let file = entry.get("file").and_then(Value::as_str).ok_or("art.json: entry without a file")?;
-            let (w, h, mut rgba) = decode_png(&files.read(file)?, file)?;
+            let (w, h, mut rgba) = decode_png(&read(file)?.1, file)?;
             if let Some(ramp) = ramp {
                 recolour(&mut rgba, &remap, ramp);
             }
@@ -188,20 +204,27 @@ impl Art {
             .iter()
             .map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or("")))
             .collect();
+        // Each sprite with the layer it came from: its page is the one beside it, in the same layer, and two layers'
+        // pages can share a name, so pages are keyed by layer and name.
         let mut found = Vec::new();
         for path in studio::candidates(kinds).into_iter().chain(effect_candidates()) {
-            let Ok(bytes) = files.read(&path) else { continue };
+            let Ok((layer, bytes)) = read(&path) else { continue };
             let text = String::from_utf8_lossy(&bytes);
-            let sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", files.name(&path)))?;
-            found.push((path, sprite));
+            let mut sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", layers[layer].name(&path)))?;
+            let page = sprite.atlas.clone();
+            sprite.atlas = format!("{layer}/{page}");
+            found.push((path, layer, page, sprite));
         }
         // A page at a time: measure the muzzles its sprites lack, then paint it in each owner's colours. A page with
         // no team mask (effects) is loaded once, as it is.
-        let atlases: std::collections::BTreeSet<String> = found.iter().map(|(_, s)| s.atlas.clone()).collect();
-        for atlas in atlases {
-            let [img, mask] = studio::page_files(&atlas);
+        let atlases: std::collections::BTreeSet<(usize, String)> =
+            found.iter().map(|(_, layer, page, _)| (*layer, page.clone())).collect();
+        for (layer, page) in atlases {
+            let files = &layers[layer];
+            let key = format!("{layer}/{page}");
+            let [img, mask] = studio::page_files(&page);
             let (w, h, rgba) = decode_png(&files.read(&img)?, &img)?;
-            for (path, sprite) in found.iter_mut().filter(|(_, s)| s.atlas == atlas) {
+            for (path, _, _, sprite) in found.iter_mut().filter(|(_, _, _, s)| s.atlas == key) {
                 let body_gun = ["/units/", "/air/"].iter().any(|f| path.contains(f));
                 sprite.find_muzzles(&rgba, w, body_gun);
             }
@@ -221,9 +244,9 @@ impl Art {
                 }
                 Err(_) => vec![batch.texture(gpu, w, h, &rgba)],
             };
-            art.studio.pages.insert(atlas, pages);
+            art.studio.pages.insert(key, pages);
         }
-        for (path, sprite) in found {
+        for (path, _, _, sprite) in found {
             let id = path.rsplit('/').next().unwrap_or("").trim_end_matches(".json").to_string();
             if path.contains("/effects/") {
                 art.fx.insert(id, sprite);
@@ -231,9 +254,10 @@ impl Art {
                 art.studio.sprites.insert(id, sprite);
             }
         }
-        if let Ok(text) = files.read_text(tiles::TILESET) {
-            let set = Tileset::parse(&text)?;
-            let (w, h, rgba) = decode_png(&files.read(tiles::TILESET_PAGE)?, tiles::TILESET_PAGE)?;
+        // The tile set and its page come from the same layer.
+        if let Ok((layer, bytes)) = read(tiles::TILESET) {
+            let set = Tileset::parse(&String::from_utf8_lossy(&bytes))?;
+            let (w, h, rgba) = decode_png(&layers[layer].read(tiles::TILESET_PAGE)?, tiles::TILESET_PAGE)?;
             art.tileset = Some((set, batch.texture(gpu, w, h, &rgba)));
         }
         // Icons are plain file names, one picture each.
@@ -352,12 +376,14 @@ pub fn atlas_files<'a>(files: impl IntoIterator<Item = (&'a String, &'a Vec<u8>)
     pages.into_iter().collect()
 }
 
-/// Where to find a pack's art: the pack itself if it has an `art/art.json`, else the generic pack's placeholders.
-pub fn art_dir(pack: &classic_data::Pack) -> std::path::PathBuf {
-    if pack.dir.join(ART_INDEX).is_file() {
-        pack.dir.clone()
+/// Where a pack's art comes from, first over the rest: the pack's own folder, then the generic pack's placeholders
+/// for anything it doesn't draw (just the generic pack, for the generic pack).
+pub fn art_dirs(pack: &classic_data::Pack) -> Vec<PathBuf> {
+    let generic = classic_tools::setting::root().join("settings/generic");
+    if pack.dir.canonicalize().ok() == generic.canonicalize().ok() {
+        vec![generic]
     } else {
-        classic_tools::setting::root().join("settings/generic")
+        vec![pack.dir.clone(), generic]
     }
 }
 

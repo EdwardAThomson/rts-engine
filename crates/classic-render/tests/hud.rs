@@ -185,7 +185,7 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     let pack = setting::load("generic").unwrap();
     let ramps = art::player_ramps(&pack, game.state.players.len());
     let mut batch = SpriteBatch::new(&gpu, OFFSCREEN_FORMAT);
-    let art = Art::load(&gpu, &mut batch, &art::art_dir(&pack), &ramps).unwrap();
+    let art = Art::load(&gpu, &mut batch, &art::art_dirs(&pack), &ramps).unwrap();
     let font = Font::new(&gpu, &mut batch);
     let skin = Skin::load(&gpu, &mut batch, &[&Files::Dir(pack.dir.clone())]).unwrap();
     let v = view();
