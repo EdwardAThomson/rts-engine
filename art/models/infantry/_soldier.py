@@ -39,7 +39,7 @@ def body(j, cloth, trousers=None, boots=None, limb=0.14):
     trousers = trousers or cloth
     boots = boots or st.rubber()
     st.block((0.44, 0.27, 0.5), (0, 0, 0.25), mat=cloth, parent=j["spine"], bevel=0.06, name="torso")
-    st.block((0.34, 0.24, 0.2), (0, -0.01, -0.03), mat=trousers, parent=j["pelvis"], bevel=0.05, name="hips")
+    st.block((0.35, 0.24, 0.2), (0, -0.01, -0.03), mat=trousers, parent=j["pelvis"], bevel=0.05, name="hips")
     st.sphere(0.085, (0, 0, 0.47), mat=cloth, parent=j["spine"], scale=(1.2, 1, 0.8), name="neck")
     for side, sx in (("l", -1), ("r", 1)):
         st.sphere(limb * 0.62, (0, 0, -0.02), mat=cloth, parent=j[f"shoulder_{side}"], name="shoulder")
@@ -282,8 +282,10 @@ def pose(joints, anim, frame, frames, hold="rifle", stance="kneel"):
             j["hip_r"].rotation_euler.x, j["knee_r"].rotation_euler.x = 0.2 * knees * (1 - t), -0.6 * knees * (1 - t)
             j["spine"].rotation_euler.x = 0.25 * t
             j["head"].rotation_euler.z = 0.9 * t
-        # The weapon slides out of the hands and lies beside the body.
+        # The weapon slides out of the hands and lies flat beside the body: it turns against the body's fall, or a
+        # soldier on his back would hold it pointing at the sky (hidden from the sprite camera, plain in 3D).
         drop = _ease(2 * t - 1)
         wx, wy, wz = HOLDS[hold]["weapon"]
+        fall = j["body"].rotation_euler.x + j["spine"].rotation_euler.x
         j["weapon"].location = (wx + 0.25 * drop, wy, wz - 0.12 * drop)
-        j["weapon"].rotation_euler.x = HOLDS[hold]["lift"] * (1 - drop)
+        j["weapon"].rotation_euler.x = HOLDS[hold]["lift"] * (1 - drop) - fall * drop
