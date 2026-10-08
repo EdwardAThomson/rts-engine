@@ -16,6 +16,7 @@ use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
 use crate::feed::{Feed, Tone};
+use crate::lines::Lines;
 use crate::platform::{Files, Rect, SpriteBatch};
 use crate::scene::Camera;
 use crate::skin::{Skin, Style};
@@ -153,18 +154,21 @@ pub struct Hud {
 }
 
 impl Hud {
-    /// A HUD for `player`, naming things as `pack` does and leaving out the entities it doesn't use. `pack_files` is
-    /// where the pack's own files are, for its wording of the message feed and its theme's colours.
-    pub fn new(pack: &classic_data::Pack, pack_files: &Files, game: &Game, player: u32) -> Hud {
+    /// A HUD for `player`, who plays the pack's faction number `faction`, naming things as `pack` does and leaving out
+    /// the entities it doesn't use. `pack_files` is where the pack's own files are, for its wording of the message
+    /// feed, its faction's lines and its theme's colours.
+    pub fn new(pack: &classic_data::Pack, pack_files: &Files, game: &Game, player: u32, faction: usize) -> Hud {
         let ids = game.rules.kinds.iter().map(|k| k.id.clone());
         let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
+        let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
+        let speech = Lines::load(pack_files, &factions, factions.get(faction).map(String::as_str));
         Hud {
             player,
             scale: 1.0,
             tab: None,
             placing: None,
             scroll: 0,
-            feed: Feed::new(pack_files, names.clone(), player),
+            feed: Feed::new(pack_files, names.clone(), player, speech),
             theme: Theme::load(pack_files).0,
             names,
             unused: ids.filter(|id| !pack.uses(id)).collect(),
@@ -580,6 +584,7 @@ impl Hud {
         self.draw_readout(batch, skin, game, l.readout);
         self.draw_clock(batch, skin, game, view.screen);
         self.draw_feed(batch, skin, game);
+        self.draw_reply(batch, skin, game, view.screen);
         if let Some(icon) = hovered {
             self.draw_tooltip(batch, skin, game, icon, mouse, view.screen);
         }
@@ -727,6 +732,21 @@ impl Hud {
             );
             skin.text(batch, Style::Body, &l.text, x, y, s, colour);
         }
+    }
+
+    /// What the player's units last said, as a subtitle at the foot of the world, fading in its last half second.
+    fn draw_reply(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, screen: (f32, f32)) {
+        let Some(r) = &self.feed.reply else { return };
+        let s = self.scale;
+        let left = crate::feed::REPLY_LIFE.saturating_sub(game.state.tick.saturating_sub(r.tick));
+        let fade = (2.0 * left as f32 / TICKS_PER_SECOND as f32).min(1.0);
+        let (w, h) = (skin.width(Style::Body, &r.text, s), skin.line(Style::Body, s));
+        let world_w = screen.0 - RAIL_W * s;
+        let (x, y) = (((world_w - w) / 2.0).round(), screen.1 - h - 28.0 * s);
+        batch.fill(Rect::new(x - 6.0 * s, y - 4.0 * s, w + 12.0 * s, h + 6.0 * s), [0, 0, 0, (150.0 * fade) as u8]);
+        let mut colour = self.theme.text;
+        colour[3] = (255.0 * fade) as u8;
+        skin.text(batch, Style::Body, &r.text, x, y, s, colour);
     }
 
     /// The whole map, one block per tile: terrain and resource in the art's own average colours, buildings and

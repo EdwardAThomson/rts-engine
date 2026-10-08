@@ -18,7 +18,7 @@ fn game() -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
-    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0);
+    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0, 0);
     (game, hud)
 }
 
@@ -198,10 +198,12 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     scene.draw(&mut batch, &art, &game, &v.cam, SCREEN, 1.0);
     let world = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
     scene.draw(&mut batch, &art, &game, &v.cam, SCREEN, 1.0);
-    // The player's harvester selected, and a line in the feed.
+    // The player's harvester selected and replying, and a line in the feed.
     let harvester = game.kind("harvester").unwrap();
     let picked = game.state.entities.iter().find(|e| e.owner == 0 && e.kind == harvester).unwrap().id;
     hud.feed.say(&game, "low_power", None, classic_render::feed::Tone::Bad);
+    hud.feed.reply(&game, classic_render::lines::Moment::Select, &[picked]);
+    assert!(hud.feed.reply.is_some());
     hud.draw(&mut batch, &art, &skin, &game, &v, at, &[picked]);
     let image = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
     let out = setting::root().join("target/hud-test.png");

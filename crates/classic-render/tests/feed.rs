@@ -1,9 +1,10 @@
-//! The message feed, the selection's control groups and the rail's tab key: client state the player sees, read from
+//! The message feed, the units' replies and the advisor's lines, the selection's control groups and the rail's tab key: client state the player sees, read from
 //! the game's events and never fed back into it.
 
 use classic_render::Hud;
 use classic_render::Scene;
-use classic_render::feed::{self, Feed, LIFE, Tone};
+use classic_render::feed::{self, Feed, LIFE, REPLY_EVERY, REPLY_LIFE, Tone};
+use classic_render::lines::{self, Lines, Moment, VOICES};
 use classic_render::platform::Files;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use classic_tools::setting;
@@ -14,7 +15,7 @@ fn game() -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
-    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0);
+    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0, 0);
     (game, hud)
 }
 
@@ -46,7 +47,7 @@ fn every_message_has_words_and_a_pack_can_reword_them() {
         r#"{ "messages": { "low_power": "The lights are dimming", "no_such_message": "x" } }"#,
     )
     .unwrap();
-    let f = Feed::new(&Files::Dir(dir.clone()), Default::default(), 0);
+    let f = Feed::new(&Files::Dir(dir.clone()), Default::default(), 0, Lines::engine());
     println!("warnings: {:?}", f.warnings);
     assert_eq!(f.words()["low_power"], "The lights are dimming");
     assert_eq!(f.words()["power_restored"], words["power_restored"]);
@@ -162,4 +163,142 @@ fn the_tab_key_steps_through_the_factories() {
     hud.next_tab(&game, true);
     hud.next_tab(&game, true);
     assert_eq!(open(&hud), tabs[tabs.len() - 1], "back from the first wraps to the last");
+}
+
+#[test]
+fn the_engine_has_a_reply_for_every_voice_and_moment_and_planned_ids_are_new() {
+    let lines = Lines::engine();
+    for voice in VOICES {
+        for m in Moment::ALL {
+            let said = &lines.acks[&(voice, m)];
+            println!("{voice}.{}: {said:?}", m.id());
+            assert!(!said.is_empty());
+        }
+    }
+    let words = feed::default_words();
+    let ids = lines::advisor_ids();
+    let mut unique = ids.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), ids.len(), "a planned advisor id isn't already a message");
+    assert!(ids.len() > words.len());
+}
+
+/// A pack in `target/` with `lines` as its `lines.json`.
+fn pack_with_lines(name: &str, lines: &str) -> Files {
+    let dir = setting::root().join("target").join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("lines.json"), lines).unwrap();
+    Files::Dir(dir)
+}
+
+#[test]
+fn a_pack_gives_each_faction_its_own_lines_and_mistakes_are_warned_about() {
+    let pack = pack_with_lines(
+        "lines-test-pack",
+        r#"{
+          "voice": { "faction_a": "notes for recording, not read by the engine" },
+          "advisor": { "low_power": "Everyone: power low", "hazard_sighted": "Something stirs" },
+          "acks": { "vehicle": { "move": ["Pack rolling.", "Pack driving."] } },
+          "factions": {
+            "faction_a": {
+              "advisor": { "low_power": ["A: power low", "A: lights dim"], "no_such_line": "x" },
+              "acks": { "vehicle": { "select": "A here.", "dance": "x" }, "boat": { "move": "x" } }
+            },
+            "faction_b": { "acks": { "infantry": { "attack": [] } } },
+            "faction_z": {}
+          }
+        }"#,
+    );
+    let factions = ["faction_a".to_string(), "faction_b".to_string()];
+    let a = Lines::load(&pack, &factions, Some("faction_a"));
+    println!("warnings: {:#?}", a.warnings);
+    assert_eq!(a.advisor["low_power"], ["A: power low", "A: lights dim"], "the faction's own words win");
+    assert_eq!(a.advisor["hazard_sighted"], ["Something stirs"], "a planned id may have lines already");
+    assert_eq!(a.acks[&("vehicle", Moment::Select)], ["A here."]);
+    assert_eq!(a.acks[&("vehicle", Moment::Move)], ["Pack rolling.", "Pack driving."], "pack-wide lines carry over");
+    assert_eq!(a.acks[&("infantry", Moment::Move)], Lines::engine().acks[&("infantry", Moment::Move)]);
+    let b = Lines::load(&pack, &factions, Some("faction_b"));
+    assert_eq!(b.advisor["low_power"], ["Everyone: power low"]);
+    assert_eq!(b.acks[&("vehicle", Moment::Select)], Lines::engine().acks[&("vehicle", Moment::Select)]);
+    // Every faction's part is checked, whichever faction is played.
+    assert_eq!(a.warnings, b.warnings);
+    for w in [
+        "no advisor line `no_such_line`",
+        "no moment `dance`",
+        "no voice set `boat`",
+        "infantry.attack needs",
+        "no faction `faction_z`",
+    ] {
+        assert!(a.warnings.iter().any(|x| x.contains(w)), "{w} in {:?}", a.warnings);
+    }
+    assert_eq!(a.warnings.len(), 5);
+}
+
+#[test]
+fn units_reply_to_their_own_player_without_saying_the_same_thing_twice() {
+    let (mut game, _) = game();
+    let pack = setting::load("generic").unwrap();
+    let files = pack_with_lines(
+        "lines-reply-pack",
+        r#"{ "acks": { "vehicle": { "select": ["One.", "Two.", "Three."], "move": "Off." } },
+             "advisor": { "low_power": ["Power dropping", "The lights are going"] } }"#,
+    );
+    let mut hud = Hud::new(&pack, &files, &game, 0, 0);
+    assert!(hud.feed.warnings.is_empty(), "{:?}", hud.feed.warnings);
+    let tank = game.kind("battle_tank").unwrap();
+    let mine = game.spawn(tank, 0, 6, 8);
+    let theirs = game.spawn(tank, 1, 40, 30);
+    let yard = game.state.entities.iter().find(|e| e.owner == 0 && game.rules.kind(e.kind).building).unwrap().id;
+
+    hud.feed.reply(&game, Moment::Select, &[theirs, yard]);
+    assert!(hud.feed.reply.is_none(), "enemies and buildings say nothing");
+    let mut said = Vec::new();
+    for _ in 0..12 {
+        hud.feed.reply(&game, Moment::Select, &[mine, theirs]);
+        let r = hud.feed.reply.clone().unwrap();
+        // Clicking again at once is too soon to answer.
+        hud.feed.reply(&game, Moment::Select, &[mine]);
+        assert_eq!(hud.feed.reply.as_ref().unwrap().tick, r.tick);
+        said.push(r.text);
+        game.step(REPLY_EVERY);
+        hud.after_step(&game);
+    }
+    println!("{said:?}");
+    assert!(said.iter().all(|t| ["One.", "Two.", "Three."].contains(&t.as_str())));
+    assert!(said.windows(2).all(|w| w[0] != w[1]), "never the same line twice in a row");
+    assert!(["One.", "Two.", "Three."].iter().all(|t| said.iter().any(|s| s == t)), "every line gets said");
+    hud.feed.reply(&game, Moment::Move, &[mine]);
+    assert_eq!(hud.feed.reply.as_ref().unwrap().text, "Off.");
+    game.step(REPLY_LIFE);
+    hud.after_step(&game);
+    assert!(hud.feed.reply.is_none(), "the subtitle goes after its time");
+
+    // The advisor's own words replace the feed's.
+    let radar = game.kind("radar").unwrap();
+    for i in 0..5 {
+        game.spawn(radar, 0, 4 + 2 * i, 10);
+    }
+    game.step(1);
+    hud.after_step(&game);
+    let line = hud.feed.lines.iter().find(|l| l.id == "low_power").unwrap();
+    assert!(["Power dropping", "The lights are going"].contains(&line.text.as_str()), "{line:?}");
+}
+
+#[test]
+fn the_private_packs_lines_read_without_mistakes_when_they_are_cloned_in() {
+    let packs = setting::private_packs();
+    if packs.is_empty() {
+        eprintln!("settings-private/ is not cloned here; skipping");
+        return;
+    }
+    for dir in &packs {
+        let pack = setting::load(dir.to_str().unwrap()).unwrap();
+        let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
+        for f in &factions {
+            let lines = Lines::load(&Files::Dir(dir.clone()), &factions, Some(f));
+            assert!(lines.warnings.is_empty(), "{}: {:?}", dir.display(), lines.warnings);
+            println!("{} {f}: {} advisor lines", dir.display(), lines.advisor.len());
+        }
+    }
 }
