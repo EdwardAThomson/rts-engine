@@ -15,10 +15,11 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
+use classic_sim::map::TILE;
 use classic_sim::world::dock_at;
 use classic_sim::{CommandOrder, EntryState, Game, Kind, Order, Task, Tile};
-use rts_core::imath::isqrt;
 
+use crate::geo::{d2, footprint, off_middle, toward};
 use crate::{Ai, Orders, View, dist2};
 
 /// Queue the next building, and place any that are ready.
@@ -50,7 +51,7 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             }
         }
     }
-    if busy {
+    if busy || starving(game, view) {
         return;
     }
     let next = next_building(ai, game, view);
@@ -89,6 +90,15 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     let mut harvesters = view.mine.iter().filter(|&&i| is_harvester(es[i].kind)).count() + queued_harvesters;
     let want = (refineries * ai.settings.harvesters_per_refinery).min(ai.settings.max_harvesters);
     let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
+    // With no harvester left, income has stopped for good unless one is built: cancel everything else not yet
+    // finished, for the refund and the room in the queue.
+    if starving(game, view) {
+        for &i in &view.mine {
+            for q in es[i].queue.iter().filter(|q| !is_harvester(q.item) && q.state != EntryState::Ready) {
+                out.push(vec![es[i].id], CommandOrder::Cancel { kind: q.item });
+            }
+        }
+    }
     for &i in &view.mine {
         let f = &es[i];
         if f.queue.len() >= ai.settings.factory_queue {
@@ -118,6 +128,14 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             out.push(vec![f.id], CommandOrder::Produce { kind: k });
         }
     }
+}
+
+/// Whether it has a refinery but no harvester.
+fn starving(game: &Game, view: &View) -> bool {
+    let es = &game.state.entities;
+    let rules = &game.rules;
+    let has = |f: &dyn Fn(&classic_sim::units::KindRules) -> bool| view.mine.iter().any(|&i| f(rules.kind(es[i].kind)));
+    has(&|k| k.refinery) && !has(&|k| k.harvester.is_some())
 }
 
 /// Send any harvester that has stopped (stuck, or left standing after a move) back to work.
@@ -159,25 +177,27 @@ pub(crate) fn spot(game: &Game, view: &View, player: u32, kind: Kind) -> Option<
     }
     let field = resource_tiles(game);
     // Armed buildings face the enemy: aim for a point a few tiles out from home towards it.
-    let front = view.enemy_home.map_or(home, |e| toward(home, e, 5));
-    let mut scored: Vec<(i64, i32, i32)> = tried
+    let front = view.enemy_home.map_or(home, |e| toward(home, e, 5 * TILE));
+    let mut scored: Vec<(i64, i64, i32, i32)> = tried
         .into_iter()
         .filter(|&(y, x)| game.can_place(player, kind, x, y).is_ok())
         .map(|(y, x)| {
-            let mid = Tile { x: x + (k.width - 1) / 2, y: y + (k.height - 1) / 2 };
-            let mut score = if k.weapon.is_some() { dist2(mid, front) * 4 } else { dist2(mid, home) * 4 };
+            // In sub-tile units squared, from the footprint's exact centre; ties go to the spot nearer the middle of
+            // the map, so a mirrored base is built the mirrored way.
+            let mid = footprint(k, x, y);
+            let mut score = if k.weapon.is_some() { d2(mid, front) * 4 } else { d2(mid, home) * 4 };
             if k.refinery {
                 let dock = dock_at(k, x, y);
-                score += field.iter().map(|&f| dist2(dock, f)).min().unwrap_or(0) * 8;
+                score += field.iter().map(|&f| dist2(dock, f)).min().unwrap_or(0) * 8 * TILE * TILE;
             }
             if x == 0 || y == 0 || x + k.width >= game.map.width || y + k.height >= game.map.height {
-                score += 50;
+                score += 50 * TILE * TILE;
             }
-            (score, y, x)
+            (score, off_middle(game, mid), y, x)
         })
         .collect();
     scored.sort_unstable();
-    scored.into_iter().map(|(_, y, x)| Tile { x, y }).find(|&t| keeps_lanes(game, view, kind, t))
+    scored.into_iter().map(|(_, _, y, x)| Tile { x, y }).find(|&t| keeps_lanes(game, view, kind, t))
 }
 
 /// Whether, with `kind` placed at `at`, every factory exit and refinery dock it owns, the new building's included,
@@ -257,14 +277,4 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
 /// Every tile with resource on it now.
 fn resource_tiles(game: &Game) -> Vec<Tile> {
     (0..game.state.resource.len()).filter(|&i| game.state.resource[i] > 0).map(|i| game.map.tile_at(i)).collect()
-}
-
-/// The point `n` tiles from `from` along the line to `to` (or `to` itself if it is nearer).
-pub(crate) fn toward(from: Tile, to: Tile, n: i32) -> Tile {
-    let d = isqrt(dist2(from, to) as u64) as i64;
-    if d <= n as i64 {
-        return to;
-    }
-    let (dx, dy) = ((to.x - from.x) as i64, (to.y - from.y) as i64);
-    Tile { x: from.x + (dx * n as i64 / d) as i32, y: from.y + (dy * n as i64 / d) as i32 }
 }

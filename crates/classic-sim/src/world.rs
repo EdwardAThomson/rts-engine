@@ -755,28 +755,37 @@ fn nearest_resource(
             }
         }
     }
+    // Ring by ring (steps away), so of the tiles the same number of steps away the one nearest in a straight line
+    // wins, then the one nearer the middle of the map: choices that turn round with a mirrored map, where the order
+    // the search happens to visit tiles in would favour one side.
     let start = map.index(from.x, from.y);
     let mut seen = vec![false; state.resource.len()];
     seen[start] = true;
-    let mut queue = vec![start];
-    let mut qi = 0;
-    while qi < queue.len() {
-        let t = queue[qi];
-        qi += 1;
-        if state.resource[t] > 0 && !held[t] {
+    let mut ring = vec![start];
+    let key = |t: usize| {
+        let tile = map.tile_at(t);
+        let d = |a: i32, b: i32| ((a - b) as i64).pow(2);
+        (d(tile.x, from.x) + d(tile.y, from.y), tile.off_middle(map.width, map.height), t)
+    };
+    while !ring.is_empty() {
+        if let Some(&t) = ring.iter().filter(|&&t| state.resource[t] > 0 && !held[t]).min_by_key(|&&t| key(t)) {
             return Some(map.tile_at(t));
         }
-        let Tile { x, y } = map.tile_at(t);
-        for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
-            let (nx, ny) = (x + dx, y + dy);
-            if pf.passable(nx, ny) {
-                let n = map.index(nx, ny);
-                if !seen[n] {
-                    seen[n] = true;
-                    queue.push(n);
+        let mut next = Vec::new();
+        for &t in &ring {
+            let Tile { x, y } = map.tile_at(t);
+            for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+                let (nx, ny) = (x + dx, y + dy);
+                if pf.passable(nx, ny) {
+                    let n = map.index(nx, ny);
+                    if !seen[n] {
+                        seen[n] = true;
+                        next.push(n);
+                    }
                 }
             }
         }
+        ring = next;
     }
     None
 }
