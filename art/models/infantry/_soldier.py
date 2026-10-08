@@ -39,7 +39,7 @@ def body(j, cloth, trousers=None, boots=None, limb=0.14):
     trousers = trousers or cloth
     boots = boots or st.rubber()
     st.block((0.44, 0.27, 0.5), (0, 0, 0.25), mat=cloth, parent=j["spine"], bevel=0.06, name="torso")
-    st.block((0.34, 0.24, 0.2), (0, -0.01, -0.03), mat=trousers, parent=j["pelvis"], bevel=0.05, name="hips")
+    st.block((0.35, 0.24, 0.2), (0, -0.01, -0.03), mat=trousers, parent=j["pelvis"], bevel=0.05, name="hips")
     st.sphere(0.085, (0, 0, 0.47), mat=cloth, parent=j["spine"], scale=(1.2, 1, 0.8), name="neck")
     for side, sx in (("l", -1), ("r", 1)):
         st.sphere(limb * 0.62, (0, 0, -0.02), mat=cloth, parent=j[f"shoulder_{side}"], name="shoulder")
