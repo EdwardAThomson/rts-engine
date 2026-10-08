@@ -152,6 +152,11 @@ impl Ai {
         }
     }
 
+    /// Whether its income has stopped: nothing delivered for `broke_ticks`.
+    pub(crate) fn dry(&self, game: &Game) -> bool {
+        game.state.tick >= self.delivered_at + self.settings.broke_ticks
+    }
+
     /// Decide this think's orders. Reads the game and changes nothing in it.
     pub fn think(&mut self, game: &Game) -> Vec<Command> {
         self.thinks += 1;

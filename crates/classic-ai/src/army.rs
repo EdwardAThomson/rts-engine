@@ -101,11 +101,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
         let ready: Vec<&Entity> = if last_stand {
             home.clone()
         } else {
-            home.iter()
-                .filter(|e| e.order == Order::Idle && off(e) <= near)
-                .filter(|e| e.health * 2 >= rules.kind(e.kind).max_health)
-                .copied()
-                .collect()
+            home.iter().filter(|e| e.order == Order::Idle && off(e) <= near).copied().collect()
         };
         let time = game.state.tick >= s.first_wave_tick;
         if ai.wave.is_none() && time && !ready.is_empty() && (ready.len() >= ai.wave_size || last_stand) {
@@ -138,7 +134,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     }
 
     // Steer the wave.
-    let rally_distance = s.rally_distance;
+    let (rally_distance, wave_growth, wave_cap) = (s.rally_distance, s.wave_growth, s.wave_cap);
     let Some(w) = &mut ai.wave else { return };
     let units: Vec<&Entity> = w.units.iter().filter_map(|&id| game.state.entity(id)).collect();
     let n = units.len() as i64;
@@ -182,6 +178,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
                 out.push(w.units.clone(), CommandOrder::Move { x: rally.x, y: rally.y });
             }
             ai.wave = None;
+            ai.wave_size = (ai.wave_size + wave_growth).min(wave_cap);
             return;
         }
     }
@@ -282,7 +279,7 @@ fn broke(ai: &Ai, game: &Game) -> bool {
         .map(|k| k.cost)
         .min()
         .unwrap_or(0);
-    credits < cheapest && game.state.tick >= ai.delivered_at + ai.settings.broke_ticks
+    credits < cheapest && ai.dry(game)
 }
 
 /// Damage per 1000 ticks one armed entity does to another, from its weapon and the damage table.

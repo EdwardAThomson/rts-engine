@@ -265,6 +265,36 @@ fn with_its_income_gone_it_sends_every_unit() {
 }
 
 #[test]
+fn with_its_income_gone_it_spends_what_is_left_on_units_it_can_pay_for() {
+    // Normally it keeps `unit_reserve` credits back so the base can grow. With nothing coming in there is nothing to
+    // save for: the last 250 credits buy a unit that costs no more than that, never one it could only half pay for.
+    let mut g = game(4);
+    let mut ai = [Ai::new(0, Settings::normal())];
+    play(&mut g, &mut ai, 7000);
+    g.state.resource.iter_mut().for_each(|r| *r = 0);
+    let broke = ai[0].settings.broke_ticks;
+    play(&mut g, &mut ai, broke + 900);
+    for e in g.state.entities.iter_mut().filter(|e| e.owner == 0) {
+        e.queue.clear();
+    }
+    g.state.players[0].credits = 250;
+    let cost = |k: classic_sim::Kind| g.rules.kind(k).cost;
+    let bought: Vec<(String, i64)> = ai[0]
+        .think(&g)
+        .into_iter()
+        .filter_map(|c| match c.order {
+            CommandOrder::Produce { kind } if !g.rules.kind(kind).building => {
+                Some((g.rules.kind(kind).id.clone(), cost(kind)))
+            }
+            _ => None,
+        })
+        .collect();
+    println!("no income, 250 credits left, reserve {}: queued {bought:?}", ai[0].settings.unit_reserve);
+    assert!(!bought.is_empty());
+    assert!(bought.iter().map(|b| b.1).sum::<i64>() <= 250);
+}
+
+#[test]
 fn with_no_harvester_left_it_cancels_other_work_to_make_one() {
     let mut g = game(10);
     let mut ai = [Ai::new(0, Settings::normal())];
@@ -342,4 +372,82 @@ fn two_ais_on_a_mirrored_map_play_mirror_images_of_each_other() {
     );
     assert!(side(&g, 0).len() > 10);
     assert!(waves.iter().all(|&w| w >= 1), "both sides' first waves went out as mirror images");
+}
+
+#[test]
+fn damaged_units_go_out_with_the_next_wave() {
+    // There is no repair yet, so a unit hurt in one fight stays hurt. Kept at home, hurt units piled up there while
+    // waves went out without them.
+    let (mut g, mut ai) = odds(false);
+    (ai[0].settings.first_wave, ai[0].wave_size) = (4, 4);
+    let tank = g.kind("battle_tank").unwrap();
+    let hurt: Vec<u32> = g.state.entities.iter().filter(|e| e.owner == 0 && e.kind == tank).map(|e| e.id).collect();
+    for e in g.state.entities.iter_mut().filter(|e| hurt.contains(&e.id)) {
+        e.health /= 3;
+    }
+    while ai[0].waves_sent == 0 && g.state.tick < 1500 {
+        play(&mut g, &mut ai, 1);
+    }
+    let units = ai[0].wave.as_ref().map(|w| w.units.clone()).unwrap_or_default();
+    println!("{} tanks at a third of their health; the first wave, at tick {}: {units:?}", hurt.len(), g.state.tick);
+    assert!(hurt.len() >= 4);
+    assert!(hurt.iter().all(|id| units.contains(id)), "every hurt tank went");
+}
+
+#[test]
+fn a_wave_that_turns_back_makes_the_next_one_bigger() {
+    let (mut g, mut ai) = odds(false);
+    while !ai[0].wave.as_ref().is_some_and(|w| w.staging.is_none()) && g.state.tick < 3000 {
+        play(&mut g, &mut ai, 1);
+    }
+    let wave = ai[0].wave.clone().expect("a wave set out");
+    let size = ai[0].wave_size;
+    // A strong enemy force turns up beside it.
+    let lead = g.state.entity(wave.units[0]).unwrap().tile();
+    let tank = g.kind("battle_tank").unwrap();
+    for i in 0..12 {
+        g.spawn(tank, 1, lead.x + 6 + i % 3, lead.y - 1 + i / 3);
+    }
+    let think = ai[0].settings.think_every;
+    play(&mut g, &mut ai, think);
+    let alive = wave.units.iter().filter(|&&id| g.state.entity(id).is_some()).count();
+    println!(
+        "a wave of {} met twelve tanks: {alive} alive, wave out {}, next wave {} (was {size})",
+        wave.units.len(),
+        ai[0].wave.is_some(),
+        ai[0].wave_size
+    );
+    assert!(ai[0].wave.is_none(), "turned back");
+    assert!(alive * 100 >= wave.launched_with * 30, "while it still could, not after losing it");
+    assert_eq!(ai[0].wave_size, size + Settings::normal().wave_growth);
+}
+
+#[test]
+fn never_shuts_its_own_units_in_with_buildings() {
+    // Every ground unit of either side can still reach the edge of the map after an AI game's first ten minutes.
+    // A start's units stand among its buildings, and before, a turret could close the last gap round them: the
+    // two units shut in were often all that side had left at the end, and the game could never finish.
+    let map = include_str!("../../../maps/mirror-01.txt");
+    for seed in 1..=3 {
+        let mut g = Game::new(GameOptions { map, seed, players: None, rules: None }).unwrap();
+        let mut ais = [Ai::new(0, Settings::normal()), Ai::new(1, Settings::normal())];
+        play(&mut g, &mut ais, 9000);
+        let (w, h) = (g.map.width, g.map.height);
+        let edge: Vec<(i32, i32)> = (0..w)
+            .flat_map(|x| [(x, 0), (x, h - 1)])
+            .chain((0..h).flat_map(|y| [(0, y), (w - 1, y)]))
+            .filter(|&(x, y)| g.pathfinder.passable(x, y))
+            .collect();
+        let shut: Vec<u32> = g
+            .state
+            .entities
+            .iter()
+            .filter(|e| !g.rules.kind(e.kind).building)
+            .filter(|e| !edge.iter().any(|&t| g.pathfinder.connected((e.tile().x, e.tile().y), t)))
+            .map(|e| e.id)
+            .collect();
+        let units = g.state.entities.iter().filter(|e| !g.rules.kind(e.kind).building).count();
+        println!("seed {seed}: {units} units after ten minutes, shut in: {shut:?}");
+        assert!(shut.is_empty());
+    }
 }

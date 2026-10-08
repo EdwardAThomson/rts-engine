@@ -197,6 +197,32 @@ fn an_attack_on_a_walled_in_building_fires_from_the_nearest_reachable_tile_in_ra
 }
 
 #[test]
+fn an_attack_on_a_walled_in_unit_fires_from_the_nearest_reachable_tile_in_range() {
+    // An enemy tank shut inside a ring of walls: its tile can't be reached, but a rocket squad (range 3.5 tiles)
+    // can hit it from outside. Before, the squad headed for the tank's own tile, found no path and stood still.
+    let mut g = game(None);
+    let wall = kind(&g, "wall");
+    for y in 4..=8 {
+        for x in 10..=14 {
+            if x == 10 || x == 14 || y == 4 || y == 8 {
+                g.spawn(wall, 1, x, y);
+            }
+        }
+    }
+    let shut_in = tank(&mut g, 1, 12, 6);
+    let i = g.state.entities.iter().position(|e| e.id == shut_in).unwrap();
+    g.state.entities[i].health = 100_000;
+    g.state.entities[i].reload = 10_000;
+    let squad = g.spawn(kind(&g, "rocket_squad"), 0, 3, 6);
+    g.order(0, &[squad], CommandOrder::Attack { target: shut_in });
+    g.step(900);
+    let at = g.state.entity(squad).unwrap().tile();
+    println!("the squad stood at {at:?} and fired {} times", fired_by(&g, squad));
+    assert!(fired_by(&g, squad) > 0);
+    assert!(!(10..=14).contains(&at.x) || !(4..=8).contains(&at.y), "outside the walls");
+}
+
+#[test]
 fn a_unit_moving_under_orders_ignores_enemies() {
     let mut g = game(None);
     let a = tank(&mut g, 0, 3, 10);
