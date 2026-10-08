@@ -79,11 +79,11 @@ The private packs live in their own private repository; clone it into the git-ig
 ```bash
 git clone https://github.com/EdwardAThomson/rts-setting-private settings-private
 cargo run --release --bin cli -- --setting private            # the first pack in settings-private/packs/
-cargo run --release --bin play -- --setting dune              # a pack by its folder name or its id
+cargo run --release --bin play -- --setting <pack>            # a pack by its folder name or its id
 ```
 
 In the browser, `?setting=` takes a name under `settings/` or a pack folder's path from the repository root, such
-as `?setting=settings-private/packs/dune`.
+as `?setting=settings-private/packs/<pack>`.
 
 ## What's in it
 
