@@ -207,14 +207,14 @@ def paint(layer, f, mask, relief, light, light_rgb):
 # ---- The set ----------------------------------------------------------------------------------------------------
 
 
-def cast_shadow(tile, lin, light, width, strength):
+def cast_shadow(tile, lin, light, at, width, strength):
     """Darken the ground just outside a raised layer's edge, on the side away from the light."""
     gy, gx = np.gradient(lin)
     length = np.sqrt(gx * gx + gy * gy) + 1e-9
     to_light = light[:2] / np.linalg.norm(light[:2])
     # The edge's slope faces the light where the layer lies between this pixel and the light.
     facing = np.clip((gx * to_light[0] + gy * to_light[1]) / length, 0, 1)
-    shadow = strength * smoothstep(0.5 - width, 0.5, lin) * (0.35 + 0.65 * facing)
+    shadow = strength * smoothstep(at - width, at, lin) * (0.35 + 0.65 * facing)
     a = tile[..., 3]
     alpha = a + (1 - a) * shadow
     rgb = tile[..., :3] * (a / np.maximum(alpha, 1e-9))[..., None]
@@ -252,13 +252,25 @@ def make_set(spec):
                 if case == 15:
                     tile = paint(layer, f, np.ones((n + 2, n + 2)), relief_px, light, light_rgb)
                 else:
-                    lin = sum(w[i] * ((case >> i) & 1) for i in range(4)) + e["noise"] * f["edge"] * 0.5
-                    mask = smoothstep(0.5 - e["soft"], 0.5 + e["soft"], lin)
+                    corners = sum(w[i] * ((case >> i) & 1) for i in range(4))
+                    # An inset layer (rock, cliffs) keeps its edge inside the map tiles it covers, so a building
+                    # on the next tile never sits on it: the edge moves in and its wobble is held short of the
+                    # tile boundary (where `corners` is 0.5).
+                    inset = layer.get("inset", 0)
+                    wobble = e["noise"] * f["edge"] * 0.5
+                    if inset:
+                        wobble = np.clip(wobble, -(inset - e["soft"]), inset - e["soft"])
+                    lin = corners + wobble
+                    at = 0.5 + inset
+                    mask = smoothstep(at - e["soft"], at + e["soft"], lin)
                     # The slope up to a raised layer starts at its edge and is a few pixels wide.
-                    relief = relief_px * smoothstep(0.5 - e["soft"], 0.5 + layer.get("slope", 4) * e["soft"], lin)
+                    relief = relief_px * smoothstep(at - e["soft"], at + layer.get("slope", 4) * e["soft"], lin)
                     tile = paint(layer, f, mask, relief, light, light_rgb)
                     if "shadow" in layer:
-                        tile = cast_shadow(tile, lin, light, *layer["shadow"])
+                        tile = cast_shadow(tile, lin, light, at, *layer["shadow"])
+                        if inset:
+                            # The shadow stops at the tile boundary too.
+                            tile[..., 3] *= smoothstep(0.5, 0.5 + e["soft"], corners)
                 tiles[case].append(tile[1:-1, 1:-1])
         layers.append((layer, tiles))
     return layers
