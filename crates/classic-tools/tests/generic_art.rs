@@ -12,11 +12,12 @@ fn pack() -> PathBuf {
     setting::root().join("settings/generic")
 }
 
-/// Files under `dir`, leaving out `art/sprites/`, which holds the Blender renders packed by `art/studio`.
+/// Files under `dir`, leaving out `art/sprites/` (the Blender renders packed by `art/studio`) and `art/tiles/` (the
+/// terrain tiles `art/studio/tileset.py` writes).
 fn files_under(dir: &Path, out: &mut BTreeSet<PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap().flatten() {
         let p = e.path();
-        if p.ends_with("art/sprites") {
+        if p.ends_with("art/sprites") || p.ends_with("art/tiles") {
             continue;
         }
         if p.is_dir() {

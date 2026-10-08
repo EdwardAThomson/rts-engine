@@ -14,7 +14,10 @@ and the drawings disagree. `provenance.jsonl` records each file's source.
 - `art/units/` and the turrets in `art/buildings/` are strips of eight 32 px frames, facing north first and then
   turning clockwise.
 - `art/buildings/` is one frame per building, sized to its default footprint in the rules data at 32 px per tile.
-- `art/terrain/` has four 32 px variants of each ground tile. `art/features/` holds things drawn over the ground.
+- `art/tiles/` is the terrain the player draws: desert sand, rock, cliffs and light and thick resource, blended
+  into each other, made by `art/studio/tileset.py` from `art/terrain/desert.json` (see `art/README.md`, "Terrain
+  tiles"). `art/terrain/` has the older four 32 px variants of each ground tile, still used for the minimap's
+  fallback colours and by packs without tiles. `art/features/` holds things drawn over the ground.
 - `art/icons/` holds 64 x 48 sidebar icons for every unit, building and superpower.
 - `art/effects/` holds explosions, smoke, sparks, muzzle flashes, projectiles, craters, scorch marks and rubble.
 - `theme/` has a nine-slice panel frame, a three-state button and `theme.css` colours.
@@ -22,7 +25,7 @@ and the drawings disagree. `provenance.jsonl` records each file's source.
 Faction colour: pixels in the four `remap` colours in `art.json` (magenta shades) are swapped, by exact value, for
 the four shades of the owning faction's ramp. The generator refuses any drawing that blends over a key colour.
 
-Not drawn yet: blends between terrain kinds, wrecks, building animations, cursors and fonts.
+Not drawn yet: wrecks, building animations, cursors and fonts.
 
 ## Audio
 

@@ -709,13 +709,16 @@ impl Hud {
             let [r, g, b] = art.terrain(id).map_or(fallback, |t| t.colour);
             [r, g, b, 255]
         };
-        let open = ground("open", [180, 150, 100]);
-        let rock = ground("rock", [120, 110, 100]);
+        // A tile set's own layer colours, where the pack has one.
+        let layer = |id: &str| art.layer_colour(id).map(|[r, g, b]| [r, g, b, 255]);
+        let open = layer("open").unwrap_or_else(|| ground("open", [180, 150, 100]));
+        let rock = layer("rock").unwrap_or_else(|| ground("rock", [120, 110, 100]));
+        let cliff = layer("cliff").unwrap_or([46, 40, 36, 255]);
         // A field's tile is mostly the ground it lies on, so take what stands out in it and push it further from
         // the open ground, so a field still reads at a few pixels a tile.
         let accent = art.terrain("resource").map_or([220, 150, 40], |t| t.accent);
         let [r, g, b] = [0, 1, 2].map(|c| (3 * i32::from(accent[c]) - 2 * i32::from(open[c])).clamp(0, 255) as u8);
-        let resource = [r, g, b, 255];
+        let resource = layer("resource_light").unwrap_or([r, g, b, 255]);
         for ty in 0..game.map.height {
             for tx in 0..game.map.width {
                 let i = (ty * game.map.width + tx) as usize;
@@ -725,7 +728,7 @@ impl Hud {
                     match game.map.terrain[i] {
                         Terrain::Open => open,
                         Terrain::Rock => rock,
-                        Terrain::Cliff => [46, 40, 36, 255],
+                        Terrain::Cliff => cliff,
                     }
                 };
                 batch.fill(Rect::new(m.x + tx as f32 * bw, m.y + ty as f32 * bh, bw, bh), colour);

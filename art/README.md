@@ -59,6 +59,8 @@ any generic renders it reuses.
 - `studio/check.py`: the checks below.
 - `studio/export_gltf.py`: the same models as glTF binaries for a real-time 3D renderer (below).
 - `studio/preview.py`: draws the packed sprites back in three team colours, plus a row of every other frame.
+- `studio/tileset.py`: terrain tiles from a terrain set file (below); no Blender needed.
+- `terrain/<set>.json`: a terrain set's colours, materials and sizes (`desert.json` for the generic pack).
 - `studio/samples/`: the studio's own test models (the facing arrow, a building, a defence turret, a wall) and the
   infantry prototype `soldier.py` on the rig. None is a game asset.
 - `jobs.jsonl`: one line per asset in the plan, with its batch, frames and status. `timings.jsonl`: every render's
@@ -138,6 +140,44 @@ layout, so a renderer can offer them as a player option.
 
 Renders are not committed; the packed atlases and JSON are. Cycles output can differ slightly between machines, so
 re-rendering may change the PNGs' bytes without changing how they look.
+
+## Terrain tiles
+
+```bash
+python3 art/studio/tileset.py art/terrain/desert.json --out settings/generic/art/tiles \
+    --sheet /tmp/tiles-sheet.png --preview maps/skirmish-01.txt /tmp/tiles-map.png
+```
+
+It takes about 15 seconds and needs only numpy and pillow. The ground is drawn in **layers**, bottom first, as the
+set file lists them: the generic set has `open` (sand, under everything), `resource_light`, `resource_thick`,
+`rock` and `cliff`. Each layer's `on` says which map tiles it covers: kinds of ground (`{"ground": ["rock",
+"cliff"]}`) or a resource level (`{"resource": 1}` light, `2` thick). The renderer counts a tile thick when it is
+at least three quarters full and its four neighbours hold some, so fields are thick in the middle, thin at the
+edges and thin out as they are harvested.
+
+The renderer draws every layer on a grid offset by half a tile, so each drawn tile has four map tiles at its
+corners, and draws that layer's tile for which of the four it covers: the **corner case**, bits 1 (north-west),
+2 (north-east), 4 (south-east) and 8 (south-west). Case 15 is the full tile, 1 to 14 are edges blended out through
+a noisy mask, and 0 draws nothing. Because layers stack, any number of ground kinds can meet without a tile for
+each pair. Each material is one swatch that repeats every `period` tiles (4), and a tile is cut from the swatch
+where it lies on the map, so tiles always join and the ground repeats only every few tiles. The renderer picks the
+tile by corner case and by place: `(y mod period) * period + (x mod period)`.
+
+Relief (ripples, rock rims, cliff faces, nodules) is a height field lit from the studio's key light, the same
+direction as the rendered units; raised layers (`relief`) cast a short `shadow` away from the light. A layer with
+`"base": true` covers every tile, so it gets only full tiles.
+
+Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its edge), and `tileset.json`:
+
+```json
+{"set": "desert", "tile_px": 64, "period": 4, "page": "art/tiles/tileset.png",
+ "layers": [{"id": "rock", "on": {"ground": ["rock", "cliff"]}, "colour": "#7a6e61",
+             "tiles": [null, [[x, y], ... one per place], ... 16 corner cases]}]}
+```
+
+`colour` is the layer's minimap colour. A pack with no `art/tiles/tileset.json` keeps the art index's plain
+`terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
+and sizes, written into that pack's `art/tiles/`.
 
 ## 3D models
 
