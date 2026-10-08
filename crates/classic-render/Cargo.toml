@@ -11,6 +11,7 @@ publish.workspace = true
 # reads the setting pack's art; cpal plays sound on every desktop OS's audio API (and on the web, later). The
 # simulation crates still have none.
 [dependencies]
+classic-ai = { path = "../classic-ai" }
 classic-sim = { path = "../classic-sim" }
 classic-data = { path = "../classic-data" }
 classic-tools = { path = "../classic-tools" }
