@@ -5,6 +5,9 @@ models written in Python, rendered with Blender's Python module, then packed int
 Every model here is our own and generic. A model anyone could recognise from a particular game goes in a private
 pack's own `art/models/`, never here.
 
+`bpy` (Blender 5 as a Python module) needs Python 3.11. Where `python3` is another version, run every command
+below with `python3.11` instead.
+
 ```bash
 python3 -m pip install bpy numpy pillow                    # Blender as a Python module; Cycles on the CPU
 python3 art/studio/render.py vehicles/battle_tank --out /tmp/renders/battle_tank
@@ -32,6 +35,9 @@ repository's `art/models/`, so a pack's model replaces the generic one with the 
 python3 art/studio/render.py vehicles/super_a --pack <pack> --out /tmp/renders/super_a
 python3 art/studio/pack.py /tmp/renders/super_a ... --out settings-private/packs/<pack>/art/sprites
 ```
+
+A pack model that builds on the generic one (`import _generic`) needs the pack's own `tools/render_pack.py`, which
+puts that helper on the path; `render.py --pack` stops with `No module named '_generic'` for it.
 
 Renders record where their model came from. `pack.py` refuses to write a pack's renders anywhere in this
 repository except under `settings-private/`, and their render times stay out of `art/timings.jsonl`, so nothing
