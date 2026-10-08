@@ -2,7 +2,7 @@
 //! before the port). Matching them shows the port plays exactly the same games: same paths, same node counts,
 //! same state hashes, tick for tick.
 //!
-//! Seven rule changes since then re-recorded values on purpose, each checked to change nothing else:
+//! Eight rule changes since then re-recorded values on purpose, each checked to change nothing else:
 //! - the tank's generic id became `battle_tank` (the hash spells each entity's id): state hashes only;
 //! - buildings block ground movement, so units and harvesters path round each refinery: state hashes and the
 //!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged;
@@ -28,6 +28,15 @@
 //!   from tick 750 and seed 1's at tick 900, with the nodes expanded during ticks and seed 1's credits (2,000, not
 //!   2,200, at tick 900).
 //!   Standalone paths, path checksums, the scripted and idle games and every earlier hash are unchanged.
+//! - choices between equally good tiles turn round with the map, so the two sides of a mirrored map play alike
+//!   (rules-movement.md): a start in the right half of the map is laid out as the mirror image of one in the left
+//!   half (plant and tank to the left), A* breaks ties between equal paths by distance off the straight line and
+//!   then from the middle of the map before the tile index, and stepping aside, the nearest free tile, a harvester's
+//!   nearest field tile, a factory's exit and the tile beside a building an attacker heads for prefer the tile nearer
+//!   the middle of the map. The test map's second start is in the right half, so every idle and scripted hash
+//!   differs from tick 0. The standalone path is the same tile for tile, with one more node expanded (38); the bench
+//!   scenes' path checksums, nodes and hashes differ, and seed 1 ends on 2,200 credits, not 2,000. The lone tank's
+//!   position is unchanged.
 
 use classic_sim::path::Pathfinder;
 use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
@@ -42,10 +51,10 @@ fn game(seed: i32) -> Game {
 #[test]
 fn idle_games_match_the_recorded_hashes() {
     let golden: [(i32, [&str; 8]); 4] = [
-        (1, ["dac7f1a6", "36409374", "f34e6572", "f0e0ddab", "70717a39", "36d89a8f", "445c79bf", "14d1cffe"]),
-        (2, ["d3618e99", "bb74b5d7", "df8f454f", "0cc24074", "ce45a235", "df1ed183", "4a80a973", "0e171e66"]),
-        (3, ["271384c0", "414fa5de", "3d3ea22e", "35357c71", "c0d2305f", "15e1e791", "603086d4", "3bd1b774"]),
-        (4, ["bb8102c0", "1d3cde10", "dd4451aa", "b04c3867", "ba2077b6", "ae3a9246", "51f34e96", "143a3553"]),
+        (1, ["22cb00db", "5fc1ad41", "142a8d0a", "05ae820d", "af82d682", "5f05c96b", "2da5233a", "98b25fb5"]),
+        (2, ["491a2c0c", "1f300fc2", "49d5a8d6", "9267679f", "852e877f", "18f5dc56", "adb42c01", "06e8c50b"]),
+        (3, ["29f7bae1", "cb9e25c7", "6b1d8a40", "44eed477", "e1af8b96", "4fffa08e", "1d96bc35", "9a73ea13"]),
+        (4, ["1b6028ef", "7d1c231b", "6e7fa965", "38373788", "ea9c0aa4", "49619bee", "a3fe88ef", "321f7b79"]),
     ];
     let ticks = [0u32, 1, 449, 450, 451, 900, 3000, 10000];
     for (seed, hashes) in golden {
@@ -84,15 +93,15 @@ fn scripted(game: &mut Game, ticks: u32) {
 fn scripted_games_and_the_old_replay_hash_match() {
     let mut a = game(7);
     scripted(&mut a, 10_000);
-    assert_eq!(a.hash(), "68067a12");
+    assert_eq!(a.hash(), "105dd01b");
     let mut b = game(3);
     scripted(&mut b, 6_000);
-    assert_eq!(b.hash(), "c2ac7286", "the replay hash every earlier change was checked against");
+    assert_eq!(b.hash(), "ec1cbce9", "the replay hash every earlier change was checked against");
     assert_eq!(b.command_log().len(), 24);
     let mut m = game(1);
     m.order(0, &[5], CommandOrder::Move { x: 20, y: 9 });
     m.step(600);
-    assert_eq!(m.hash(), "37d47e96");
+    assert_eq!(m.hash(), "b4f7c1cd");
     let tank = m.state.entity(5).unwrap();
     assert_eq!((tank.x, tank.y), (5248, 2432));
 }
@@ -102,7 +111,7 @@ fn a_path_on_the_test_map_matches_tile_for_tile() {
     let map = parse_map(MAP).unwrap();
     let p = Pathfinder::new(&map).find(10, 6, 22, 6).unwrap();
     let tiles: Vec<(i32, i32)> = p.tiles.iter().map(|t| (t.x, t.y)).collect();
-    assert_eq!(p.expanded, 37);
+    assert_eq!(p.expanded, 38);
     assert_eq!(
         tiles,
         [(11, 6), (12, 6), (13, 5), (14, 4), (15, 3), (16, 3), (17, 3), (18, 4), (19, 5), (20, 6), (21, 6), (22, 6)]
@@ -172,12 +181,12 @@ fn bench_scene_seed_1_matches() {
         seed: 1,
         map_hash: 0xb4aebf11,
         passable: 15209,
-        path_check: 0x3b120bc1,
+        path_check: 0xff151f17,
         path_nulls: 23,
-        path_nodes: 167_392,
-        tick_nodes: 1_711_915,
-        hashes: ["a9b026dd", "2a31aa41", "e07ddae5", "8eb4cc23", "e77b34b2", "9dc13cea"],
-        credits: [1400, 2000],
+        path_nodes: 167_390,
+        tick_nodes: 1_728_945,
+        hashes: ["cb48a0f1", "94bfa8a4", "b7210c72", "7635746e", "8b818177", "ffe8c5ea"],
+        credits: [1400, 2200],
     });
 }
 
@@ -187,11 +196,11 @@ fn bench_scene_seed_2_matches() {
         seed: 2,
         map_hash: 0xa71d3e45,
         passable: 15098,
-        path_check: 0x388dc4f4,
+        path_check: 0x46463d9e,
         path_nulls: 22,
-        path_nodes: 584_041,
-        tick_nodes: 6_151_364,
-        hashes: ["7faf7994", "e6eef322", "856dd770", "991baa42", "8e4a050e", "225dc6b9"],
+        path_nodes: 584_039,
+        tick_nodes: 6_175_577,
+        hashes: ["240a67de", "313e4c4e", "d4f8ba72", "00af72b7", "2243226f", "e6ece6c8"],
         credits: [1400, 2000],
     });
 }
