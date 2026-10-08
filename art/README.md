@@ -48,13 +48,14 @@ any generic renders it reuses.
   paint, reference sizes, the footprint inset, the atlas pages and the portrait camera.
 - `studio/rts_studio.py`: scene, lights, materials, part helpers (`block`, `cylinder`, `cone`, `sphere`,
   `wedge`, `beam`, `group`), the frame helpers (`default_damage`, `default_wreck`, `construction`, `rubble`,
-  `scorched`, `burnt`), the infantry rig (`rig`, `pose`) and the portrait camera.
+  `scorched`, `burnt`), the infantry rig (`rig`, `pose`), the ground holdout for creatures (`ground_cut`) and the
+  portrait camera.
 - `studio/render.py`: renders every frame a model asks for (below), with shadow passes, into a render folder with
   `meta.json`, and appends the job's time to `art/timings.jsonl`.
 - `studio/icon.py`: the build icon from the portrait camera (35° up, turned 30°, dark backdrop).
 - `studio/pack.py`: masks team paint and makes it neutral grey, downscales, stretches by 1/sin 60° so footprints
   are square on screen, trims, and packs one 4096 × 4096 page per category (`units-0`, `buildings-0`,
-  `infantry-0`, `air-0`, `effects-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
+  `infantry-0`, `air-0`, `effects-0`, `creatures-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
   a page would overflow.
 - `studio/check.py`: the checks below.
 - `studio/export_gltf.py`: the same models as glTF binaries for a real-time 3D renderer (below).
@@ -62,7 +63,8 @@ any generic renders it reuses.
 - `studio/tileset.py`: terrain tiles from a terrain set file (below); no Blender needed.
 - `terrain/<set>.json`: a terrain set's colours, materials and sizes (`desert.json` for the generic pack).
 - `studio/samples/`: the studio's own test models (the facing arrow, a building, a defence turret, a wall) and the
-  infantry prototype `soldier.py` on the rig. None is a game asset.
+  infantry prototype `soldier.py` on the rig, and `test_creature.py`, a post that rises out of the ground. None is a
+  game asset.
 - `jobs.jsonl`: one line per asset in the plan, with its batch, frames and status. `timings.jsonl`: every render's
   real time, so the plan's estimates can be replaced with measurements.
 
@@ -89,6 +91,7 @@ optional: a model that leaves a hook out gets the studio's default.
 | `TEAM = False` | all | No team paint expected (walls, rubble): the coverage check is skipped |
 | `build(root, joints)` | infantry | Parts parented to the rig's joints; idle 1, walk 6, fire 3 at 8 facings, and die-1, die-2 of 8 frames from one side |
 | `rig_pose(joints, anim, frame, frames)` | infantry | Replaces `st.pose` for that model (how it holds its weapon, kneeling or standing fire) |
+| `build(root)`, `ANIMS = {anim: frames}`, `pose(root, anim, frame)` | creature | One facing, one job per anim, each frame with a shadow. The ground is a holdout, so anything below z = 0 is hidden and a creature can rise out of it and sink back; the canvas holds the largest above-ground extent over every pose. A model outside `creatures/` sets `CATEGORY = "creatures"` |
 | An empty named `muzzle` | all | The weapon's barrel tip (`_soldier.muzzle` for infantry): recorded in every frame as the sprite JSON's `muzzle`; a glTF export keeps it as a node |
 
 `rng` is a `random.Random` seeded from the id and the frame, so every render of a hook is the same. A moving part

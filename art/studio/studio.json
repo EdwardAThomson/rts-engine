@@ -97,6 +97,7 @@
       "infantry": "infantry-0",
       "aircraft": "air-0",
       "effects": "effects-0",
+      "creatures": "creatures-0",
       "icons": "icons-0"
     }
   },
@@ -120,7 +121,8 @@
     "samples": 64
   },
   "render_scale_by_category": {
-    "about": "Buildings render at 3x: at zoom 2 the refinery looked the same as at 4x (mean difference 1 in 255, 0.9% of pixels over 8, all on edges) for 45% less time (studio test, 2026-10-07).",
-    "buildings": 3
+    "about": "Buildings render at 3x: at zoom 2 the refinery looked the same as at 4x (mean difference 1 in 255, 0.9% of pixels over 8, all on edges) for 45% less time (studio test, 2026-10-07). Creatures too: a rising creature needs a canvas as large as a building's.",
+    "buildings": 3,
+    "creatures": 3
   }
 }

@@ -31,7 +31,7 @@ ATLAS = STUDIO["atlas"]["pages"]
 PAGE = STUDIO["atlas"]["page"]
 SHADOW_FLOOR = 0.04
 FOLDER = {"vehicles": "units", "buildings": "buildings", "infantry": "infantry", "aircraft": "air",
-          "effects": "effects", "icons": "icons"}
+          "effects": "effects", "icons": "icons", "creatures": "creatures"}
 
 
 def load(path):
