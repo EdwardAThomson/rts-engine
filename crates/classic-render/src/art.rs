@@ -7,6 +7,7 @@ use std::path::Path;
 use classic_data::json::{self, Value};
 
 use crate::platform::{Files, Gpu, Rect, SpriteBatch, TexId};
+use crate::studio::{self, Studio};
 
 /// A strip of equal frames laid left to right in one texture.
 #[derive(Clone, Copy, Debug)]
@@ -113,6 +114,8 @@ pub struct Art {
     icons: BTreeMap<String, Vec<Strip>>,
     /// Units drawn as several members, by unit id.
     squads: BTreeMap<String, Squad>,
+    /// The studio's packed sprites, for the ids that have them.
+    pub studio: Studio,
     /// The middle shade of each owner's ramp, in owner order.
     owners: Vec<[u8; 3]>,
 }
@@ -160,6 +163,7 @@ impl Art {
             effects: BTreeMap::new(),
             icons: BTreeMap::new(),
             squads: parse_squads(&doc)?,
+            studio: Studio::default(),
             owners: owner_ramps.iter().map(|r| r[r.len() / 2]).collect(),
         };
         for (id, entry) in entries("terrain") {
@@ -171,6 +175,33 @@ impl Art {
         for (id, entry) in entries("sprites") {
             let strips = owner_ramps.iter().map(|r| load(batch, entry, Some(r))).collect::<Result<_, _>>()?;
             art.sprites.insert(id.clone(), strips);
+        }
+        // The studio's packed sprites, where the pack has them, replace the strips they cover.
+        let kinds: Vec<(&str, &str)> = entries("sprites")
+            .iter()
+            .map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or("")))
+            .collect();
+        for path in studio::candidates(kinds) {
+            let Ok(bytes) = files.read(&path) else { continue };
+            let text = String::from_utf8_lossy(&bytes);
+            let sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", files.name(&path)))?;
+            let id = path.rsplit('/').next().unwrap_or("").trim_end_matches(".json").to_string();
+            if !art.studio.pages.contains_key(&sprite.atlas) {
+                let [img, mask] = studio::page_files(&sprite.atlas);
+                let (w, h, rgba) = decode_png(&files.read(&img)?, &img)?;
+                let (mw, mh, mask_px) = decode_png(&files.read(&mask)?, &mask)?;
+                if (mw, mh) != (w, h) {
+                    return Err(format!("{mask}: {mw}x{mh}, but its page is {w}x{h}"));
+                }
+                let mut pages = Vec::new();
+                for ramp in &owner_ramps {
+                    let mut px = rgba.clone();
+                    studio::paint(&mut px, &mask_px, ramp);
+                    pages.push(batch.texture(gpu, w, h, &px));
+                }
+                art.studio.pages.insert(sprite.atlas.clone(), pages);
+            }
+            art.studio.sprites.insert(id, sprite);
         }
         // Icons are plain file names, one picture each.
         for (id, file) in entries("icons") {
@@ -230,7 +261,26 @@ pub fn art_files(index: &str) -> Result<Vec<String>, String> {
     for (_, file) in doc.get("icons").and_then(Value::as_object).unwrap_or(&[]) {
         files.extend(file.as_str().map(String::from));
     }
+    // Where the studio's packed sprites may be; most ids have none yet.
+    let ids = doc.get("sprites").and_then(Value::as_object).unwrap_or(&[]).iter();
+    files.extend(studio::candidates(
+        ids.map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or(""))),
+    ));
     Ok(files)
+}
+
+/// The atlas pages the studio sprites among `files` (path and contents) are on, for a loader that fetches in turn.
+pub fn atlas_files<'a>(files: impl IntoIterator<Item = (&'a String, &'a Vec<u8>)>) -> Vec<String> {
+    let mut pages = std::collections::BTreeSet::new();
+    for (path, bytes) in files {
+        if path.starts_with(studio::SPRITES)
+            && path.ends_with(".json")
+            && let Ok(s) = studio::Sprite::parse(&String::from_utf8_lossy(bytes))
+        {
+            pages.extend(studio::page_files(&s.atlas));
+        }
+    }
+    pages.into_iter().collect()
 }
 
 /// Where to find a pack's art: the pack itself if it has an `art/art.json`, else the generic pack's placeholders.

@@ -13,6 +13,7 @@ pub mod menu;
 pub mod platform;
 pub mod scene;
 pub mod sound;
+pub mod studio;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 

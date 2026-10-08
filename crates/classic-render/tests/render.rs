@@ -67,6 +67,31 @@ fn count(image: &[u8], (x, y, w, h): (u32, u32, u32, u32), colours: &[[u8; 3]]) 
     n
 }
 
+/// Pixels of `image` in the rectangle (x, y, w, h) close to a shade between two neighbours of `ramp`: team paint on
+/// a studio sprite, which takes shades between the ramp's own.
+fn count_near(image: &[u8], (x, y, w, h): (u32, u32, u32, u32), ramp: &[[u8; 3]]) -> usize {
+    let near = |p: &[u8]| {
+        ramp.windows(2).any(|ab| {
+            (0..=16).any(|t| {
+                (0..3)
+                    .map(|c| (i32::from(ab[0][c]) * (16 - t) + i32::from(ab[1][c]) * t) / 16)
+                    .zip(p)
+                    .all(|(v, &q)| (v - i32::from(q)).abs() <= 12)
+            })
+        })
+    };
+    let mut n = 0;
+    for py in y..(y + h).min(H) {
+        for px in x..(x + w).min(W) {
+            let i = ((py * W + px) * 4) as usize;
+            if near(&image[i..i + 3]) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
 #[test]
 fn the_start_base_is_drawn_in_its_factions_colours() {
     let mut r = rig();
@@ -102,8 +127,8 @@ fn the_other_faction_is_drawn_in_its_own_colours() {
     let cam = Camera { x: tx - W as f32 / 2.0, y: ty - H as f32 / 2.0, zoom: 1.0 };
     let image = frame(&mut r, &mut scene, &cam);
     let tank = (W / 2, H / 2, 32, 32);
-    let theirs = count(&image, tank, &ramp(&r.ramps[1]));
-    let ours = count(&image, tank, &ramp(&r.ramps[0]));
+    let theirs = count_near(&image, tank, &ramp(&r.ramps[1]));
+    let ours = count_near(&image, tank, &ramp(&r.ramps[0]));
     println!("tank tile: {theirs} pixels in {}, {ours} in {}", r.ramps[1], r.ramps[0]);
     assert!(theirs > 20 && ours == 0);
 }
@@ -170,9 +195,18 @@ fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
     let dir = art::art_dir(&setting::load("generic").unwrap());
     let index = std::fs::read_to_string(dir.join(art::ART_INDEX)).unwrap();
     let mut files = std::collections::BTreeMap::new();
+    // Files it names that don't exist (studio sprites most ids don't have yet) come back as nothing, then the
+    // atlas pages the sprites it found are on are fetched in turn.
     for f in art::art_files(&index).unwrap().into_iter().chain([art::ART_INDEX.to_string()]) {
-        files.insert(f.clone(), std::fs::read(dir.join(&f)).unwrap());
+        if let Ok(bytes) = std::fs::read(dir.join(&f)) {
+            files.insert(f, bytes);
+        }
     }
+    for f in art::atlas_files(&files) {
+        let bytes = std::fs::read(dir.join(&f)).unwrap();
+        files.insert(f, bytes);
+    }
+    assert!(files.keys().any(|f| f.ends_with(".mask.png")), "the generic pack has studio sprites");
     let memory = Files::Memory { label: "fetched".into(), files };
     let mut scene = Scene::default();
     let cam = Camera { x: 0.0, y: 0.0, zoom: 1.0 };
@@ -205,7 +239,7 @@ fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
     let max = r.game.rules.kind(kind).max_health;
     r.game.state.entities.iter_mut().find(|e| e.id == id).unwrap().health = max / 3;
     let falling = soldiers(&mut r, &mut scene);
-    for _ in 0..30 {
+    for _ in 0..50 {
         scene.before_step(&r.game);
         r.game.step(1);
         scene.after_step(&r.game);

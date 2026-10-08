@@ -11,6 +11,7 @@ use classic_sim::{Entity, Game, Terrain};
 
 use crate::art::{Art, Strip};
 use crate::platform::{Rect, SpriteBatch};
+use crate::studio::{Frame, SHADOW_ALPHA};
 
 /// What part of the world the screen shows: the world pixel at the screen's top left, and the scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,12 +51,16 @@ struct Fallen {
     y: f32,
     facing: i64,
     start: u32,
+    /// Which of the two deaths it plays.
+    which: usize,
 }
 
 /// Ticks each frame of a walk cycle stays on screen.
 const WALK_TICKS: u32 = 3;
-/// Ticks a fallen squad member takes to fade.
-const FALL_TICKS: u32 = 24;
+/// Ticks a fallen squad member stays on screen: its death, then a fade.
+const FALL_TICKS: u32 = 48;
+/// Ticks each frame of a building's overlay (a pump, a turning dish) stays on screen.
+const OVERLAY_TICKS: u32 = 4;
 
 #[derive(Default)]
 pub struct Scene {
@@ -214,8 +219,9 @@ impl Scene {
             let t = e.tile();
             let (sx, sy) = cam.to_screen(t.x as f32 * tile, t.y as f32 * tile);
             let dst = Rect::new(sx, sy, k.width as f32 * tile * cam.zoom, k.height as f32 * tile * cam.zoom);
-            let frame = if k.weapon.is_some() { facing_frame(e.facing) } else { 0 };
-            draw_sprite(batch, art.sprite(&k.id, e.owner), frame, dst, e.owner);
+            let anims: &[&str] = if e.health * 2 < k.max_health { &["damaged"] } else { &["idle"] };
+            let pose = Pose { facing: e.facing, turret: e.facing, anims, step: tick / OVERLAY_TICKS, alpha: 255 };
+            draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), dst, &pose);
         }
         units.sort_by_key(|e| (e.y, e.id));
         // Squad members lost since the last frame fall where they stood, fading under the units still standing.
@@ -229,20 +235,33 @@ impl Scene {
             for i in shown..before {
                 let (dx, dy) = squad.place(i, facing);
                 let (x, y) = (wx + dx * tile, wy + dy * tile);
-                self.fallen.push(Fallen { member: squad.member.clone(), owner: e.owner, x, y, facing, start: tick });
+                self.fallen.push(Fallen {
+                    member: squad.member.clone(),
+                    owner: e.owner,
+                    x,
+                    y,
+                    facing,
+                    start: tick,
+                    which: i % 2,
+                });
             }
         }
         self.fallen.retain(|f| {
             let age = tick.saturating_sub(f.start);
-            let Some(s) = art.sprite(&f.member, f.owner).filter(|_| age < FALL_TICKS) else { return false };
-            let (sx, sy) = cam.to_screen(f.x - tile / 2.0, f.y - tile / 2.0);
-            let a = (255 * (FALL_TICKS - age) / FALL_TICKS) as u8;
-            batch.sprite(
-                s.tex,
-                s.facing_frame(f.facing, 0),
-                Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom),
-                [255, 255, 255, a],
-            );
+            if age >= FALL_TICKS {
+                return false;
+            }
+            // A death anim plays out, then the body fades; one without plays nothing and fades the standing frame.
+            let alpha = if age < FALL_TICKS / 2 { 255 } else { (255 * (FALL_TICKS - age) / (FALL_TICKS / 2)) as u8 };
+            let die = if f.which == 0 { "die-1" } else { "die-2" };
+            let length =
+                art.studio.get(&f.member, f.owner).and_then(|(s, _)| s.body()?.anims.get(die)).map(|a| a.length);
+            let step = length.map_or(0, |n| (age / WALK_TICKS).min(n.saturating_sub(1)));
+            let (sx, sy) = cam.to_screen(f.x, f.y);
+            let cell =
+                Rect::new(sx - tile * cam.zoom / 2.0, sy - tile * cam.zoom / 2.0, tile * cam.zoom, tile * cam.zoom);
+            let pose = Pose { facing: f.facing, turret: f.facing, anims: &[die], step, alpha };
+            draw_look(batch, art, cam.zoom, &f.member, f.owner, (sx, sy), cell, &pose);
             true
         });
         for e in units {
@@ -252,7 +271,6 @@ impl Scene {
             let moving = self.prev.get(&e.id).is_some_and(|&p| p != (e.x, e.y));
             let walk = if moving { tick / WALK_TICKS } else { 0 };
             if let Some(squad) = art.squad(&k.id) {
-                let member = art.sprite(&squad.member, e.owner).expect("art.squad checks the member");
                 let shown = squad.shown(e.health, k.max_health);
                 let place = |i: usize| {
                     let (dx, dy) = squad.place(i, facing);
@@ -261,21 +279,40 @@ impl Scene {
                 // Members further down the screen go on top; each starts its walk at its own point in the cycle.
                 let mut order: Vec<usize> = (0..shown).collect();
                 order.sort_by(|&a, &b| place(a).1.total_cmp(&place(b).1));
+                let cycle = member_cycle(art, &squad.member, e.owner);
                 for i in order {
                     let (x, y) = place(i);
-                    let (sx, sy) = cam.to_screen(x - tile / 2.0, y - tile / 2.0);
-                    let step = if moving { squad.step(i, walk, member.cycle()) } else { 0 };
-                    let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
-                    batch.sprite(member.tex, member.facing_frame(facing, step), dst, [255; 4]);
+                    let (sx, sy) = cam.to_screen(x, y);
+                    let step = if moving { squad.step(i, walk, cycle) } else { 0 };
+                    let pose = Pose {
+                        facing,
+                        turret: facing,
+                        anims: if moving { &["walk", "move"] } else { &["idle"] },
+                        step,
+                        alpha: 255,
+                    };
+                    let cell = Rect::new(
+                        sx - tile * cam.zoom / 2.0,
+                        sy - tile * cam.zoom / 2.0,
+                        tile * cam.zoom,
+                        tile * cam.zoom,
+                    );
+                    draw_look(batch, art, cam.zoom, &squad.member, e.owner, (sx, sy), cell, &pose);
                 }
                 continue;
             }
-            let (sx, sy) = cam.to_screen(wx - tile / 2.0, wy - tile / 2.0);
-            let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
-            match art.sprite(&k.id, e.owner) {
-                Some(s) => batch.sprite(s.tex, s.facing_frame(facing, walk), dst, [255; 4]),
-                None => draw_sprite(batch, None, 0, dst, e.owner),
-            }
+            let (sx, sy) = cam.to_screen(wx, wy);
+            let cell =
+                Rect::new(sx - tile * cam.zoom / 2.0, sy - tile * cam.zoom / 2.0, tile * cam.zoom, tile * cam.zoom);
+            let turret = if e.target.is_some() || k.weapon.is_none() { e.facing } else { facing };
+            let pose = Pose {
+                facing,
+                turret,
+                anims: if moving { &["walk", "move"] } else { &["idle"] },
+                step: walk,
+                alpha: 255,
+            };
+            draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), cell, &pose);
         }
         for p in &game.state.projectiles {
             let name = game.state.weapon_ids.get(p.weapon.0 as usize).map_or("", |s| s.as_str());
@@ -337,6 +374,73 @@ impl Scene {
 /// The frame of an eight-facing strip for a facing of 0 to 255 clockwise from north.
 pub fn facing_frame(facing: i64) -> u32 {
     (((facing + 16).rem_euclid(256)) / 32) as u32
+}
+
+/// How to draw one thing: which way its body and turret face, the anims to try in order, how far into the cycle,
+/// and how opaque.
+struct Pose<'a> {
+    facing: i64,
+    turret: i64,
+    anims: &'a [&'a str],
+    step: u32,
+    alpha: u8,
+}
+
+/// Draw `id` in `owner`'s colours: the studio's sprite with its pivot on the screen point `ground`, where the pack
+/// has one (shadow, body, turret, overlays), else its placeholder strip filling `cell`, else a box in a player colour.
+#[allow(clippy::too_many_arguments)]
+fn draw_look(
+    batch: &mut SpriteBatch,
+    art: &Art,
+    zoom: f32,
+    id: &str,
+    owner: u32,
+    ground: (f32, f32),
+    cell: Rect,
+    pose: &Pose,
+) {
+    let Some((sprite, tex)) = art.studio.get(id, owner) else {
+        match art.sprite(id, owner) {
+            Some(s) => batch.sprite(s.tex, s.facing_frame(pose.facing, pose.step), cell, [255, 255, 255, pose.alpha]),
+            None => draw_sprite(batch, None, 0, cell, owner),
+        }
+        return;
+    };
+    let k = zoom * art.tile / 32.0 / sprite.scale;
+    let put = |batch: &mut SpriteBatch, f: &Frame, tint: [u8; 4]| {
+        let dst = Rect::new(ground.0 - f.pivot.0 * k, ground.1 - f.pivot.1 * k, f.src.w * k, f.src.h * k);
+        batch.sprite(tex, f.src, dst, tint);
+    };
+    let white = [255, 255, 255, pose.alpha];
+    if let Some(a) = sprite.body().and_then(|p| p.anim(pose.anims)) {
+        let i = a.index(pose.facing, pose.step);
+        if let Some(sh) = a.shadow.get(i) {
+            put(batch, sh, [255, 255, 255, (u32::from(SHADOW_ALPHA) * u32::from(pose.alpha) / 255) as u8]);
+        }
+        if let Some(f) = a.frames.get(i) {
+            put(batch, f, white);
+        }
+    }
+    if let Some(a) = sprite.turret().and_then(|p| p.anim(&["idle"]))
+        && let Some(f) = a.frames.get(a.index(pose.turret, 0))
+    {
+        put(batch, f, white);
+    }
+    for part in sprite.overlays() {
+        if let Some(a) = part.anim(&["idle"])
+            && let Some(f) = a.frames.get(a.index(0, pose.step))
+        {
+            put(batch, f, white);
+        }
+    }
+}
+
+/// Frames in the walk cycle `member` is drawn with: the studio's walk if it has one, else its strip's.
+fn member_cycle(art: &Art, member: &str, owner: u32) -> u32 {
+    match art.studio.get(member, owner) {
+        Some((s, _)) => s.body().and_then(|p| p.anim(&["walk", "move"])).map_or(1, |a| a.length),
+        None => art.sprite(member, owner).map_or(1, |s| s.cycle()),
+    }
 }
 
 /// A sprite, or a plain box in a player colour when the pack has no art for it.
