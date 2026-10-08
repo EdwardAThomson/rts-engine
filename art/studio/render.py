@@ -44,7 +44,11 @@ PRIVATE = ART.parent / "settings-private"  # the private packs' repository, clon
 
 
 def pack_models(name):
-    """A private pack's model folder: art/<pack>/models in the private repository."""
+    """A private pack's model folder: art/<pack>/models in the private repository. The repository's tools/ goes on
+    the import path too, for models that build on the generic set through its helpers."""
+    tools = PRIVATE / "tools"
+    if tools.is_dir() and str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
     return PRIVATE / "art" / name / "models"
 
 

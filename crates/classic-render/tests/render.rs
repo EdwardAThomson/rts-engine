@@ -67,6 +67,23 @@ fn count(image: &[u8], (x, y, w, h): (u32, u32, u32, u32), colours: &[[u8; 3]]) 
     n
 }
 
+/// Pixels of `image` in the rectangle (x, y, w, h) darker than any ground: sprite outlines and dark bodies. Rows with
+/// a long dark run are a health bar and are left out.
+fn count_dark(image: &[u8], (x, y, w, h): (u32, u32, u32, u32)) -> usize {
+    let dark = |px: u32, py: u32| {
+        let i = ((py * W + px) * 4) as usize;
+        u32::from(image[i]) * 54 + u32::from(image[i + 1]) * 183 + u32::from(image[i + 2]) * 19 < 70 * 256
+    };
+    let mut n = 0;
+    for py in y..(y + h).min(H) {
+        let row = (x..(x + w).min(W)).filter(|&px| dark(px, py)).count();
+        if row < 16 {
+            n += row;
+        }
+    }
+    n
+}
+
 /// Pixels of `image` in the rectangle (x, y, w, h) close to a shade between two neighbours of `ramp`: team paint on
 /// a studio sprite, which takes shades between the ramp's own.
 fn count_near(image: &[u8], (x, y, w, h): (u32, u32, u32, u32), ramp: &[[u8; 3]]) -> usize {
@@ -107,7 +124,7 @@ fn the_start_base_is_drawn_in_its_factions_colours() {
     let base = r.game.state.entities.iter().filter(|e| e.owner == 0).map(|e| e.tile()).collect::<Vec<_>>();
     let (x1, y1) = base.iter().fold((0, 0), |(x, y), t| (x.max(t.x + 3), y.max(t.y + 2)));
     let area = (0, 0, x1 as u32 * 32, y1 as u32 * 32);
-    let own = count(&image, area, &ramp(&r.ramps[0]));
+    let own = count_near(&image, area, &ramp(&r.ramps[0]));
     let remap = count(&image, (0, 0, W, H), &ramp("remap"));
     println!("base area {area:?}: {own} pixels in {}; {remap} remap pixels on screen", r.ramps[0]);
     assert!(own > 200, "the base shows its faction colour");
@@ -233,8 +250,9 @@ fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
     let mut scene = Scene::default();
     let cam = Camera { x: 12.0 * 32.0 - W as f32 / 2.0, y: 8.0 * 32.0 - H as f32 / 2.0, zoom: 1.0 };
     let area = (W / 2 - 24, H / 2 - 24, 80, 80);
-    let colours = ramp(&r.ramps[0]);
-    let soldiers = |r: &mut Rig, scene: &mut Scene| count(&frame(r, scene, &cam), area, &colours);
+    // A studio soldier is a few pixels of dark outline and body with a fleck of team paint, so count the dark pixels
+    // (sand, shadows and the ground's specks are all lighter).
+    let soldiers = |r: &mut Rig, scene: &mut Scene| count_dark(&frame(r, scene, &cam), area);
     let full = soldiers(&mut r, &mut scene);
     let max = r.game.rules.kind(kind).max_health;
     r.game.state.entities.iter_mut().find(|e| e.id == id).unwrap().health = max / 3;
@@ -245,8 +263,9 @@ fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
         scene.after_step(&r.game);
     }
     let one = soldiers(&mut r, &mut scene);
-    println!("team-colour pixels: {full} at full health, {falling} as two fall, {one} once they have gone");
-    assert!(full > 30, "the squad shows its faction colour");
-    assert_eq!(falling, full, "the two lost soldiers are still on screen as they start to fall");
+    println!("soldier pixels: {full} at full health, {falling} as two fall, {one} once they have gone");
+    assert!(full > 30, "the squad is on screen");
+    // The first death frame is not quite the standing pose, so allow a little either way.
+    assert!(falling.abs_diff(full) * 4 < full, "the two lost soldiers are still on screen as they start to fall");
     assert!(one * 2 < full && one * 4 > full, "one soldier of three is left");
 }
