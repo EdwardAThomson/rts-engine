@@ -233,10 +233,10 @@ impl Effects {
                     x: x + (r1 - 0.5) * 24.0,
                     y,
                     vx: 2.0 + r2 * 2.0,
-                    vy: -6.0 - r2 * 3.0,
+                    vy: -9.0 - r2 * 3.0,
                     start: t,
                     facing: 0,
-                    size: if k.building { 1.6 } else { 1.0 },
+                    size: if k.building { 1.0 + 0.15 * k.width.min(k.height) as f32 } else { 0.9 },
                     under: false,
                 });
             }

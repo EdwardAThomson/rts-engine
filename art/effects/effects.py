@@ -49,6 +49,7 @@ FIRE = [
 
 SMOKE = np.array([0.42, 0.38, 0.33])
 DUST = np.array([0.55, 0.45, 0.32])
+SMOKE_GREY = np.array([0.34, 0.34, 0.36])
 
 
 def smoothstep(a, b, x):
@@ -341,15 +342,17 @@ def explosion(name, size_tiles, frames, puffs, debris):
 
 
 def smoke_puff(name, frames):
-    """One puff of smoke that swells and thins; the renderer moves it."""
+    """One puff of smoke that starts small, swells and thins; the renderer moves it. Cool grey and soft, so it never
+    reads as a lump of rock."""
     noise = Noise(seed_of(name))
     size = TILE // 2 + 8
     out = []
     for f in range(frames):
         s = f / (frames - 1)
         cv = Canvas(size, size, size / 2, size / 2)
-        r = size * (0.2 + 0.2 * s)
-        puff(cv, noise, 0, 0, r, dens=0.85 * (1 - s) ** 1.2, seed=1.7, boil=s * 0.5)
+        r = size * (0.12 + 0.3 * s)
+        dens = 0.7 * min(1.0, 0.45 + 3 * s) * (1 - s) ** 1.1
+        puff(cv, noise, 0, 0, r, dens=dens, colour=SMOKE_GREY, seed=1.7, boil=s * 0.5, rough=0.55)
         out.append(cv)
     return out
 
