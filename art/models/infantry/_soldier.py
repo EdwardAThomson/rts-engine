@@ -271,8 +271,10 @@ def pose(joints, anim, frame, frames, hold="rifle", stance="kneel"):
             j["hip_r"].rotation_euler.x, j["knee_r"].rotation_euler.x = 0.2 * knees * (1 - t), -0.6 * knees * (1 - t)
             j["spine"].rotation_euler.x = 0.25 * t
             j["head"].rotation_euler.z = 0.9 * t
-        # The weapon slides out of the hands and lies beside the body.
+        # The weapon slides out of the hands and lies flat beside the body: it turns against the body's fall, or a
+        # soldier on his back would hold it pointing at the sky (hidden from the sprite camera, plain in 3D).
         drop = _ease(2 * t - 1)
         wx, wy, wz = HOLDS[hold]["weapon"]
+        fall = j["body"].rotation_euler.x + j["spine"].rotation_euler.x
         j["weapon"].location = (wx + 0.25 * drop, wy, wz - 0.12 * drop)
-        j["weapon"].rotation_euler.x = HOLDS[hold]["lift"] * (1 - drop)
+        j["weapon"].rotation_euler.x = HOLDS[hold]["lift"] * (1 - drop) - fall * drop

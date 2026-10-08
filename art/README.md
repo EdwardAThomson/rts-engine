@@ -139,10 +139,19 @@ colour.
 
 glTF is +Y up in metres, and a model's front (north) faces -Z. Vehicles and aircraft have a `hull` node at the
 origin on the ground and a `turret` child at the ring. Buildings have a `building` node at the footprint's centre
-and a `head` child for defence turrets. Idle and door parts are part of the building mesh, walls export their lone
-post, and infantry are skipped because their rig animates. `--style classic` leaves out bevels and `DETAIL` parts,
-which makes a far level of detail (the battle tank drops from 15,100 triangles to 1,400). `export.json` lists each file's size and
-triangles per part.
+and a `head` child for defence turrets. Idle and door parts are part of the building mesh, and walls export their
+lone post. Infantry export the rig: its joints are nodes (`body`, `pelvis`, `spine`, `head`, the limbs and
+`weapon`), each joint's parts are one mesh under it, the whole soldier shares one texture and one `soldier_body` /
+`soldier_team` pair, and the sprite cycles are animation clips (idle, walk, fire, die-1, die-2, at 6 frames a
+second; walk loops, and the file rests in idle). `--style classic` leaves out bevels and `DETAIL` parts, which
+makes a far level of detail (the battle tank drops from 15,100 triangles to 1,400). `export.json` lists each file's
+size and triangles per part.
+
+`--lod low` keeps the detailed look but builds every shape without bevels, with 8-sided round parts and coarse
+spheres, and leaves out `DETAIL` parts: the light version for crowds, written as `<id>-low.glb` with 256 px
+textures unless `--tex` says otherwise. A soldier drops from about 6,500 triangles to 600 to 700, and the battle
+tank to about 700. The switch is `st.set_lod` in `rts_studio.py`, so models need no changes; without bevels,
+parts whose faces lie flush show a dark patch, so check a new model at `--lod low` too.
 
 A 3D camera sees angles the sprite camera never does, so a model can look right as a sprite and still show a gap
 or a dark patch from low down. Check new models from a few low angles before relying on them in 3D.
