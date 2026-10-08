@@ -11,6 +11,7 @@ pub mod art;
 pub mod effects;
 pub mod feed;
 pub mod hud;
+pub mod lines;
 pub mod menu;
 pub mod scene;
 pub mod skin;

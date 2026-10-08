@@ -1,0 +1,26 @@
+{
+  "about": "The engine's own words for what units say back when the local player selects them or gives an order, by voice set (infantry, or vehicle for everything else) and moment (select, move, attack, cant for an order refused). Text for now, shown as a subtitle; voices will play the same lines later. A setting pack replaces any of them in its own `lines.json`, and can also give the advisor its own words for the feed's message ids (`data/ui/messages.json`) and for the `planned` ids below. Our own plain phrases, kept short enough to say in under a second. How the file is read: `crates/classic-render/src/lines.rs`.",
+  "acks": {
+    "infantry": {
+      "select": ["Ready.", "Standing by.", "Orders?", "Here."],
+      "move": ["On our way.", "Going.", "Right away.", "Moving up."],
+      "attack": ["Engaging.", "Target marked.", "Opening fire.", "Taking them on."],
+      "cant": ["Can't get there.", "No way through."]
+    },
+    "vehicle": {
+      "select": ["Crew ready.", "Engine running.", "Waiting on orders.", "Vehicle here."],
+      "move": ["Rolling.", "Under way.", "Driving.", "On the move."],
+      "attack": ["Target locked.", "Firing.", "Gunner ready.", "Weapons hot."],
+      "cant": ["Can't reach it.", "Blocked."]
+    }
+  },
+  "planned": [
+    "harvester_attacked",
+    "storage_full",
+    "hazard_sighted",
+    "superpower_ready",
+    "enemy_wave",
+    "game_won",
+    "game_lost"
+  ]
+}

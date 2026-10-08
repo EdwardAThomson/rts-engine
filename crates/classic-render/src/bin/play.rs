@@ -30,6 +30,7 @@ use std::time::Duration;
 use classic_ai::{Ai, Settings};
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, RAIL_W};
+use classic_render::lines::Moment;
 use classic_render::menu::{Action, Menu, Screen};
 use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::skin::{self, Pointer, Skin, SkinFiles};
@@ -119,7 +120,7 @@ struct App {
     menu: Menu,
     /// The maps on offer, as (name, text); the menu picks one.
     maps: Vec<(String, String)>,
-    /// The pack's own files, for its wording of the message feed and its theme.
+    /// The pack's own files, for its wording of the message feed, its lines and its theme.
     pack_files: Files,
     scene: Scene,
     hud: Hud,
@@ -177,9 +178,10 @@ impl App {
         for w in &sound.warnings {
             say(&format!("sound: {w}"));
         }
-        let hud = Hud::new(&pack, &pack_files, &game, player);
+        let faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % pack.factions.len().max(1);
+        let hud = Hud::new(&pack, &pack_files, &game, player, faction);
         for w in &hud.feed.warnings {
-            say(&format!("messages: {w}"));
+            say(&format!("messages and lines: {w}"));
         }
         for w in classic_render::theme::Theme::load(&pack_files).1 {
             say(&format!("theme: {w}"));
@@ -188,7 +190,7 @@ impl App {
         menu.theme = hud.theme.clone();
         menu.maps = maps.iter().map(|(name, _)| name.clone()).collect();
         menu.factions = pack.factions.iter().map(|f| f.name.clone()).collect();
-        menu.faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % menu.factions.len().max(1);
+        menu.faction = faction;
         menu.opponents = arg("ai").as_deref() != Some("none");
         menu.can_quit = cfg!(not(target_arch = "wasm32"));
         if flag("start") {
@@ -239,7 +241,7 @@ impl App {
         }
         self.ais = opponents(&self.game, self.player, self.menu.opponents);
         let scale = self.hud.scale;
-        self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player);
+        self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player, self.menu.faction);
         self.hud.scale = scale;
         self.scene = Scene::default();
         self.owed = Duration::ZERO;
@@ -331,6 +333,7 @@ impl App {
             }
         } else if !self.scene.groups[n].is_empty() {
             self.ui_sound("ui_select");
+            self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
         }
     }
 
@@ -406,6 +409,7 @@ impl App {
             self.scene.selected = self.pick(to.0, to.1).into_iter().collect();
             if !self.scene.selected.is_empty() {
                 self.ui_sound("ui_select");
+                self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
             }
             return;
         }
@@ -427,6 +431,7 @@ impl App {
             .collect();
         if !self.scene.selected.is_empty() {
             self.ui_sound("ui_select");
+            self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
         }
     }
 
@@ -448,12 +453,13 @@ impl App {
             return;
         }
         let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
-        let order = match enemy {
-            Some(target) => CommandOrder::Attack { target },
-            None => CommandOrder::Move { x, y },
+        let (order, moment) = match enemy {
+            Some(target) => (CommandOrder::Attack { target }, Moment::Attack),
+            None => (CommandOrder::Move { x, y }, Moment::Move),
         };
         self.game.order(self.player, &ids, order);
         self.ui_sound("ui_order");
+        self.hud.feed.reply(&self.game, moment, &ids);
     }
 
     /// Advance the game by the ticks owed since the last frame, at most a few at once so a stall doesn't snowball.

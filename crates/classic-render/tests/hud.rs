@@ -18,7 +18,7 @@ fn game() -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
-    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0);
+    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0, 0);
     (game, hud)
 }
 

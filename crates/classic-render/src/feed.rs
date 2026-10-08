@@ -3,15 +3,18 @@
 //!
 //! The feed only reads the game's events, like the sound board, and never changes the state. Which event shows which
 //! message id is decided here; the words for each id come from `data/ui/messages.json`, and a setting pack can reword
-//! any of them in its own `ui/messages.json`.
+//! any of them in its own `ui/messages.json`, or give its faction's advisor words of its own in `lines.json`
+//! (`lines`), which win. The feed also keeps the subtitle: what the local player's units last said back to them.
 
 use std::collections::{BTreeMap, VecDeque};
 
+use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{Event, IdleReason};
 use classic_sim::{Game, Kind, ProduceError};
 
+use crate::lines::{Lines, Moment, VOICES};
 use crate::platform::Files;
 
 const MESSAGES: &str = include_str!("../../../data/ui/messages.json");
@@ -26,6 +29,10 @@ pub const MAX_LINES: usize = 5;
 const REPEAT: u32 = 3 * TICKS_PER_SECOND;
 /// Attack warnings come at most this often, in ticks, for buildings and for units each.
 const ATTACK_EVERY: u32 = 20 * TICKS_PER_SECOND;
+/// How long a unit's reply stays on screen, in ticks.
+pub const REPLY_LIFE: u32 = 2 * TICKS_PER_SECOND;
+/// Replies come at most this often, in ticks (a quarter of a second), however fast the player clicks.
+pub const REPLY_EVERY: u32 = TICKS_PER_SECOND / 4;
 
 /// How a line reads: news, good news, a warning or a loss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,7 +57,15 @@ pub struct Feed {
     /// The player at this screen; the feed only speaks to them.
     pub local: u32,
     pub lines: VecDeque<Line>,
+    /// What the local player's units last said, while it shows.
+    pub reply: Option<Line>,
     words: BTreeMap<String, String>,
+    /// The advisor's and the units' own lines, for the local player's faction.
+    pub speech: Lines,
+    /// The variant last said, by message id or reply set, so no line comes twice in a row.
+    last: BTreeMap<String, usize>,
+    /// The feed's own pick, stirred at every choice; never the game's generator.
+    stir: u32,
     names: BTreeMap<String, String>,
     /// How many of the game's events have been read.
     seen: usize,
@@ -72,8 +87,8 @@ fn words(v: &Value) -> Option<BTreeMap<String, String>> {
 
 impl Feed {
     /// A feed for `local`, in the words of the pack's `ui/messages.json` in `pack` where it has one, naming things as
-    /// `names` does (generic id to the pack's name).
-    pub fn new(pack: &Files, names: BTreeMap<String, String>, local: u32) -> Feed {
+    /// `names` does (generic id to the pack's name), with `speech` (`Lines::load`) for its advisor and units.
+    pub fn new(pack: &Files, names: BTreeMap<String, String>, local: u32, speech: Lines) -> Feed {
         let mut table = default_words();
         let mut warnings = Vec::new();
         if let Ok(text) = pack.read_text(MESSAGES_FILE) {
@@ -90,10 +105,15 @@ impl Feed {
                 None => warnings.push(format!("{}: needs a `messages` object of strings", pack.name(MESSAGES_FILE))),
             }
         }
+        warnings.extend(speech.warnings.iter().cloned());
         Feed {
             local,
             lines: VecDeque::new(),
+            reply: None,
             words: table,
+            speech,
+            last: BTreeMap::new(),
+            stir: 1,
             names,
             seen: 0,
             short: false,
@@ -112,19 +132,66 @@ impl Feed {
         game.state.entity(entity).map(|e| e.owner)
     }
 
-    /// Say message `id` now, about `kind` if it names one.
+    /// Say message `id` now, about `kind` if it names one: in the advisor's own words where it has some, else the
+    /// feed's.
     pub fn say(&mut self, game: &Game, id: &'static str, kind: Option<Kind>, tone: Tone) {
         let name = kind.map(|k| self.name(game, k)).unwrap_or_default();
-        let text = self.words.get(id).map_or_else(|| id.to_string(), |w| w.replace("{name}", &name));
         let tick = game.state.tick;
-        if let Some(old) = self.lines.iter_mut().find(|l| l.text == text && tick.saturating_sub(l.tick) < REPEAT) {
+        let said: Vec<String> = match self.speech.advisor.get(id) {
+            Some(own) => own.iter().map(|w| w.replace("{name}", &name)).collect(),
+            None => vec![self.words.get(id).map_or_else(|| id.to_string(), |w| w.replace("{name}", &name))],
+        };
+        // Saying it again soon refreshes the line already there, whichever of its variants that was.
+        if let Some(old) =
+            self.lines.iter_mut().find(|l| said.contains(&l.text) && tick.saturating_sub(l.tick) < REPEAT)
+        {
             old.tick = tick;
             return;
         }
+        let text = said[self.turn(id, said.len())].clone();
         self.lines.push_back(Line { id, text, tone, tick });
         while self.lines.len() > MAX_LINES {
             self.lines.pop_front();
         }
+    }
+
+    /// Which of `n` variants to say for `key`: any but the one said last time. The feed stirs its own number to
+    /// choose, so the game's generator is never touched.
+    fn turn(&mut self, key: &str, n: usize) -> usize {
+        self.stir = self.stir.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        let r = (self.stir >> 16) as usize;
+        let at = match (self.last.get(key), n) {
+            (_, 0 | 1) => 0,
+            (None, _) => r % n,
+            (Some(&last), _) => (last + 1 + r % (n - 1)) % n,
+        };
+        self.last.insert(key.to_string(), at);
+        at
+    }
+
+    /// The local player's `units` answer an order or being selected: one of them says a line from its voice set
+    /// (infantry when they all are, else vehicle) as a subtitle. Others' units, buildings and clicks coming faster
+    /// than `REPLY_EVERY` say nothing.
+    pub fn reply(&mut self, game: &Game, moment: Moment, units: &[u32]) {
+        let mine: Vec<_> = units
+            .iter()
+            .filter_map(|&id| game.state.entity(id))
+            .filter(|e| e.owner == self.local && !game.rules.kind(e.kind).building)
+            .collect();
+        if mine.is_empty() {
+            return;
+        }
+        let tick = game.state.tick;
+        if self.reply.as_ref().is_some_and(|r| tick.saturating_sub(r.tick) < REPLY_EVERY) {
+            return;
+        }
+        let infantry = ARMOURS.iter().position(|&a| a == "infantry");
+        let voice =
+            if mine.iter().all(|e| Some(game.rules.kind(e.kind).armour) == infantry) { VOICES[0] } else { VOICES[1] };
+        let Some(said) = self.speech.acks.get(&(voice, moment)).cloned() else { return };
+        let at = self.turn(&format!("{voice}.{}", moment.id()), said.len());
+        let text = said[at].clone();
+        self.reply = Some(Line { id: moment.id(), text, tone: Tone::Info, tick });
     }
 
     /// Read the events since the last call and say what the local player should hear about; drop old lines.
@@ -210,6 +277,9 @@ impl Feed {
         }
         let now = game.state.tick;
         self.lines.retain(|l| now.saturating_sub(l.tick) < LIFE);
+        if self.reply.as_ref().is_some_and(|r| now.saturating_sub(r.tick) >= REPLY_LIFE) {
+            self.reply = None;
+        }
     }
 
     /// The words for every message id, after the pack's.

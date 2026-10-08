@@ -51,4 +51,5 @@ change the recipe and rerun it. A test fails when the files and the recipes disa
 Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack
 supplies its own files the same way, in its own `audio/sounds.json`; ids it leaves out play these.
 
-Not made yet: music, unit replies, advisor lines and looping sounds.
+Not made yet: music, voices and looping sounds. The units' written replies are the engine's own
+(`data/ui/lines.json`), and the feed's words are its advisor (`data/ui/messages.json`).

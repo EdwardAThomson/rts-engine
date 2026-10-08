@@ -10,6 +10,7 @@ use classic_data::{Pack, RulesTable};
 
 use crate::art::{self, ART_INDEX};
 use crate::feed::MESSAGES_FILE;
+use crate::lines::LINES_FILE;
 use crate::menu::map_name;
 use crate::platform::{Files, web};
 use crate::skin;
@@ -29,8 +30,8 @@ pub struct Loaded {
     pub art: Vec<Files>,
     /// The sounds' files: the generic pack's, then the pack's own if it has any.
     pub sounds: Vec<Files>,
-    /// The pack's own files the player reads as it goes: its wording of the message feed and its theme, if it has
-    /// them.
+    /// The pack's own files the player reads as it goes: its wording of the message feed, its lines and its theme,
+    /// if it has them.
     pub pack_files: Files,
     /// The maps on offer, as (name, text).
     pub maps: Vec<(String, String)>,
@@ -96,7 +97,7 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
         sounds.push(Files::Memory { label: d, files });
     }
 
-    let own = [MESSAGES_FILE.to_string(), THEME_FILE.to_string()];
+    let own = [MESSAGES_FILE.to_string(), LINES_FILE.to_string(), THEME_FILE.to_string()];
     let pack_files =
         Files::Memory { label: dir.clone(), files: web::fetch_files(&format!("{ROOT}{dir}/"), &own).await? };
 
