@@ -7,6 +7,7 @@ use std::path::Path;
 use classic_data::json::{self, Value};
 
 use crate::platform::{Files, Gpu, Rect, SpriteBatch, TexId};
+use crate::studio::{self, Studio};
 
 /// A strip of equal frames laid left to right in one texture.
 #[derive(Clone, Copy, Debug)]
@@ -15,6 +16,9 @@ pub struct Strip {
     pub w: f32,
     pub h: f32,
     pub frames: u32,
+    /// How many facings the frames cover, facing by facing: each facing has `frames / facings` frames in a row, a
+    /// walk cycle when there is more than one. 1 for a strip with no facings.
+    pub facings: u32,
     /// The average colour of the first frame's opaque pixels, for the minimap.
     pub colour: [u8; 3],
     /// The average of the tenth of those pixels least like the average: what stands out, such as grains on sand.
@@ -26,6 +30,77 @@ impl Strip {
     pub fn frame(&self, i: u32) -> Rect {
         Rect::new((i % self.frames.max(1)) as f32 * self.w, 0.0, self.w, self.h)
     }
+
+    /// The frame for `facing` (0 to 255 clockwise from north) at `step` of the facing's cycle, wrapping round.
+    pub fn facing_frame(&self, facing: i64, step: u32) -> Rect {
+        let facings = self.facings.max(1);
+        let per = (self.frames / facings).max(1);
+        let f = ((facing.rem_euclid(256) * i64::from(facings) + 128) / 256) as u32 % facings;
+        self.frame(f * per + step % per)
+    }
+
+    /// Frames in each facing's cycle.
+    pub fn cycle(&self) -> u32 {
+        (self.frames / self.facings.max(1)).max(1)
+    }
+}
+
+/// A unit drawn as several copies of another unit's sprite standing in a formation, such as a squad of three
+/// soldiers. It shows one copy fewer for each equal share of health lost.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Squad {
+    /// The sprite each member is drawn with.
+    pub member: String,
+    /// Where each member stands, in 256ths of a tile from the unit's centre (x right, y down), for a squad facing
+    /// north; the formation turns with the unit. Members are lost from the end of the list.
+    pub offsets: Vec<(i64, i64)>,
+}
+
+impl Squad {
+    /// How many members stand at `health` out of `max`: a share of the count, rounded up, never none while alive.
+    pub fn shown(&self, health: i64, max: i64) -> usize {
+        let n = self.offsets.len() as i64;
+        if n == 0 || health <= 0 {
+            return 0;
+        }
+        ((n * health.min(max) + max - 1) / max.max(1)).clamp(1, n) as usize
+    }
+
+    /// Where member `i` stands for a squad facing `facing` (0 to 255 clockwise from north), in tiles from its
+    /// centre. The formation turns in eighths, with the sprite.
+    pub fn place(&self, i: usize, facing: i64) -> (f32, f32) {
+        let (ox, oy) = self.offsets.get(i).copied().unwrap_or((0, 0));
+        let eighth = ((facing.rem_euclid(256) + 16) / 32) % 8;
+        let a = eighth as f32 * std::f32::consts::FRAC_PI_4;
+        let (s, c) = a.sin_cos();
+        let (x, y) = (ox as f32 * c - oy as f32 * s, ox as f32 * s + oy as f32 * c);
+        (x / 256.0, y / 256.0)
+    }
+
+    /// Where member `i` is in a walk cycle of `cycle` frames at the squad's step `walk`: each starts at its own
+    /// point, spread evenly, so they don't march in step.
+    pub fn step(&self, i: usize, walk: u32, cycle: u32) -> u32 {
+        walk + i as u32 * cycle / self.offsets.len().max(1) as u32
+    }
+}
+
+/// The squads listed in an art index, by unit id. An entry is `{ "member": id, "offsets": [[x, y], ...] }`.
+pub fn parse_squads(doc: &Value) -> Result<BTreeMap<String, Squad>, String> {
+    let mut squads = BTreeMap::new();
+    for (id, entry) in doc.get("squads").and_then(Value::as_object).unwrap_or(&[]) {
+        let member =
+            entry.get("member").and_then(Value::as_str).ok_or(format!("art.json: squad {id} has no member"))?;
+        let mut offsets = Vec::new();
+        for p in entry.get("offsets").and_then(Value::as_array).unwrap_or(&[]) {
+            let xy = p.as_array().filter(|a| a.len() == 2).and_then(|a| Some((a[0].as_int()?, a[1].as_int()?)));
+            offsets.push(xy.ok_or(format!("art.json: squad {id}: an offset is not [x, y]"))?);
+        }
+        if offsets.is_empty() {
+            return Err(format!("art.json: squad {id} has no offsets"));
+        }
+        squads.insert(id.clone(), Squad { member: member.to_string(), offsets });
+    }
+    Ok(squads)
 }
 
 pub struct Art {
@@ -37,6 +112,10 @@ pub struct Art {
     effects: BTreeMap<String, Strip>,
     /// Each build icon once per faction ramp, in owner order.
     icons: BTreeMap<String, Vec<Strip>>,
+    /// Units drawn as several members, by unit id.
+    squads: BTreeMap<String, Squad>,
+    /// The studio's packed sprites, for the ids that have them.
+    pub studio: Studio,
     /// The middle shade of each owner's ramp, in owner order.
     owners: Vec<[u8; 3]>,
 }
@@ -72,8 +151,9 @@ impl Art {
             let fh = frame.get(1).and_then(Value::as_int).unwrap_or(h as i64) as f32;
             let frames =
                 entry.get("frames").or_else(|| entry.get("variants")).and_then(Value::as_int).unwrap_or(1) as u32;
+            let facings = entry.get("facings").and_then(Value::as_int).unwrap_or(1).max(1) as u32;
             let (colour, accent) = average(&rgba, w as usize, fw as usize, fh as usize);
-            Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames, colour, accent })
+            Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames, facings, colour, accent })
         };
         let entries = |key: &str| doc.get(key).and_then(Value::as_object).unwrap_or(&[]);
         let mut art = Art {
@@ -82,6 +162,8 @@ impl Art {
             sprites: BTreeMap::new(),
             effects: BTreeMap::new(),
             icons: BTreeMap::new(),
+            squads: parse_squads(&doc)?,
+            studio: Studio::default(),
             owners: owner_ramps.iter().map(|r| r[r.len() / 2]).collect(),
         };
         for (id, entry) in entries("terrain") {
@@ -93,6 +175,33 @@ impl Art {
         for (id, entry) in entries("sprites") {
             let strips = owner_ramps.iter().map(|r| load(batch, entry, Some(r))).collect::<Result<_, _>>()?;
             art.sprites.insert(id.clone(), strips);
+        }
+        // The studio's packed sprites, where the pack has them, replace the strips they cover.
+        let kinds: Vec<(&str, &str)> = entries("sprites")
+            .iter()
+            .map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or("")))
+            .collect();
+        for path in studio::candidates(kinds) {
+            let Ok(bytes) = files.read(&path) else { continue };
+            let text = String::from_utf8_lossy(&bytes);
+            let sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", files.name(&path)))?;
+            let id = path.rsplit('/').next().unwrap_or("").trim_end_matches(".json").to_string();
+            if !art.studio.pages.contains_key(&sprite.atlas) {
+                let [img, mask] = studio::page_files(&sprite.atlas);
+                let (w, h, rgba) = decode_png(&files.read(&img)?, &img)?;
+                let (mw, mh, mask_px) = decode_png(&files.read(&mask)?, &mask)?;
+                if (mw, mh) != (w, h) {
+                    return Err(format!("{mask}: {mw}x{mh}, but its page is {w}x{h}"));
+                }
+                let mut pages = Vec::new();
+                for ramp in &owner_ramps {
+                    let mut px = rgba.clone();
+                    studio::paint(&mut px, &mask_px, ramp);
+                    pages.push(batch.texture(gpu, w, h, &px));
+                }
+                art.studio.pages.insert(sprite.atlas.clone(), pages);
+            }
+            art.studio.sprites.insert(id, sprite);
         }
         // Icons are plain file names, one picture each.
         for (id, file) in entries("icons") {
@@ -124,6 +233,11 @@ impl Art {
         strips.get(owner as usize % strips.len().max(1))
     }
 
+    /// How unit `id` is drawn as a squad, if it is one and its member has a sprite.
+    pub fn squad(&self, id: &str) -> Option<&Squad> {
+        self.squads.get(id).filter(|s| self.sprites.contains_key(&s.member))
+    }
+
     pub fn effect(&self, id: &str) -> Option<&Strip> {
         self.effects.get(id)
     }
@@ -147,7 +261,26 @@ pub fn art_files(index: &str) -> Result<Vec<String>, String> {
     for (_, file) in doc.get("icons").and_then(Value::as_object).unwrap_or(&[]) {
         files.extend(file.as_str().map(String::from));
     }
+    // Where the studio's packed sprites may be; most ids have none yet.
+    let ids = doc.get("sprites").and_then(Value::as_object).unwrap_or(&[]).iter();
+    files.extend(studio::candidates(
+        ids.map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or(""))),
+    ));
     Ok(files)
+}
+
+/// The atlas pages the studio sprites among `files` (path and contents) are on, for a loader that fetches in turn.
+pub fn atlas_files<'a>(files: impl IntoIterator<Item = (&'a String, &'a Vec<u8>)>) -> Vec<String> {
+    let mut pages = std::collections::BTreeSet::new();
+    for (path, bytes) in files {
+        if path.starts_with(studio::SPRITES)
+            && path.ends_with(".json")
+            && let Ok(s) = studio::Sprite::parse(&String::from_utf8_lossy(bytes))
+        {
+            pages.extend(studio::page_files(&s.atlas));
+        }
+    }
+    pages.into_iter().collect()
 }
 
 /// Where to find a pack's art: the pack itself if it has an `art/art.json`, else the generic pack's placeholders.
@@ -224,4 +357,57 @@ pub fn decode_png(bytes: &[u8], name: &str) -> Result<(u32, u32, Vec<u8>), Strin
         png::ColorType::Indexed => return Err(format!("{name}: palette not expanded")),
     };
     Ok((info.width, info.height, rgba))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn three() -> Squad {
+        Squad { member: "infantry".into(), offsets: vec![(0, -64), (-64, 48), (64, 48)] }
+    }
+
+    #[test]
+    fn a_squad_loses_a_member_for_each_third_of_its_health() {
+        let s = three();
+        let shown: Vec<usize> = [140, 94, 93, 47, 46, 1, 0].iter().map(|&h| s.shown(h, 140)).collect();
+        assert_eq!(shown, [3, 3, 2, 2, 1, 1, 0]);
+        assert_eq!(s.shown(200, 140), 3, "overhealed still shows the count");
+    }
+
+    #[test]
+    fn the_formation_turns_with_the_squad() {
+        let s = three();
+        let near = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4;
+        assert!(near(s.place(0, 0), (0.0, -0.25)), "the leader is in front facing north");
+        assert!(near(s.place(0, 64), (0.25, 0.0)), "and in front facing east");
+        assert!(near(s.place(1, 128), (0.25, -0.1875)), "the left-hand soldier is on the right facing south");
+        assert!(near(s.place(0, 70), s.place(0, 64)), "the formation turns in eighths, with the sprite");
+    }
+
+    #[test]
+    fn members_walk_out_of_step_on_a_strip_with_walk_cycles() {
+        // Eight facings of six walk frames, facing by facing.
+        let strip = Strip { tex: TexId(0), w: 32.0, h: 32.0, frames: 48, facings: 8, colour: [0; 3], accent: [0; 3] };
+        let x = |r: Rect| (r.x / 32.0) as u32;
+        assert_eq!(x(strip.facing_frame(64, 0)), 12, "east starts at the third facing's first frame");
+        assert_eq!(x(strip.facing_frame(64, 7)), 13, "and the cycle wraps within the facing");
+        let s = three();
+        let steps: Vec<u32> = (0..3).map(|i| s.step(i, 0, strip.cycle())).collect();
+        assert_eq!(steps, [0, 2, 4]);
+        let still = Strip { frames: 8, ..strip };
+        assert_eq!(x(still.facing_frame(64, 5)), 2, "a strip of one frame per facing never walks");
+    }
+
+    #[test]
+    fn squads_parse_from_the_art_index() {
+        let doc = json::parse(
+            r#"{"squads": {"infantry_squad": {"member": "infantry", "offsets": [[0, -64], [-64, 48], [64, 48]]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(parse_squads(&doc).unwrap().get("infantry_squad"), Some(&three()));
+        let bad = json::parse(r#"{"squads": {"x": {"member": "infantry", "offsets": [[0]]}}}"#).unwrap();
+        assert!(parse_squads(&bad).is_err());
+        assert!(parse_squads(&json::parse("{}").unwrap()).unwrap().is_empty());
+    }
 }

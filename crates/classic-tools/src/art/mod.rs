@@ -228,6 +228,9 @@ const EFFECTS: [(&str, usize, usize); 12] = [
 ];
 
 /// Rubble for each building size the art uses, beyond the 1x1 listed in `EFFECTS`.
+/// Each squad and the single soldier it is drawn with.
+const SQUADS: [(&str, &str); 2] = [("infantry_squad", "infantry"), ("rocket_squad", "rocket_infantry")];
+
 const RUBBLE: [(usize, usize); 3] = [(2, 2), (3, 2), (3, 3)];
 
 fn effect(id: &str, size: usize, frames: usize) -> Canvas {
@@ -439,13 +442,25 @@ pub fn generate() -> Vec<File> {
             format!("    \"{name}\": [{}]", s.join(", "))
         })
         .collect();
+    // Squads: drawn by the renderer as copies of a single soldier, in 256ths of a tile.
+    let squads: Vec<String> = SQUADS
+        .iter()
+        .map(|(id, member)| {
+            let at: Vec<String> = d::SQUAD
+                .iter()
+                .map(|(x, y)| format!("[{}, {}]", x * 256 / TILE as i64, y * 256 / TILE as i64))
+                .collect();
+            format!("    \"{id}\": {{ \"member\": \"{member}\", \"offsets\": [{}] }}", at.join(", "))
+        })
+        .collect();
     let index = format!(
-        "{{\n  \"about\": \"Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data.\",\n  \"tile\": {TILE},\n  \"remap\": [{}],\n  \"ramps\": {{\n{}\n  }},\n  \"terrain\": {{\n{}\n  }},\n  \"sprites\": {{\n{}\n  }},\n  \"icons\": {{\n{}\n  }},\n  \"effects\": {{\n{}\n  }}\n}}\n",
+        "{{\n  \"about\": \"Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data. A squad is drawn as copies of its member's sprite, one per offset, with one fewer for each equal share of health lost (the last listed goes first); offsets are in 256ths of a tile from the unit's middle, x right and y down, for a squad facing north, and turn with it. A unit strip with more frames than facings holds a walk cycle per facing, facing by facing.\",\n  \"tile\": {TILE},\n  \"remap\": [{}],\n  \"ramps\": {{\n{}\n  }},\n  \"terrain\": {{\n{}\n  }},\n  \"sprites\": {{\n{}\n  }},\n  \"icons\": {{\n{}\n  }},\n  \"squads\": {{\n{}\n  }},\n  \"effects\": {{\n{}\n  }}\n}}\n",
         remap.join(", "),
         ramps.join(",\n"),
         terrain.join(",\n"),
         sprites.join(",\n"),
         icons.join(",\n"),
+        squads.join(",\n"),
         effects.join(",\n"),
     );
     files.push(File { path: "art/art.json".into(), bytes: index.into_bytes() });
