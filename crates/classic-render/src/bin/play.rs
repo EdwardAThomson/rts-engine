@@ -1,23 +1,30 @@
-//! The desktop player: a window onto a skirmish on the test map.
-//!   cargo run --release --bin play -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--player 0]
+//! The desktop player: a window onto a skirmish.
+//!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
-//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. Space pauses, M
-//! mutes the sound (or start with `--mute`) and Escape quits. The window title shows the tick, your credits and your
-//! power. There is no sidebar or computer opponent yet. `--frames N` quits after N frames, for smoke tests.
+//! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there.
+//!
+//! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
+//! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
+//! where it fits. The minimap at the rail's foot moves the view (click or drag), and a right click on it orders
+//! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses, M
+//! mutes the sound (or start with `--mute`). There is no computer opponent yet. `--frames N` quits after N frames,
+//! for smoke tests.
 //!
 //! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
-//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3`), and the files
-//! are fetched from the server first, because the browser has no file system and can't wait for the GPU.
+//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&mute`), the files
+//! are fetched from the server first, because the browser has no file system and can't wait for the GPU, and sound
+//! starts with the first click or key press.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use classic_render::art::{self, Art};
-use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
+use classic_render::hud::{Button, Click, RAIL_W};
+use classic_render::platform::{Files, Font, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::sound::Cue;
-use classic_render::{Camera, Listener, Scene, SoundBoard};
+use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use winit::application::ApplicationHandler;
@@ -71,11 +78,13 @@ struct Running {
     gpu: Gpu,
     batch: SpriteBatch,
     art: Art,
+    font: Font,
 }
 
 struct App {
     game: Game,
     scene: Scene,
+    hud: Hud,
     pack: classic_data::Pack,
     /// The art's files: the pack folder on the desktop, fetched copies in the browser.
     art_files: Files,
@@ -92,6 +101,8 @@ struct App {
     mouse: (f32, f32),
     /// Where a left-button drag started, in screen pixels.
     drag: Option<(f32, f32)>,
+    /// The left button went down on the minimap: moving the mouse keeps moving the view.
+    minimap_drag: bool,
     frames: u64,
     max_frames: Option<u64>,
     sound: SoundBoard,
@@ -114,9 +125,11 @@ impl App {
         for w in &sound.warnings {
             say(&format!("sound: {w}"));
         }
+        let hud = Hud::new(&pack, &game, player);
         App {
             game,
             scene: Scene::default(),
+            hud,
             pack,
             art_files,
             #[cfg(target_arch = "wasm32")]
@@ -130,6 +143,7 @@ impl App {
             keys: BTreeSet::new(),
             mouse: (-1.0e4, -1.0e4),
             drag: None,
+            minimap_drag: false,
             frames: 0,
             max_frames: arg("frames").and_then(|s| s.parse().ok()),
             sound,
@@ -153,6 +167,50 @@ impl App {
                 self.speaker = Some(s);
             }
             Err(e) => say(&format!("playing without sound: {e}")),
+        }
+    }
+
+    fn view(&self) -> View {
+        let screen = self.run.as_ref().map_or((1280.0, 800.0), |r| (r.config.width as f32, r.config.height as f32));
+        View { cam: self.cam, screen, tile: TILE as f32 * self.world_px() }
+    }
+
+    fn shift(&self) -> bool {
+        self.keys.contains(&KeyCode::ShiftLeft) || self.keys.contains(&KeyCode::ShiftRight)
+    }
+
+    /// Give a click to the HUD first; returns whether it took it.
+    fn hud_click(&mut self, button: Button) -> bool {
+        let view = self.view();
+        let shift = self.shift();
+        let click = self.hud.click(&mut self.game, &view, self.mouse, button, shift);
+        let taken = click.taken();
+        match click {
+            Click::Centre { x, y } => {
+                self.minimap_drag = true;
+                self.centre_on(x, y);
+            }
+            Click::Order { x, y } => self.order_at(None, (x, y)),
+            Click::Taken | Click::World => {}
+        }
+        taken
+    }
+
+    /// Centre the world's part of the screen on a map point, in tiles.
+    fn centre_on(&mut self, x: f32, y: f32) {
+        let view = self.view();
+        let world_w = view.screen.0 - RAIL_W * self.hud.scale;
+        self.cam.x = x * view.tile - world_w / 2.0 / self.cam.zoom;
+        self.cam.y = y * view.tile - view.screen.1 / 2.0 / self.cam.zoom;
+    }
+
+    /// A right click goes to the HUD, else orders the selected units.
+    fn right_click(&mut self) {
+        if !self.hud_click(Button::Right) {
+            let (wx, wy) = self.cam.to_world(self.mouse.0, self.mouse.1);
+            let tile = TILE as f32 * self.world_px();
+            let target = self.pick(self.mouse.0, self.mouse.1);
+            self.order_at(target, ((wx / tile).floor() as i32, (wy / tile).floor() as i32));
         }
     }
 
@@ -231,19 +289,16 @@ impl App {
         }
     }
 
-    fn command(&mut self, sx: f32, sy: f32) {
+    /// The selected units' default order: attack `target` if it is an enemy, otherwise move to `tile`.
+    fn order_at(&mut self, target: Option<u32>, (x, y): (i32, i32)) {
         if self.scene.selected.is_empty() {
             return;
         }
         let ids = self.scene.selected.clone();
-        let enemy = self.pick(sx, sy).filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
+        let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
         let order = match enemy {
             Some(target) => CommandOrder::Attack { target },
-            None => {
-                let (wx, wy) = self.cam.to_world(sx, sy);
-                let tile = TILE as f32 * self.world_px();
-                CommandOrder::Move { x: (wx / tile).floor() as i32, y: (wy / tile).floor() as i32 }
-            }
+            None => CommandOrder::Move { x, y },
         };
         self.game.order(self.player, &ids, order);
         self.ui_sound("ui_order");
@@ -294,7 +349,9 @@ impl App {
         let tile = TILE as f32 * self.world_px();
         let (mw, mh) = (self.game.map.width as f32 * tile, self.game.map.height as f32 * tile);
         let (vw, vh) = (w / self.cam.zoom, h / self.cam.zoom);
-        self.cam.x = (self.cam.x + dx * speed).clamp(0.0_f32.min(mw - vw), (mw - vw).max(0.0));
+        // The rail covers the right of the screen, so the map may scroll out from under it.
+        let right = mw - vw + RAIL_W * self.hud.scale / self.cam.zoom;
+        self.cam.x = (self.cam.x + dx * speed).clamp(0.0_f32.min(right), right.max(0.0));
         self.cam.y = (self.cam.y + dy * speed).clamp(0.0_f32.min(mh - vh), (mh - vh).max(0.0));
     }
 
@@ -330,6 +387,8 @@ impl App {
         };
         let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
+        let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
+        self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse);
         if let Some(from) = self.drag {
             let (x0, y0) = (from.0.min(self.mouse.0), from.1.min(self.mouse.1));
             let r = Rect::new(x0, y0, (from.0 - self.mouse.0).abs(), (from.1 - self.mouse.1).abs());
@@ -362,13 +421,15 @@ impl App {
         let mut batch = SpriteBatch::new(&gpu, config.format);
         let ramps = art::player_ramps(&self.pack, self.game.state.players.len());
         let art = Art::from_files(&gpu, &mut batch, &self.art_files, &ramps).expect("the pack's art loads");
+        let font = Font::new(&gpu, &mut batch);
+        self.hud.scale = window.scale_factor().round().max(1.0) as f32;
         // Start over the player's own base.
         if let Some(e) = self.game.state.entities.iter().find(|e| e.owner == self.player) {
             let t = e.tile();
             self.cam.x = (t.x as f32 * art.tile - 320.0).max(0.0);
             self.cam.y = (t.y as f32 * art.tile - 240.0).max(0.0);
         }
-        self.run = Some(Running { window, surface, config, gpu, batch, art });
+        self.run = Some(Running { window, surface, config, gpu, batch, art, font });
         self.last = Instant::now();
     }
 }
@@ -443,7 +504,12 @@ impl ApplicationHandler for App {
                 if event.state == ElementState::Pressed {
                     self.keys.insert(code);
                     match code {
-                        KeyCode::Escape => event_loop.exit(),
+                        KeyCode::Escape => {
+                            if !self.hud.cancel() && self.scene.selected.is_empty() {
+                                event_loop.exit();
+                            }
+                            self.scene.selected.clear();
+                        }
                         KeyCode::Space if !event.repeat => self.paused = !self.paused,
                         KeyCode::KeyM if !event.repeat => {
                             if let Ok(mut m) = self.mixer.lock() {
@@ -459,16 +525,32 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
                 self.mouse = (x as f32, y as f32);
+                if self.minimap_drag {
+                    let l = self.hud.layout(&self.game, self.view().screen);
+                    // Follow the mouse along the minimap's edge when it leaves it.
+                    let (mx, my) = (
+                        self.mouse.0.clamp(l.minimap.x, l.minimap.x + l.minimap.w - 0.01),
+                        self.mouse.1.clamp(l.minimap.y, l.minimap.y + l.minimap.h - 0.01),
+                    );
+                    if let Some((tx, ty)) = self.hud.minimap_point(&l, &self.game, mx, my) {
+                        self.centre_on(tx, ty);
+                    }
+                }
             }
             WindowEvent::CursorLeft { .. } => self.mouse = (-1.0e4, -1.0e4),
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
-                (MouseButton::Left, ElementState::Pressed) => self.drag = Some(self.mouse),
+                (MouseButton::Left, ElementState::Pressed) => {
+                    if !self.hud_click(Button::Left) {
+                        self.drag = Some(self.mouse);
+                    }
+                }
                 (MouseButton::Left, ElementState::Released) => {
+                    self.minimap_drag = false;
                     if let Some(from) = self.drag.take() {
                         self.select(from, self.mouse);
                     }
                 }
-                (MouseButton::Right, ElementState::Pressed) => self.command(self.mouse.0, self.mouse.1),
+                (MouseButton::Right, ElementState::Pressed) => self.right_click(),
                 _ => {}
             },
             WindowEvent::MouseWheel { delta, .. } => {
@@ -476,6 +558,10 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y > 0.0,
                     MouseScrollDelta::PixelDelta(p) => p.y > 0.0,
                 };
+                if self.hud.over(&self.game, self.view().screen, self.mouse.0, self.mouse.1) {
+                    self.hud.wheel(up);
+                    return;
+                }
                 // Whole-number zooms keep every art pixel the same size; zoom about the mouse.
                 let zoom = if up { (self.cam.zoom + 1.0).min(4.0) } else { (self.cam.zoom - 1.0).max(1.0) };
                 let (wx, wy) = self.cam.to_world(self.mouse.0, self.mouse.1);
@@ -550,7 +636,7 @@ fn main() {
 }
 
 /// The map played when none is given, from the repository root.
-const MAP: &str = "maps/test-01.txt";
+const MAP: &str = "maps/skirmish-01.txt";
 
 fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
     let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");

@@ -153,15 +153,18 @@ for (const run of runs) {
   await page.keyboard.press("Space");
   const paused = await titled(/paused/);
   await page.keyboard.press("Space");
-  // Browsers allow sound only after a click or key press. Then drag round the tank and send it off: the select and
-  // order sounds play.
-  await page.mouse.move(380, 380);
+  // Browsers allow sound only after a click or key press. Then drag round the start units below the base (on the
+  // default map at this size) and send them off: the select and order sounds play.
+  await page.mouse.move(380, 500);
   await page.mouse.down();
-  await page.mouse.move(450, 450, { steps: 5 });
+  await page.mouse.move(600, 590, { steps: 5 });
   await page.mouse.up();
-  await page.mouse.click(700, 250, { button: "right" });
+  await page.mouse.click(200, 60, { button: "right" });
   await page.waitForTimeout(1000);
   const loudest = await page.evaluate(() => window.loudest);
+  // The rail's first item (top left of the grid) starts building: credits go down as it is paid for.
+  await page.mouse.click(810, 150);
+  const building = await titled(/credits (?!1200 )\d+/);
   const checks = {
     [`drew with ${run.backend}`]: drawing.includes(`(${run.backend},`),
     "the game ticks": ticking,
@@ -169,6 +172,7 @@ for (const run of runs) {
     "Space pauses": paused,
     "no sound before any input": silentAtFirst,
     "sound plays after the first input": loudest > 0.01,
+    "the rail builds": building,
     "no errors": errors.length === 0,
   };
   const bad = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);

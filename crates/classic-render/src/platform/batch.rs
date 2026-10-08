@@ -16,6 +16,10 @@ impl Rect {
     pub fn new(x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect { x, y, w, h }
     }
+
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
+    }
 }
 
 /// A texture the batch owns. `TexId(0)` is a single white pixel, for solid colours.
