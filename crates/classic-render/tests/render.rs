@@ -29,7 +29,7 @@ fn rig() -> Rig {
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
     let ramps = art::player_ramps(&pack, game.state.players.len());
     let mut batch = SpriteBatch::new(&gpu, OFFSCREEN_FORMAT);
-    let art = Art::load(&gpu, &mut batch, &art::art_dir(&pack), &ramps).unwrap();
+    let art = Art::load(&gpu, &mut batch, &art::art_dirs(&pack), &ramps).unwrap();
     Rig { gpu, batch, art, game, ramps }
 }
 
@@ -209,7 +209,7 @@ fn recolouring_swaps_exact_remap_pixels_only() {
 fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
     // The browser build fetches the files `art.json` names, then loads them from memory.
     let mut r = rig();
-    let dir = art::art_dir(&setting::load("generic").unwrap());
+    let dir = art::art_dirs(&setting::load("generic").unwrap()).remove(0);
     let index = std::fs::read_to_string(dir.join(art::ART_INDEX)).unwrap();
     let mut files = std::collections::BTreeMap::new();
     // Files it names that don't exist (studio sprites most ids don't have yet) come back as nothing, then the
@@ -228,7 +228,7 @@ fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
     let mut scene = Scene::default();
     let cam = Camera { x: 0.0, y: 0.0, zoom: 1.0 };
     let from_folder = frame(&mut r, &mut scene, &cam);
-    r.art = Art::from_files(&r.gpu, &mut r.batch, &memory, &r.ramps).unwrap();
+    r.art = Art::from_files(&r.gpu, &mut r.batch, &[memory], &r.ramps).unwrap();
     assert_eq!(frame(&mut r, &mut scene, &cam), from_folder);
 }
 
@@ -268,4 +268,29 @@ fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
     // The first death frame is not quite the standing pose, so allow a little either way.
     assert!(falling.abs_diff(full) * 4 < full, "the two lost soldiers are still on screen as they start to fall");
     assert!(one * 2 < full && one * 4 > full, "one soldier of three is left");
+}
+
+#[test]
+fn a_packs_own_art_draws_over_the_generic_packs() {
+    // A pack that draws only the infantry and its own tile set: everything else comes from the generic pack.
+    let mut r = rig();
+    let generic = setting::root().join("settings/generic");
+    let read = |f: &str| std::fs::read(generic.join(f)).unwrap();
+    let mut files = std::collections::BTreeMap::new();
+    for f in ["art/sprites/infantry/infantry.json", "art/sprites/infantry-0.png", "art/sprites/infantry-0.mask.png"] {
+        files.insert(f.to_string(), read(f));
+    }
+    let tileset = String::from_utf8(read(classic_render::tiles::TILESET)).unwrap();
+    let open = r.art.layer_colour("open").unwrap();
+    let was = format!("#{:02x}{:02x}{:02x}", open[0], open[1], open[2]);
+    assert!(tileset.contains(&was), "the generic set's open colour is {was}");
+    files.insert(classic_render::tiles::TILESET.into(), tileset.replacen(&was, "#102030", 1).into_bytes());
+    files.insert(classic_render::tiles::TILESET_PAGE.into(), read(classic_render::tiles::TILESET_PAGE));
+    let pack = Files::Memory { label: "pack".into(), files };
+    let art = Art::from_files(&r.gpu, &mut r.batch, &[pack, Files::Dir(generic)], &r.ramps).unwrap();
+    assert_eq!(art.studio.sprites["infantry"].atlas, "0/infantry-0", "the pack's own sprite, on its own page");
+    assert_eq!(art.studio.sprites["guerrilla"].atlas, "1/infantry-0", "the generic sprite, on the generic page");
+    assert!(art.studio.get("infantry", 0).is_some() && art.studio.get("guerrilla", 0).is_some());
+    assert_eq!(art.layer_colour("open"), Some([0x10, 0x20, 0x30]), "the pack's tile set");
+    assert!(art.sprite("power_plant", 0).is_some(), "the generic pack's art index and strips");
 }

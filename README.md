@@ -237,9 +237,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,
-  the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and an
-  entity is drawn from the Blender studio's packed sprites (`art/sprites/`) where the pack has them, else from the
-  generic pack's placeholders. Icons in the rail are still the placeholders, and wrecks and the build-up frames
+  the card's unit chips can't be clicked, and the feed has no advisor voice. A pack's own art (the Blender
+  studio's packed sprites in `art/sprites/`, its terrain tiles in `art/tiles/`) is drawn over the generic pack's,
+  file by file, so a pack draws only what it changes. Icons in the rail are still the placeholders, and wrecks and the build-up frames
   aren't drawn. Squads are drawn as three soldiers, but squads are still planned in the rules data, so none appear
   in a game yet; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.

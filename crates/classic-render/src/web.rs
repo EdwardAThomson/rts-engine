@@ -25,8 +25,8 @@ const PACK_DATA: [&str; 3] = ["setting.json", "names.json", "tuning.json"];
 
 pub struct Loaded {
     pub pack: Pack,
-    /// The art's files, by path from the folder that holds `art/art.json`.
-    pub art: Files,
+    /// The art's files, the pack's own first and then the generic pack's, each by path from its pack folder.
+    pub art: Vec<Files>,
     /// The sounds' files: the generic pack's, then the pack's own if it has any.
     pub sounds: Vec<Files>,
     /// The pack's own files the player reads as it goes: its wording of the message feed and its theme, if it has
@@ -61,19 +61,30 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
     let pack = Pack::from_files(Path::new(&dir), &present, &read, &RulesTable::builtin())
         .map_err(|errors| format!("setting pack {dir} has problems:\n  {}", errors.join("\n  ")))?;
 
-    // The pack's own art, else the generic pack's placeholders, as on the desktop.
+    // The pack's own art over the generic pack's placeholders, as on the desktop: the first art index found names
+    // the files, and each layer fetches those an earlier layer doesn't have, with the atlas pages its own sprites use.
     let index = [ART_INDEX.to_string()];
-    let mut art_dir = dir.clone();
-    let mut files = web::fetch_files(&format!("{ROOT}{art_dir}/"), &index).await?;
-    if files.is_empty() {
-        art_dir = GENERIC.into();
-        files = web::fetch_files(&format!("{ROOT}{art_dir}/"), &index).await?;
+    let mut art = Vec::new();
+    let mut names: Option<Vec<String>> = None;
+    let mut have = std::collections::BTreeSet::new();
+    for d in if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![dir.clone(), GENERIC.to_string()] } {
+        let base = format!("{ROOT}{d}/");
+        let mut files = web::fetch_files(&base, &index).await?;
+        if names.is_none()
+            && let Some(text) = files.get(ART_INDEX)
+        {
+            names = Some(art::art_files(&String::from_utf8_lossy(text))?);
+        }
+        let wanted: Vec<String> = names.iter().flatten().filter(|n| !have.contains(*n)).cloned().collect();
+        files.extend(web::fetch_files(&base, &wanted).await?);
+        let pages = art::atlas_files(&files);
+        files.extend(web::fetch_files(&base, &pages).await?);
+        have.extend(files.keys().cloned());
+        art.push(Files::Memory { label: d, files });
     }
-    let text = files.get(ART_INDEX).ok_or_else(|| format!("{art_dir}/{ART_INDEX}: not found"))?;
-    let names = art::art_files(&String::from_utf8_lossy(text))?;
-    files.extend(web::fetch_files(&format!("{ROOT}{art_dir}/"), &names).await?);
-    let pages = art::atlas_files(&files);
-    files.extend(web::fetch_files(&format!("{ROOT}{art_dir}/"), &pages).await?);
+    if names.is_none() {
+        return Err(format!("{dir}/{ART_INDEX}: not found, nor in {GENERIC}"));
+    }
 
     // The generic pack's sounds, then the pack's own over them, as on the desktop.
     let mut sounds = Vec::new();
@@ -116,5 +127,5 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
         }
         skin.push(Files::Memory { label: d, files });
     }
-    Ok(Loaded { pack, art: Files::Memory { label: art_dir, files }, sounds, pack_files, maps, skin })
+    Ok(Loaded { pack, art, sounds, pack_files, maps, skin })
 }

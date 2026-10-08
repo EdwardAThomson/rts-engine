@@ -41,6 +41,11 @@ repository except under `settings-private/`, and their render times stay out of 
 private lands here. Pack a private pack's renders on their own (atlas pages are per output folder), together with
 any generic renders it reuses.
 
+The player draws a pack's own art over the generic pack's, file by file: the art index, each picture it names, each
+studio sprite with the atlas page beside it, and the terrain tile set come from the pack where it has them and from
+`settings/generic/` where it doesn't. A pack can bring only its sprites and tiles and leave the index to the generic
+pack.
+
 ## Files
 
 - `studio/studio.json`: the camera (orthographic, facing north, 60°), the scale (64 atlas pixels per 10.67 m
@@ -177,8 +182,8 @@ Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its
              "tiles": [null, [[x, y], ... one per place], ... 16 corner cases]}]}
 ```
 
-`colour` is the layer's minimap colour. A pack with no `art/tiles/tileset.json` keeps the art index's plain
-`terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
+`colour` is the layer's minimap colour. A pack with no `art/tiles/tileset.json` of its own draws the generic
+pack's, and with none in either the art index's plain `terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
 and sizes, written into that pack's `art/tiles/`.
 
 ## 3D models
