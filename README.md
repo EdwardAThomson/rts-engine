@@ -100,7 +100,7 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
-| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in, turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (tanks, quads, scout bikes, infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in, turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
 | `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, effects (`effects.rs`: muzzle flashes, shells and rockets, smoke trails, explosions, smoke and fire on damaged things), selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
@@ -151,7 +151,7 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
   heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
   nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
-  closes to within range and stands; a moving unit ignores enemies; a rocket turret needs power and a gun turret
+  closes to within range and stands; an attack on a building walled in two tiles out goes to the nearest reachable tile it can fire from; a moving unit ignores enemies; a rocket turret needs power and a gun turret
   doesn't; a destroyed building frees its tiles; guards prefer armed units to buildings; a pack can tune weapons
   and the damage table; combat replays from the command log.
 - Collision: a tile holds one ground unit, checked on every tick of every collision test; a unit waits behind
@@ -203,7 +203,7 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 - Computer opponent (`crates/classic-ai/tests/skirmish.rs`, on `skirmish-01`): within 7,000 ticks it has a power
-  plant, two refineries, both factories, a radar, turrets, harvesters and tanks, with no command refused; it
+  plant, two refineries, a barracks, both factories, a radar, turrets, harvesters and combat units, with no command refused; against a player who does nothing it builds infantry squads, rocket squads, scout bikes, quads and tanks, with fewer tanks than the rest together; a kind weighted 0 is never built, and with no weights every armed unit the rules have is; it
   destroys every building of a player who does nothing, from either start, and never before its first-wave time;
   two AIs play the same 20,000-tick game twice to the same hash and command log; a game between two AIs replays
   from its command log with the AI switched off to the same hash; thinking never changes the game's hash; a power
@@ -222,14 +222,15 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 - Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
+- Combat has infantry squads, rocket squads, scout bikes and quads (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them), but no single infantry, crushing, aircraft or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
   in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
-  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` still end in a
-  stalemate in about one game in eleven (18 of 200 by 90 minutes), when the resource runs out with neither side
-  able to build an army; on the smaller `mirror-01` about one in five. In the desktop player it was checked only
+  value, not the hashed game state, so a save would not carry it yet. With the mixed army (20 seeds, 90 game
+  minutes) two AIs on `skirmish-01` stall in 1 game of 20 and games last about 40 minutes; on `mirror-01` 5 of 20
+  stall and the right-hand start wins 12 to 3, because a two-tile-wide factory (barracks, light factory) has its
+  exit on the right of its two middle tiles. Making those factories three tiles wide evens it (6 to 5). In the desktop player it was checked only
   in a short smoke run, not played by a person.
 - Maps that are symmetric top to bottom (turned half round) are not fair: factory doors and refinery docks all face
   south, so the bottom player's harvesters and units leave towards the map edge and travel further. A batch run on
@@ -241,8 +242,7 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and an
   entity is drawn from the Blender studio's packed sprites (`art/sprites/`) where the pack has them, else from the
   generic pack's placeholders. Icons in the rail are still the placeholders, and wrecks and the build-up frames
-  aren't drawn. Squads are drawn as three soldiers, but squads are still planned in the rules data, so none appear
-  in a game yet; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
+  aren't drawn. Squads are drawn as three soldiers; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
   volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and

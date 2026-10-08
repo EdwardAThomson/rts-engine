@@ -7,7 +7,8 @@
 //! beat by `attack_margin` percent, judged by a Lanchester-style count of health times damage per tick from the
 //! rules' own numbers. Of those it takes the nearest. With none it keeps waiting and growing, unless `wave_cap`
 //! units are waiting, when it goes for the least defended objective anyway. A wave first gathers at a staging point
-//! out of reach of the objective's defenders, so it arrives together instead of in a column, then attacks: armed
+//! out of reach of the objective's defenders, waiting there for its slowest unit, so it arrives together instead of
+//! in a column, then attacks, fast units waiting for slow ones until something can shoot at them: armed
 //! enemies near it first, then the objective, then the nearest enemy building. A wave that falls below
 //! `retreat_percent` of its starting size comes home, and the next one waits for `wave_growth` more units.
 //!
@@ -35,6 +36,9 @@ pub struct Wave {
     pub objective: u32,
     /// Where it gathers before attacking, until it has gathered.
     pub staging: Option<Tile>,
+    /// The tick it stops waiting at the staging point for stragglers: `stage_ticks` after its slowest unit should
+    /// have got there.
+    pub gather_until: u32,
     /// Sent without the odds (at `wave_cap`, or a last stand): it doesn't turn back when the odds turn against it.
     pub committed: bool,
 }
@@ -109,6 +113,14 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
             if let Some((obj, wins)) = objective(game, view, &ready, rally, s.attack_margin, any) {
                 let staging = stage(game, view, rally, obj);
                 let units: Vec<u32> = ready.iter().map(|e| e.id).collect();
+                // The slowest unit's trip, with half again for the way round.
+                let trip = ready
+                    .iter()
+                    .map(|e| {
+                        isqrt(d2(at(game, e), centre(staging)) as u64) as i64 * 3 / 2 / rules.kind(e.kind).speed.max(1)
+                    })
+                    .max()
+                    .unwrap_or(0);
                 ai.waves_sent += 1;
                 out.push(units.clone(), CommandOrder::Move { x: staging.x, y: staging.y });
                 ai.wave = Some(Wave {
@@ -117,6 +129,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
                     launched_at: game.state.tick,
                     objective: obj.id,
                     staging: Some(staging),
+                    gather_until: game.state.tick + trip as u32 + s.stage_ticks,
                     committed: !wins,
                 });
                 return;
@@ -125,7 +138,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     }
 
     // Steer the wave.
-    let (stage_ticks, rally_distance) = (s.stage_ticks, s.rally_distance);
+    let rally_distance = s.rally_distance;
     let Some(w) = &mut ai.wave else { return };
     let units: Vec<&Entity> = w.units.iter().filter_map(|&id| game.state.entity(id)).collect();
     let n = units.len() as i64;
@@ -137,11 +150,12 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
         .filter(|e| armed(game, e) && from_middle(e) <= 64 * TILE * TILE)
         .min_by_key(|e| (from_middle(e), e.id));
 
-    // Gathering: everyone to the staging point, until most are there, it has waited long enough, or it is in a fight.
+    // Gathering: everyone to the staging point, until most are there, it has waited long enough for the slowest, or
+    // it is in a fight.
     if let Some(spot) = w.staging {
         let away = |e: &Entity| tiles2(at(game, e), centre(spot)) > 16;
         let there = units.iter().filter(|e| !away(e)).count();
-        let waited = game.state.tick >= w.launched_at + stage_ticks;
+        let waited = game.state.tick >= w.gather_until;
         if near_armed.is_none() && there * 5 < units.len() * 4 && !waited {
             let idle: Vec<u32> = units.iter().filter(|e| e.order == Order::Idle && away(e)).map(|e| e.id).collect();
             if !idle.is_empty() {
@@ -179,9 +193,28 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     else {
         return;
     };
+    // March in step: a unit more than three tiles nearer the target than the wave's rearmost waits where it is for
+    // the slower ones, unless an armed enemy can already reach it or it them. Without this, fast units arrive alone
+    // and die before slow infantry catch up.
+    let to_target = |e: &Entity| isqrt(d2(at(game, e), at(game, target)) as u64) as i64;
+    let rear = units.iter().map(|e| to_target(e)).max().unwrap_or(0);
+    let reach = |e: &Entity| rules.kind(e.kind).weapon.map_or(0, |w| rules.weapon(w).range);
+    let engaged = |e: &Entity| {
+        enemies().any(|x| {
+            let r = reach(x).max(reach(e)) + TILE;
+            armed(game, x) && d2(at(game, x), at(game, e)) <= r * r
+        })
+    };
+    let ahead: BTreeSet<u32> =
+        units.iter().filter(|e| to_target(e) + 3 * TILE < rear && !engaged(e)).map(|e| e.id).collect();
+    for e in units.iter().filter(|e| ahead.contains(&e.id) && e.order == Order::Attack) {
+        let t = e.tile();
+        out.push(vec![e.id], CommandOrder::Move { x: t.x, y: t.y });
+    }
     let target_armed = armed(game, target);
     let send: Vec<u32> = units
         .iter()
+        .filter(|e| !ahead.contains(&e.id))
         .filter(|e| match e.order {
             Order::Attack => {
                 e.target != Some(target.id)

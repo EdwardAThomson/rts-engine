@@ -1,6 +1,58 @@
 {
   "about": "Every weapon the engine knows, by generic id. Weapons are data: a `warhead` (its row in the combat module's damage table) and tunable numbers. Distances are sub-tile units (256 per tile), times are ticks. `speed` 0 means an instant hit; otherwise a projectile flies that far each tick and lands within `scatter` of where it was aimed. `splash` is the blast radius: full damage within half of it, half damage within all of it. Our own numbers, from our own simulation runs.",
   "weapons": {
+    "mg_light": {
+      "warhead": "bullet",
+      "numbers": {
+        "range": { "default": 768, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 9, "min": 1, "max": 600 },
+        "damage": { "default": 7, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "mg_twin": {
+      "warhead": "bullet",
+      "numbers": {
+        "range": { "default": 768, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 9, "min": 1, "max": 600 },
+        "damage": { "default": 10, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "rifle_squad": {
+      "warhead": "bullet",
+      "numbers": {
+        "range": { "default": 640, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 15, "min": 1, "max": 600 },
+        "damage": { "default": 20, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "rocket_light_squad": {
+      "warhead": "rocket",
+      "numbers": {
+        "range": { "default": 896, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 30, "min": 1, "max": 600 },
+        "damage": { "default": 70, "min": 0, "max": 10000 },
+        "speed": { "default": 80, "min": 0, "max": 1024 },
+        "scatter": { "default": 48, "min": 0, "max": 512 },
+        "splash": { "default": 64, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
     "cannon": {
       "warhead": "shell",
       "numbers": {

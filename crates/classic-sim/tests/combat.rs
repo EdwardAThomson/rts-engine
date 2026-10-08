@@ -171,6 +171,32 @@ fn an_attack_order_closes_in_until_in_range_then_stands() {
 }
 
 #[test]
+fn an_attack_on_a_walled_in_building_fires_from_the_nearest_reachable_tile_in_range() {
+    // A gun turret inside a ring of walls two tiles out: every tile beside it is open but can't be reached. A rocket
+    // squad (range 3.5 tiles) can still hit it from outside the walls, so it goes there rather than standing still.
+    let mut g = game(None);
+    let turret = g.spawn(kind(&g, "gun_turret"), 1, 12, 6);
+    let wall = kind(&g, "wall");
+    for y in 4..=8 {
+        for x in 10..=14 {
+            if x == 10 || x == 14 || y == 4 || y == 8 {
+                g.spawn(wall, 1, x, y);
+            }
+        }
+    }
+    let i = g.state.entities.iter().position(|e| e.id == turret).unwrap();
+    g.state.entities[i].health = 100_000;
+    g.state.entities[i].reload = 10_000;
+    let squad = g.spawn(kind(&g, "rocket_squad"), 0, 3, 6);
+    g.order(0, &[squad], CommandOrder::Attack { target: turret });
+    g.step(900);
+    let at = g.state.entity(squad).unwrap().tile();
+    println!("the squad stood at {at:?} and fired {} times", fired_by(&g, squad));
+    assert!(fired_by(&g, squad) > 0);
+    assert!(!(10..=14).contains(&at.x) || !(4..=8).contains(&at.y), "outside the walls");
+}
+
+#[test]
 fn a_unit_moving_under_orders_ignores_enemies() {
     let mut g = game(None);
     let a = tank(&mut g, 0, 3, 10);

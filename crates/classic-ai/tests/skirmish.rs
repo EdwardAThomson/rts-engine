@@ -37,24 +37,68 @@ fn rejected(game: &Game) -> usize {
         .count()
 }
 
+/// How many of each unit kind a player's factories still standing have built, by generic id, in id order.
+fn units_built(game: &Game, player: u32) -> Vec<(String, usize)> {
+    let mut built = std::collections::BTreeMap::new();
+    for e in &game.events {
+        if let Event::UnitBuilt { kind, factory, .. } = e
+            && game.state.entity(*factory).is_some_and(|f| f.owner == player)
+        {
+            *built.entry(game.rules.kind(*kind).id.clone()).or_insert(0) += 1;
+        }
+    }
+    built.into_iter().collect()
+}
+
 #[test]
 fn builds_a_base_harvests_and_produces_an_army() {
     let mut g = game(1);
     let mut ai = [Ai::new(1, Settings::normal())];
     play(&mut g, &mut ai, 7000);
-    let ids = ["power_plant", "refinery", "light_factory", "heavy_factory", "radar", "gun_turret", "harvester"];
+    let ids =
+        ["power_plant", "refinery", "barracks", "light_factory", "heavy_factory", "radar", "gun_turret", "harvester"];
     let have: Vec<(&str, usize)> = ids.iter().map(|&id| (id, count(&g, 1, id))).collect();
-    let tanks_built = g
-        .events
-        .iter()
-        .filter(|e| matches!(e, Event::UnitBuilt { kind, .. } if Some(*kind) == g.kind("battle_tank")))
-        .count();
+    let built = units_built(&g, 1);
+    let fighters: usize = built.iter().filter(|(id, _)| id != "harvester").map(|(_, n)| n).sum();
     let delivered = g.state.players[1].delivered;
-    println!("after 7000 ticks: {have:?}, tanks built {tanks_built}, delivered {delivered}, rejected {}", rejected(&g));
+    println!("after 7000 ticks: {have:?}, units built {built:?}, delivered {delivered}, rejected {}", rejected(&g));
     assert!(have.iter().all(|&(_, n)| n >= 1), "it has one of each");
     assert!(count(&g, 1, "refinery") >= 2 && count(&g, 1, "harvester") >= 3, "a second refinery and its harvesters");
-    assert!(tanks_built >= 2 && delivered > 3000);
+    assert!(fighters >= 2 && delivered > 3000);
     assert_eq!(rejected(&g), 0, "the AI only asks for what the rules allow");
+}
+
+#[test]
+fn its_army_mixes_infantry_light_vehicles_and_tanks() {
+    let mut g = game(2);
+    let mut ai = [Ai::new(0, Settings::normal())];
+    play(&mut g, &mut ai, 12_000);
+    let built = units_built(&g, 0);
+    println!("units built in 12000 ticks against an idle player: {built:?}");
+    let n = |id: &str| built.iter().find(|(b, _)| b == id).map_or(0, |&(_, n)| n);
+    for id in ["infantry_squad", "rocket_squad", "scout_bike", "quad", "battle_tank"] {
+        assert!(n(id) >= 1, "it built a {id}");
+    }
+    // Weighted 4 to 3 to 3 to 2 to 1 (Settings::normal), so the dearest kind isn't the only one bought.
+    assert!(n("battle_tank") < n("infantry_squad") + n("rocket_squad") + n("scout_bike") + n("quad"));
+}
+
+/// With a weight of 0 a kind is never built, and with the mix left empty every armed unit weighs 1.
+#[test]
+fn the_mix_comes_from_settings_and_the_rules() {
+    let only_tanks: Vec<(String, usize)> =
+        ["infantry_squad", "rocket_squad", "scout_bike", "quad"].iter().map(|id| (id.to_string(), 0)).collect();
+    let mut g = game(2);
+    let mut ai = [Ai::new(0, Settings { unit_mix: only_tanks, ..Settings::normal() })];
+    play(&mut g, &mut ai, 9000);
+    let tanks_only = units_built(&g, 0);
+    let mut g = game(2);
+    let mut ai = [Ai::new(0, Settings { unit_mix: Vec::new(), ..Settings::normal() })];
+    play(&mut g, &mut ai, 9000);
+    let even = units_built(&g, 0);
+    println!("weights 0 for all but tanks: {tanks_only:?}; no list, every armed unit 1: {even:?}");
+    assert!(tanks_only.iter().all(|(id, _)| id == "battle_tank" || id == "harvester"));
+    assert!(even.iter().filter(|(id, _)| id != "harvester").count() >= 4);
 }
 
 #[test]

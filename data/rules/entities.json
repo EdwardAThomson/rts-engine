@@ -262,12 +262,74 @@
     },
 
     "infantry": { "kind": "unit", "status": "planned" },
-    "infantry_squad": { "kind": "unit", "status": "planned" },
+    "infantry_squad": {
+      "kind": "unit",
+      "status": "built",
+      "weapon": "rifle_squad",
+      "armour": "infantry",
+      "built_at": "barracks",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 7, "min": 1, "max": 128 },
+        "max_health": { "default": 140, "min": 1, "max": 100000 },
+        "cost": { "default": 200, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 32, "min": 1, "max": 128 },
+        "sight": { "default": 3, "min": 1, "max": 16 }
+      }
+    },
     "rocket_infantry": { "kind": "unit", "status": "planned" },
-    "rocket_squad": { "kind": "unit", "status": "planned" },
-    "scout_bike": { "kind": "unit", "status": "planned" },
+    "rocket_squad": {
+      "kind": "unit",
+      "status": "built",
+      "weapon": "rocket_light_squad",
+      "armour": "infantry",
+      "built_at": "barracks",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 7, "min": 1, "max": 128 },
+        "max_health": { "default": 160, "min": 1, "max": 100000 },
+        "cost": { "default": 300, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 375, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 32, "min": 1, "max": 128 },
+        "sight": { "default": 4, "min": 1, "max": 16 }
+      }
+    },
+    "scout_bike": {
+      "kind": "unit",
+      "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "mg_light",
+      "armour": "light",
+      "built_at": "light_factory",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 32, "min": 1, "max": 128 },
+        "max_health": { "default": 100, "min": 1, "max": 100000 },
+        "cost": { "default": 250, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 },
+        "sight": { "default": 4, "min": 1, "max": 16 }
+      }
+    },
     "raider_bike": { "kind": "unit", "status": "planned" },
-    "quad": { "kind": "unit", "status": "planned" },
+    "quad": {
+      "kind": "unit",
+      "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "mg_twin",
+      "armour": "light",
+      "built_at": "light_factory",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 26, "min": 1, "max": 128 },
+        "max_health": { "default": 150, "min": 1, "max": 100000 },
+        "cost": { "default": 400, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 375, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 10, "min": 1, "max": 128 },
+        "sight": { "default": 4, "min": 1, "max": 16 }
+      }
+    },
     "harvester": {
       "kind": "unit",
       "status": "built",
