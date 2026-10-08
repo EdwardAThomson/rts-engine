@@ -15,6 +15,10 @@ pub struct Strip {
     pub w: f32,
     pub h: f32,
     pub frames: u32,
+    /// The average colour of the first frame's opaque pixels, for the minimap.
+    pub colour: [u8; 3],
+    /// The average of the tenth of those pixels least like the average: what stands out, such as grains on sand.
+    pub accent: [u8; 3],
 }
 
 impl Strip {
@@ -31,6 +35,10 @@ pub struct Art {
     /// Each sprite once per faction ramp, in owner order.
     sprites: BTreeMap<String, Vec<Strip>>,
     effects: BTreeMap<String, Strip>,
+    /// Each build icon once per faction ramp, in owner order.
+    icons: BTreeMap<String, Vec<Strip>>,
+    /// The middle shade of each owner's ramp, in owner order.
+    owners: Vec<[u8; 3]>,
 }
 
 impl Art {
@@ -54,15 +62,24 @@ impl Art {
             if let Some(ramp) = ramp {
                 recolour(&mut rgba, &remap, ramp);
             }
-            let frame = entry.get("frame").and_then(Value::as_array).ok_or("art.json: entry without a frame")?;
+            // No frame size means one picture, the whole file.
+            let frame = entry.get("frame").and_then(Value::as_array).unwrap_or(&[]);
             let fw = frame.first().and_then(Value::as_int).unwrap_or(w as i64) as f32;
             let fh = frame.get(1).and_then(Value::as_int).unwrap_or(h as i64) as f32;
             let frames =
                 entry.get("frames").or_else(|| entry.get("variants")).and_then(Value::as_int).unwrap_or(1) as u32;
-            Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames })
+            let (colour, accent) = average(&rgba, w as usize, fw as usize, fh as usize);
+            Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames, colour, accent })
         };
         let entries = |key: &str| doc.get(key).and_then(Value::as_object).unwrap_or(&[]);
-        let mut art = Art { tile, terrain: BTreeMap::new(), sprites: BTreeMap::new(), effects: BTreeMap::new() };
+        let mut art = Art {
+            tile,
+            terrain: BTreeMap::new(),
+            sprites: BTreeMap::new(),
+            effects: BTreeMap::new(),
+            icons: BTreeMap::new(),
+            owners: owner_ramps.iter().map(|r| r[r.len() / 2]).collect(),
+        };
         for (id, entry) in entries("terrain") {
             art.terrain.insert(id.clone(), load(batch, entry, None)?);
         }
@@ -73,7 +90,18 @@ impl Art {
             let strips = owner_ramps.iter().map(|r| load(batch, entry, Some(r))).collect::<Result<_, _>>()?;
             art.sprites.insert(id.clone(), strips);
         }
+        // Icons are plain file names, one picture each.
+        for (id, file) in entries("icons") {
+            let entry = Value::Object(vec![("file".into(), file.clone())]);
+            let strips = owner_ramps.iter().map(|r| load(batch, &entry, Some(r))).collect::<Result<_, _>>()?;
+            art.icons.insert(id.clone(), strips);
+        }
         Ok(art)
+    }
+
+    /// A colour that stands for `owner`: the middle shade of its ramp.
+    pub fn owner_colour(&self, owner: u32) -> [u8; 3] {
+        self.owners.get(owner as usize % self.owners.len().max(1)).copied().unwrap_or([200, 200, 200])
     }
 
     pub fn terrain(&self, id: &str) -> Option<&Strip> {
@@ -83,6 +111,12 @@ impl Art {
     /// The sprite for generic id `id` in `owner`'s colours.
     pub fn sprite(&self, id: &str, owner: u32) -> Option<&Strip> {
         let strips = self.sprites.get(id)?;
+        strips.get(owner as usize % strips.len().max(1))
+    }
+
+    /// The build icon for generic id `id` in `owner`'s colours.
+    pub fn icon(&self, id: &str, owner: u32) -> Option<&Strip> {
+        let strips = self.icons.get(id)?;
         strips.get(owner as usize % strips.len().max(1))
     }
 
@@ -111,6 +145,27 @@ fn hex(v: &Value) -> Result<[u8; 3], String> {
     let s = v.as_str().and_then(|s| s.strip_prefix('#')).filter(|s| s.len() == 6).ok_or("art.json: bad colour")?;
     let byte = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| format!("art.json: {s}: {e}"));
     Ok([byte(0)?, byte(2)?, byte(4)?])
+}
+
+/// The average colour of the opaque pixels in the top-left `fw` by `fh` frame of an image `w` pixels wide, and the
+/// average of the tenth of them least like that average.
+fn average(rgba: &[u8], w: usize, fw: usize, fh: usize) -> ([u8; 3], [u8; 3]) {
+    let mut px: Vec<[u8; 3]> = Vec::new();
+    for y in 0..fh.min(rgba.len() / (w * 4).max(1)) {
+        for x in 0..fw.min(w) {
+            let p = &rgba[(y * w + x) * 4..][..4];
+            if p[3] >= 128 {
+                px.push([p[0], p[1], p[2]]);
+            }
+        }
+    }
+    let mean = |px: &[[u8; 3]]| {
+        let n = px.len().max(1) as u64;
+        [0, 1, 2].map(|c| (px.iter().map(|p| u64::from(p[c])).sum::<u64>() / n) as u8)
+    };
+    let all = mean(&px);
+    px.sort_by_key(|p| std::cmp::Reverse((0..3).map(|c| p[c].abs_diff(all[c]) as u32).sum::<u32>()));
+    (all, mean(&px[..px.len().div_ceil(10)]))
 }
 
 /// Swap every pixel in a remap colour, by exact value, for the same shade of the ramp.
