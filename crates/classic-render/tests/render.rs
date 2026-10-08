@@ -219,10 +219,13 @@ fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
             files.insert(f, bytes);
         }
     }
+    // A page with no team paint (effects) has no mask, so that one comes back as nothing too.
     for f in art::atlas_files(&files) {
-        let bytes = std::fs::read(dir.join(&f)).unwrap();
-        files.insert(f, bytes);
+        if let Ok(bytes) = std::fs::read(dir.join(&f)) {
+            files.insert(f, bytes);
+        }
     }
+    assert!(files.contains_key("art/sprites/effects-0.png"), "and detailed effects");
     assert!(files.keys().any(|f| f.ends_with(".mask.png")), "the generic pack has studio sprites");
     let memory = Files::Memory { label: "fetched".into(), files };
     let mut scene = Scene::default();
@@ -268,4 +271,40 @@ fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
     // The first death frame is not quite the standing pose, so allow a little either way.
     assert!(falling.abs_diff(full) * 4 < full, "the two lost soldiers are still on screen as they start to fall");
     assert!(one * 2 < full && one * 4 > full, "one soldier of three is left");
+}
+
+#[test]
+fn turret_barrel_tips_are_measured_from_their_frames() {
+    let r = rig();
+    for id in ["battle_tank", "gun_turret"] {
+        let (s, _) = r.art.studio.get(id, 0).expect("the generic pack has studio sprites");
+        let tip = |facing| s.muzzle(&[], facing, facing, 0).unwrap();
+        let (n, e, so, w) = (tip(0), tip(64), tip(128), tip(192));
+        println!("{id}: north {n:?}, east {e:?}, south {so:?}, west {w:?}");
+        assert!(e.x > n.x + 8.0 && w.x < n.x - 8.0, "{id}: the tip swings out east and west");
+        assert!(so.y > n.y + 8.0, "{id}: the tip is lower on screen facing south");
+    }
+}
+
+#[test]
+fn effects_play_from_shots_damage_and_kills() {
+    let mut r = rig();
+    let mut scene = Scene::default();
+    let tank = r.game.kind("battle_tank").unwrap();
+    r.game.spawn(tank, 0, 12, 8);
+    r.game.spawn(tank, 1, 15, 8);
+    let cam = Camera { x: 12.0 * 32.0 - 100.0, y: 8.0 * 32.0 - 100.0, zoom: 1.0 };
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..450 {
+        scene.before_step(&r.game);
+        r.game.step(1);
+        scene.after_step(&r.game);
+        frame(&mut r, &mut scene, &cam);
+        seen.extend(scene.fx.counts().into_keys());
+    }
+    println!("effects seen: {seen:?}");
+    for id in ["muzzle_flash_gun", "explosion_small", "smoke_puff", "explosion_medium"] {
+        assert!(seen.contains(id), "{id} played");
+    }
+    assert!(r.art.fx("explosion_medium").is_some(), "the generic pack has detailed effects");
 }

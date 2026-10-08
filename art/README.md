@@ -184,6 +184,31 @@ Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its
 `terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
 and sizes, written into that pack's `art/tiles/`.
 
+## Effects
+
+`effects/effects.py` draws the effects the player plays (explosions, smoke and dust puffs, sparks, muzzle flashes,
+shells, rockets and a looping fire) from code with numpy, not Blender: hot lit puffs that cool to smoke, flame
+tongues, sparks on ballistic arcs. They are lit by the studio's key light, rendered at 3× and packed at the
+studio's scale (64 atlas pixels per tile), so they sit with the detailed sprites. This follows the asset plan's
+"code first" for effects; Blender's smoke simulation stays untested.
+
+```bash
+python3 art/effects/effects.py                                   # writes settings/generic/art/sprites/effects*
+python3 art/effects/effects.py --only explosion_medium --sheet /tmp/fx.png   # a contact sheet, writes no page
+```
+
+It writes one page, `effects-0.png` (no team paint, so no mask), and `effects/<id>.json` in the format above with one
+part, `effect`, whose `idle` anim holds the frames facing by facing (muzzle flashes, shells and rockets face 16
+ways). Each frame's pivot is where the effect happens: an explosion's ground point, a barrel tip, the foot of a
+fire. A run takes under a minute and writes the same bytes each time on the same numpy. The renderer's list of
+effect ids is `EFFECTS` in `crates/classic-render/src/art.rs`; a pack without one of them falls back to the
+placeholder strip its `art.json` lists, or draws nothing.
+
+Muzzle points: infantry carry theirs in the sprite JSON. For vehicles and defence turrets the renderer measures the
+barrel tip from the turret's (or a turretless vehicle's hull's) frames when it loads them: the opaque pixels
+furthest out from the middle in the way each frame faces. A model can still add a `muzzle` empty to have the studio
+record an exact one.
+
 ## 3D models
 
 `export_gltf.py` builds each model's intact frame and writes `<id>.glb`, for the 3D engine or any real-time
