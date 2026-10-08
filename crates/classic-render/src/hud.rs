@@ -18,6 +18,7 @@ use crate::art::Art;
 use crate::feed::{Feed, Tone};
 use crate::platform::{Files, Font, Rect, SpriteBatch};
 use crate::scene::Camera;
+use crate::theme::Theme;
 
 /// The rail's width, at UI scale 1.
 pub const RAIL_W: f32 = 200.0;
@@ -37,14 +38,6 @@ const CARD_H: f32 = 64.0;
 const CHIPS: usize = 10;
 /// The most a shift-click queues at once.
 const SHIFT_COUNT: usize = 5;
-
-const PANEL: [u8; 4] = [22, 22, 26, 240];
-const CELL: [u8; 4] = [44, 44, 52, 255];
-const TEXT: [u8; 4] = [235, 235, 225, 255];
-const DIM: [u8; 4] = [150, 150, 150, 255];
-const GOOD: [u8; 4] = [70, 200, 90, 255];
-const WARN: [u8; 4] = [235, 175, 40, 255];
-const BAD: [u8; 4] = [220, 60, 50, 255];
 
 /// Where the world is on screen: the camera, the screen size in pixels and the art's pixels per tile.
 #[derive(Clone, Copy, Debug)]
@@ -152,13 +145,15 @@ pub struct Hud {
     pub scroll: usize,
     /// What the local player has been told lately.
     pub feed: Feed,
+    /// The pack's colours.
+    pub theme: Theme,
     names: BTreeMap<String, String>,
     unused: BTreeSet<String>,
 }
 
 impl Hud {
     /// A HUD for `player`, naming things as `pack` does and leaving out the entities it doesn't use. `pack_files` is
-    /// where the pack's own files are, for its wording of the message feed.
+    /// where the pack's own files are, for its wording of the message feed and its theme's colours.
     pub fn new(pack: &classic_data::Pack, pack_files: &Files, game: &Game, player: u32) -> Hud {
         let ids = game.rules.kinds.iter().map(|k| k.id.clone());
         let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
@@ -169,6 +164,7 @@ impl Hud {
             placing: None,
             scroll: 0,
             feed: Feed::new(pack_files, names.clone(), player),
+            theme: Theme::load(pack_files).0,
             names,
             unused: ids.filter(|id| !pack.uses(id)).collect(),
         }
@@ -453,17 +449,21 @@ impl Hud {
             if let Some(strip) = art.sprite(&k.id, self.player) {
                 batch.sprite(strip.tex, strip.frame(0), dst, [255, 255, 255, 150]);
             }
-            let tint = if g.ok { [GOOD[0], GOOD[1], GOOD[2], 90] } else { [BAD[0], BAD[1], BAD[2], 110] };
+            let tint = if g.ok {
+                [self.theme.good[0], self.theme.good[1], self.theme.good[2], 90]
+            } else {
+                [self.theme.bad[0], self.theme.bad[1], self.theme.bad[2], 110]
+            };
             batch.fill(dst, tint);
-            batch.outline(dst, 1.0, if g.ok { GOOD } else { BAD });
+            batch.outline(dst, 1.0, if g.ok { self.theme.good } else { self.theme.bad });
         }
 
         let l = self.layout(game, view.screen);
-        batch.fill(l.rail, PANEL);
-        batch.fill(Rect::new(l.rail.x, 0.0, 1.0, l.rail.h), [70, 70, 80, 255]);
+        batch.fill(l.rail, self.theme.panel);
+        batch.fill(Rect::new(l.rail.x, 0.0, 1.0, l.rail.h), self.theme.edge);
         for t in &l.tabs {
             let open = l.open == Some(t.factory);
-            batch.fill(t.rect, if open { [70, 70, 84, 255] } else { CELL });
+            batch.fill(t.rect, if open { self.theme.hover } else { self.theme.button });
             let id = &game.rules.kind(t.factory).id;
             let inner = Rect::new(t.rect.x + 3.0 * s, t.rect.y + 2.0 * s, t.rect.w - 6.0 * s, t.rect.h - 8.0 * s);
             self.picture(batch, art, id, inner, [255; 4]);
@@ -479,23 +479,23 @@ impl Hud {
                 }
             }
             match best {
-                Some((EntryState::Ready, _)) if pulse => batch.outline(t.rect, 2.0 * s, WARN),
+                Some((EntryState::Ready, _)) if pulse => batch.outline(t.rect, 2.0 * s, self.theme.warn),
                 Some((_, share)) => {
                     let bar = Rect::new(t.rect.x + 3.0 * s, t.rect.y + t.rect.h - 5.0 * s, t.rect.w - 6.0 * s, 3.0 * s);
                     batch.fill(bar, [0, 0, 0, 255]);
-                    batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), GOOD);
+                    batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), self.theme.good);
                 }
                 None => {}
             }
             if open {
-                batch.outline(t.rect, 1.0, TEXT);
+                batch.outline(t.rect, 1.0, self.theme.text);
             }
         }
 
         let mut hovered = None;
         for icon in &l.icons {
             let r = icon.rect;
-            batch.fill(r, CELL);
+            batch.fill(r, self.theme.button);
             let st = icon.status;
             let id = &game.rules.kind(icon.item).id;
             let tint = if st.needs.is_some() { [90, 90, 90, 255] } else { [255; 4] };
@@ -505,25 +505,25 @@ impl Hud {
                     batch.fill(Rect::new(r.x, r.y, r.w, r.h * (1.0 - share)), [0, 0, 0, 140]);
                     let bar = Rect::new(r.x, r.y + r.h - 4.0 * s, r.w, 4.0 * s);
                     batch.fill(bar, [0, 0, 0, 255]);
-                    let colour = if state == EntryState::Paused { WARN } else { GOOD };
+                    let colour = if state == EntryState::Paused { self.theme.warn } else { self.theme.good };
                     batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), colour);
                     if state == EntryState::Paused {
                         let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-                        batch.fill(Rect::new(cx - 7.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), TEXT);
-                        batch.fill(Rect::new(cx + 2.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), TEXT);
+                        batch.fill(Rect::new(cx - 7.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), self.theme.text);
+                        batch.fill(Rect::new(cx + 2.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), self.theme.text);
                     }
                 }
                 Some((EntryState::Ready, _)) => {
-                    batch.outline(r, 2.0 * s, if pulse { [255, 230, 120, 255] } else { WARN });
+                    batch.outline(r, 2.0 * s, if pulse { [255, 230, 120, 255] } else { self.theme.warn });
                     let w = Font::width("READY", small);
-                    font.draw(batch, "READY", r.x + (r.w - w) / 2.0, r.y + r.h - 12.0 * s, small, TEXT);
+                    font.draw(batch, "READY", r.x + (r.w - w) / 2.0, r.y + r.h - 12.0 * s, small, self.theme.text);
                 }
-                Some((EntryState::Blocked, _)) => batch.outline(r, 2.0 * s, WARN),
+                Some((EntryState::Blocked, _)) => batch.outline(r, 2.0 * s, self.theme.warn),
                 _ => {}
             }
             if st.needs.is_some() {
                 let w = Font::width("LOCKED", small);
-                font.draw(batch, "LOCKED", r.x + (r.w - w) / 2.0, r.y + r.h / 2.0 - 3.0 * s, small, DIM);
+                font.draw(batch, "LOCKED", r.x + (r.w - w) / 2.0, r.y + r.h / 2.0 - 3.0 * s, small, self.theme.dim);
             }
             if st.queued > 1 {
                 let n = st.queued.to_string();
@@ -531,20 +531,20 @@ impl Hud {
                 let badge =
                     Rect::new(r.x + r.w - w - 6.0 * s, r.y + 2.0 * s, w + 4.0 * s, Font::height(text) + 4.0 * s);
                 batch.fill(badge, [0, 0, 0, 200]);
-                font.draw(batch, &n, badge.x + 2.0 * s, badge.y + 2.0 * s, text, TEXT);
+                font.draw(batch, &n, badge.x + 2.0 * s, badge.y + 2.0 * s, text, self.theme.text);
             }
             if r.contains(mouse.0, mouse.1) {
-                batch.outline(r, 1.0, TEXT);
+                batch.outline(r, 1.0, self.theme.text);
                 hovered = Some(icon);
             }
         }
 
         // The open factory's queue along the bottom of the rail.
         if let Some(&(_, first)) = l.queue.first() {
-            font.draw(batch, "QUEUE", first.x, first.y - 9.0 * s, small, DIM);
+            font.draw(batch, "QUEUE", first.x, first.y - 9.0 * s, small, self.theme.dim);
         }
         for (i, &(item, r)) in l.queue.iter().enumerate() {
-            batch.fill(r, CELL);
+            batch.fill(r, self.theme.button);
             self.picture(
                 batch,
                 art,
@@ -553,7 +553,7 @@ impl Hud {
                 if i == 0 { [255; 4] } else { [170, 170, 170, 255] },
             );
             if r.contains(mouse.0, mouse.1) {
-                batch.outline(r, 1.0, BAD);
+                batch.outline(r, 1.0, self.theme.bad);
             }
         }
 
@@ -580,8 +580,8 @@ impl Hud {
         let text = (2.0 * s).round().max(1.0);
         let chosen: Vec<&Entity> = selected.iter().filter_map(|&id| game.state.entity(id)).collect();
         let Some(&first) = chosen.first() else { return };
-        batch.fill(r, CELL);
-        batch.outline(r, 1.0, [70, 70, 80, 255]);
+        batch.fill(r, self.theme.button);
+        batch.outline(r, 1.0, self.theme.edge);
         let pad = 4.0 * s;
         if chosen.len() == 1 {
             let e = first;
@@ -595,21 +595,21 @@ impl Hud {
             // The name in large letters when it fits, else small.
             let size = if Font::width(&name, text) <= w { text } else { small };
             let mut y = r.y + pad;
-            font.draw(batch, &name, x, y, size, if e.owner == self.player { TEXT } else { BAD });
+            font.draw(batch, &name, x, y, size, if e.owner == self.player { self.theme.text } else { self.theme.bad });
             y += Font::height(text) + 3.0 * s;
             let share = (e.health.max(0) as f32 / k.max_health.max(1) as f32).min(1.0);
             let bar = Rect::new(x, y, w, 5.0 * s);
             batch.fill(bar, [0, 0, 0, 255]);
             batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), health_colour(share));
             y += bar.h + 3.0 * s;
-            font.draw(batch, &format!("{}/{}", e.health.max(0), k.max_health), x, y, small, DIM);
+            font.draw(batch, &format!("{}/{}", e.health.max(0), k.max_health), x, y, small, self.theme.dim);
             y += Font::height(small) + 4.0 * s;
             let (doing, colour) = self.doing(game, e);
             font.draw(batch, &doing, x, y, small, colour);
             return;
         }
         let head = format!("{} SELECTED", chosen.len());
-        font.draw(batch, &head, r.x + pad, r.y + pad, small, TEXT);
+        font.draw(batch, &head, r.x + pad, r.y + pad, small, self.theme.text);
         let (cols, gap) = (5, 2.0 * s);
         let top = r.y + pad + Font::height(small) + 3.0 * s;
         let cw = (r.w - 2.0 * pad - gap * (cols - 1) as f32) / cols as f32;
@@ -628,7 +628,7 @@ impl Hud {
         if chosen.len() > CHIPS {
             let more = format!("+{}", chosen.len() - CHIPS);
             let w = Font::width(&more, small);
-            font.draw(batch, &more, r.x + r.w - pad - w, r.y + pad, small, DIM);
+            font.draw(batch, &more, r.x + r.w - pad - w, r.y + pad, small, self.theme.dim);
         }
     }
 
@@ -636,7 +636,7 @@ impl Hud {
     fn doing(&self, game: &Game, e: &Entity) -> (String, [u8; 4]) {
         let k = game.rules.kind(e.kind);
         if e.owner != self.player {
-            return ("ENEMY".to_string(), BAD);
+            return ("ENEMY".to_string(), self.theme.bad);
         }
         if k.building {
             if let Some(q) = e.queue.first() {
@@ -644,16 +644,16 @@ impl Hud {
                 let share = (q.progress * 100 / total).min(100);
                 let name = self.name(game, q.item);
                 return match q.state {
-                    EntryState::Ready => (format!("{name} READY"), GOOD),
-                    EntryState::Paused => (format!("{name} ON HOLD"), WARN),
-                    EntryState::Blocked => (format!("{name}: EXIT BLOCKED"), WARN),
-                    EntryState::Building | EntryState::Waiting => (format!("{name} {share}%"), GOOD),
+                    EntryState::Ready => (format!("{name} READY"), self.theme.good),
+                    EntryState::Paused => (format!("{name} ON HOLD"), self.theme.warn),
+                    EntryState::Blocked => (format!("{name}: EXIT BLOCKED"), self.theme.warn),
+                    EntryState::Building | EntryState::Waiting => (format!("{name} {share}%"), self.theme.good),
                 };
             }
             return match k.power {
-                p if p > 0 => (format!("POWER +{p}"), GOOD),
-                p if p < 0 => (format!("POWER {p}"), DIM),
-                _ => (String::new(), DIM),
+                p if p > 0 => (format!("POWER +{p}"), self.theme.good),
+                p if p < 0 => (format!("POWER {p}"), self.theme.dim),
+                _ => (String::new(), self.theme.dim),
             };
         }
         let cargo = |c: i64| {
@@ -661,16 +661,18 @@ impl Hud {
             format!("{}%", (c * 100 / cap).min(100))
         };
         match (e.order, e.task) {
-            (Order::Harvest, Some(Task::Stuck)) => ("HARVESTER STUCK".to_string(), WARN),
-            (Order::Harvest, Some(Task::Mining)) => (format!("MINING {}", cargo(e.cargo.unwrap_or(0))), GOOD),
-            (Order::Harvest, Some(Task::ToRefinery | Task::Unloading)) => {
-                (format!("RETURNING {}", cargo(e.cargo.unwrap_or(0))), GOOD)
+            (Order::Harvest, Some(Task::Stuck)) => ("HARVESTER STUCK".to_string(), self.theme.warn),
+            (Order::Harvest, Some(Task::Mining)) => {
+                (format!("MINING {}", cargo(e.cargo.unwrap_or(0))), self.theme.good)
             }
-            (Order::Harvest, _) => ("HARVESTING".to_string(), GOOD),
-            (Order::Move, _) => ("MOVING".to_string(), TEXT),
-            (Order::Attack, _) => ("ATTACKING".to_string(), WARN),
-            (Order::Idle, _) if e.target.is_some() => ("FIRING".to_string(), WARN),
-            (Order::Idle, _) => ("GUARDING".to_string(), DIM),
+            (Order::Harvest, Some(Task::ToRefinery | Task::Unloading)) => {
+                (format!("RETURNING {}", cargo(e.cargo.unwrap_or(0))), self.theme.good)
+            }
+            (Order::Harvest, _) => ("HARVESTING".to_string(), self.theme.good),
+            (Order::Move, _) => ("MOVING".to_string(), self.theme.text),
+            (Order::Attack, _) => ("ATTACKING".to_string(), self.theme.warn),
+            (Order::Idle, _) if e.target.is_some() => ("FIRING".to_string(), self.theme.warn),
+            (Order::Idle, _) => ("GUARDING".to_string(), self.theme.dim),
         }
     }
 
@@ -683,10 +685,10 @@ impl Hud {
             let left = crate::feed::LIFE.saturating_sub(now.saturating_sub(l.tick));
             let fade = (left as f32 / TICKS_PER_SECOND as f32).min(1.0);
             let mut colour = match l.tone {
-                Tone::Info => TEXT,
-                Tone::Good => GOOD,
-                Tone::Warn => WARN,
-                Tone::Bad => BAD,
+                Tone::Info => self.theme.text,
+                Tone::Good => self.theme.good,
+                Tone::Warn => self.theme.warn,
+                Tone::Bad => self.theme.bad,
             };
             colour[3] = (255.0 * fade) as u8;
             let (x, y) = (8.0 * s, 8.0 * s + i as f32 * line);
@@ -756,16 +758,16 @@ impl Hud {
         };
         let (ax, ay) = to_mini(wx0, wy0);
         let (bx, by) = to_mini(wx1, wy1);
-        batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), TEXT);
+        batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), self.theme.text);
     }
 
     /// Credits, power in numbers and the game clock, and a power gauge: supply filled, demand marked.
     fn draw_readout(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, r: Rect, text: f32) {
         let s = self.scale;
-        batch.fill(Rect::new(r.x, r.y + r.h - 1.0, r.w, 1.0), [70, 70, 80, 255]);
+        batch.fill(Rect::new(r.x, r.y + r.h - 1.0, r.w, 1.0), self.theme.edge);
         let credits = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.credits);
         let (x, mut y) = (r.x + 6.0 * s, r.y + 6.0 * s);
-        font.draw(batch, &format!("CREDITS {credits}"), x, y, text, TEXT);
+        font.draw(batch, &format!("CREDITS {credits}"), x, y, text, self.theme.text);
         y += Font::height(text) + 4.0 * s;
         let power = game.power(self.player);
         let short = power.is_short();
@@ -775,18 +777,18 @@ impl Hud {
             x,
             y,
             text,
-            if short { BAD } else { TEXT },
+            if short { self.theme.bad } else { self.theme.text },
         );
         y += Font::height(text) + 4.0 * s;
         let secs = game.state.tick / TICKS_PER_SECOND;
         let clock = format!("{}:{:02}", secs / 60, secs % 60);
         let clock_w = Font::width(&clock, text);
-        font.draw(batch, &clock, r.x + r.w - 6.0 * s - clock_w, y, text, DIM);
+        font.draw(batch, &clock, r.x + r.w - 6.0 * s - clock_w, y, text, self.theme.dim);
         let bar = Rect::new(x, y + (Font::height(text) - 8.0 * s) / 2.0, r.w - 18.0 * s - clock_w, 8.0 * s);
         batch.fill(bar, [0, 0, 0, 255]);
         let top = power.supply.max(power.demand).max(1) as f32;
         let fill = Rect::new(bar.x, bar.y, bar.w * power.supply as f32 / top, bar.h);
-        batch.fill(fill, if short { BAD } else { GOOD });
+        batch.fill(fill, if short { self.theme.bad } else { self.theme.good });
         if short {
             // Stripes as well as colour, so a shortfall shows without telling red from green.
             let mut sx = bar.x;
@@ -796,7 +798,10 @@ impl Hud {
             }
         }
         let mx = bar.x + bar.w * power.demand as f32 / top;
-        batch.fill(Rect::new((mx - s).min(bar.x + bar.w - 2.0 * s), bar.y - 2.0 * s, 2.0 * s, bar.h + 4.0 * s), TEXT);
+        batch.fill(
+            Rect::new((mx - s).min(bar.x + bar.w - 2.0 * s), bar.y - 2.0 * s, 2.0 * s, bar.h + 4.0 * s),
+            self.theme.text,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -813,13 +818,16 @@ impl Hud {
         let s = self.scale;
         let k = game.rules.kind(icon.item);
         let st = icon.status;
-        let mut lines = vec![(self.name(game, icon.item), TEXT), (format!("COST {}", k.cost), DIM)];
+        let mut lines =
+            vec![(self.name(game, icon.item), self.theme.text), (format!("COST {}", k.cost), self.theme.dim)];
         let state = match (st.needs, st.head) {
-            (Some(need), _) => Some((format!("NEEDS {}", self.name(game, need)), WARN)),
-            (_, Some((EntryState::Building, share))) => Some((format!("BUILDING {}%", (share * 100.0) as i32), GOOD)),
-            (_, Some((EntryState::Paused, _))) => Some(("PAUSED: NOT ENOUGH CREDITS".to_string(), WARN)),
-            (_, Some((EntryState::Ready, _))) => Some(("READY: CLICK TO PLACE".to_string(), GOOD)),
-            (_, Some((EntryState::Blocked, _))) => Some(("EXIT BLOCKED".to_string(), WARN)),
+            (Some(need), _) => Some((format!("NEEDS {}", self.name(game, need)), self.theme.warn)),
+            (_, Some((EntryState::Building, share))) => {
+                Some((format!("BUILDING {}%", (share * 100.0) as i32), self.theme.good))
+            }
+            (_, Some((EntryState::Paused, _))) => Some(("PAUSED: NOT ENOUGH CREDITS".to_string(), self.theme.warn)),
+            (_, Some((EntryState::Ready, _))) => Some(("READY: CLICK TO PLACE".to_string(), self.theme.good)),
+            (_, Some((EntryState::Blocked, _))) => Some(("EXIT BLOCKED".to_string(), self.theme.warn)),
             _ => None,
         };
         lines.extend(state);

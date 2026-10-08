@@ -14,6 +14,7 @@ pub mod menu;
 pub mod scene;
 pub mod sound;
 pub mod studio;
+pub mod theme;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 

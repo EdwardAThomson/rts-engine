@@ -1,15 +1,18 @@
-/* The generic pack's UI theme: plain dark panels. Colours only; the frames are theme/panel.png (nine-slice,
-   8 px corners) and theme/button.png (normal, hover, pressed; 48 x 16 each). */
+/* The generic pack's UI theme: plain dark panels. The player reads the colours (custom properties, #rrggbb or
+   #rrggbbaa); the frames are theme/panel.png (nine-slice, 8 px corners) and theme/button.png (normal, hover,
+   pressed; 48 x 16 each). */
 :root {
-  --panel-bg: #1e242c;
-  --panel-edge: #48525e;
+  --panel-bg: #16161af0;
+  --panel-edge: #464650;
   --panel-light: #7a8490;
   --panel-dark: #0c0e10;
-  --text: #d8dde2;
-  --text-dim: #8a929a;
+  --button: #2c2c34;
+  --button-hover: #464654;
+  --text: #ebebe1;
+  --text-dim: #969696;
   --accent: #d9b43a;
-  --good: #5cbf60;
-  --warn: #d9b43a;
-  --bad: #d04030;
+  --good: #46c85a;
+  --warn: #ebaf28;
+  --bad: #dc3c32;
   --font: "DejaVu Sans Mono", "Consolas", monospace;
 }
