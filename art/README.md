@@ -114,6 +114,10 @@ flash under the sprite). Parts with `"overlay": true` are drawn over the buildin
 pivot. Buildings have a `building` part with `idle`, `build` (4) and `damaged` anims. Icons live in `icons/<id>.json` with `1x` and `2x`
 frames.
 
+The packer also draws a dark outline round the body frames of the categories `studio.json`'s `outline` lists
+(vehicles, aircraft, infantry and buildings; never shadows, icons or building overlays), two atlas pixels wide,
+which is one pixel at game size. It keeps sprites readable on ground of any colour, sand included.
+
 ## Checks
 
 `check.py RENDER_DIR...`: every listed frame exists; no other material lands in the team hue band (a

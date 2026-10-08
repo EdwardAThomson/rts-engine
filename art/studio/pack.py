@@ -7,7 +7,9 @@ Each RENDER_DIR is one entity rendered by render.py. For every frame this:
      scaled so the entity's typical paint sits mid-ramp, so the renderer can paint any player's ramp over it;
   2. downscales by the render scale, in premultiplied alpha, and stretches vertically by 1/sin(60), so the
      ground comes out square and footprints match tiles;
-  3. trims to content plus a margin and records the pivot: the ground point under a unit's origin, or a
+  3. draws a dark outline round the body frames of the categories studio.json's `outline` names (not shadows,
+     icons or building overlays), so units stand out on any ground;
+  4. trims to content plus a margin and records the pivot: the ground point under a unit's origin, or a
      building footprint's north-west corner.
 Then it shelf-packs every frame of a category into one page, writing <atlas>.png, <atlas>.mask.png and
 <category>/<id>.json with frames as [x, y, w, h, pivotX, pivotY]. A model with a `muzzle` gets, beside each anim's
@@ -122,6 +124,34 @@ def shrink(rgba, mask, origin, style, rs):
     return small, m, (origin[0] * fx, origin[1] * fy)
 
 
+def outline(rgba, mask, pivot):
+    """Draw studio.json's `outline` round the opaque part of a frame, `px` atlas pixels wide, under any soft edge.
+    The frame grows by that much on every side so nothing is cut off; the pivot moves with it."""
+    spec = STUDIO["outline"]
+    n = spec["px"]
+    rgba = np.pad(rgba, ((n, n), (n, n), (0, 0)))
+    mask = None if mask is None else np.pad(mask, n)
+    solid = rgba[..., 3] >= 0.5
+    grow = solid.copy()
+    for _ in range(n):
+        g = grow.copy()
+        g[1:] |= grow[:-1]
+        g[:-1] |= grow[1:]
+        g[:, 1:] |= grow[:, :-1]
+        g[:, :-1] |= grow[:, 1:]
+        grow = g
+    edge = grow & ~solid
+    col = np.array(spec["rgba"], np.float32) / 255
+    a = rgba[..., 3][edge][:, None]
+    oa = col[3] * (1 - a)
+    out_a = a + oa
+    rgba[..., :3][edge] = (rgba[..., :3][edge] * a + col[:3] * oa) / np.maximum(out_a, 1e-4)
+    rgba[..., 3][edge] = out_a[:, 0]
+    if mask is not None:
+        mask[edge] = mask[edge] * (a / np.maximum(out_a, 1e-4))[:, 0]
+    return rgba, mask, (pivot[0] + n, pivot[1] + n)
+
+
 def trim(rgba, mask, pivot):
     margin = STUDIO["margin_px"]
     ys, xs = np.nonzero(rgba[..., 3] > 1 / 255)
@@ -163,6 +193,8 @@ def frames_of(rdir, meta):
     out = []
     for (job, f, n), (rgba, mask) in zip(keys, masked):
         small, m, piv = shrink(rgba, mask, meta["origin_px"], style, scale)
+        if meta["category"] in STUDIO["outline"]["categories"] and not job.get("overlay"):
+            small, m, piv = outline(small, m, piv)
         out.append((job["part"], job["anim"], "image", *trim(small, m, piv)))
         sp = image_path(rdir, job, f, n).with_suffix(".shadow.png")
         if job.get("shadow"):
