@@ -36,9 +36,6 @@ python3 art/studio/render.py vehicles/super_a --pack <pack> --out /tmp/renders/s
 python3 art/studio/pack.py /tmp/renders/super_a ... --out settings-private/packs/<pack>/art/sprites
 ```
 
-A pack model that builds on the generic one (`import _generic`) needs the pack's own `tools/render_pack.py`, which
-puts that helper on the path; `render.py --pack` stops with `No module named '_generic'` for it.
-
 Renders record where their model came from. `pack.py` refuses to write a pack's renders anywhere in this
 repository except under `settings-private/`, and their render times stay out of `art/timings.jsonl`, so nothing
 private lands here. Pack a private pack's renders on their own (atlas pages are per output folder), together with
