@@ -103,6 +103,15 @@ def shadow_ground(scene, size=60):
     return plane
 
 
+def ground_cut(size=80):
+    """The ground as a holdout: it hides every part below z = 0 from the camera, so a creature can rise out of the
+    ground and sink back into it. Render jobs pass it as a holdout, never as visible or as a shadow caster."""
+    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0))
+    plane = bpy.context.active_object
+    plane.name = "ground_cut"
+    return plane
+
+
 # ---------- materials ----------
 
 def _mat(name):
@@ -372,7 +381,8 @@ def bounds(root):
     return bounds_of(meshes(root))
 
 
-def bounds_of(objs):
+def bounds_of(objs, above=None):
+    """As bounds(); with `above`, only vertices at or over that height count (a creature's parts underground)."""
     deps = bpy.context.evaluated_depsgraph_get()
     radius, top, lo = 0.0, 0.0, [math.inf, math.inf]
     hi = [-math.inf, -math.inf]
@@ -381,6 +391,8 @@ def bounds_of(objs):
         mesh = ev.to_mesh()
         for v in mesh.vertices:
             p = ev.matrix_world @ v.co
+            if above is not None and p.z < above:
+                continue
             radius = max(radius, math.hypot(p.x, p.y))
             top = max(top, p.z)
             lo = [min(lo[0], p.x), min(lo[1], p.y)]
