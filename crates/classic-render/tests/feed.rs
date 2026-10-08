@@ -284,3 +284,21 @@ fn units_reply_to_their_own_player_without_saying_the_same_thing_twice() {
     let line = hud.feed.lines.iter().find(|l| l.id == "low_power").unwrap();
     assert!(["Power dropping", "The lights are going"].contains(&line.text.as_str()), "{line:?}");
 }
+
+#[test]
+fn the_private_packs_lines_read_without_mistakes_when_they_are_cloned_in() {
+    let packs = setting::private_packs();
+    if packs.is_empty() {
+        eprintln!("settings-private/ is not cloned here; skipping");
+        return;
+    }
+    for dir in &packs {
+        let pack = setting::load(dir.to_str().unwrap()).unwrap();
+        let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
+        for f in &factions {
+            let lines = Lines::load(&Files::Dir(dir.clone()), &factions, Some(f));
+            assert!(lines.warnings.is_empty(), "{}: {:?}", dir.display(), lines.warnings);
+            println!("{} {f}: {} advisor lines", dir.display(), lines.advisor.len());
+        }
+    }
+}
