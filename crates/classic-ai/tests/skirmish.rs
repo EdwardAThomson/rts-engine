@@ -174,8 +174,8 @@ fn odds(turrets: bool) -> (Game, [Ai; 1]) {
     }
     if turrets {
         let gun = g.kind("gun_turret").unwrap();
-        for x in 48..56 {
-            g.spawn(gun, 1, x, 27);
+        for x in 53..61 {
+            g.spawn(gun, 1, x, 29);
         }
     }
     g.state.entities.retain(|e| !(e.owner == 1 && g.rules.kind(e.kind).harvester.is_some()));

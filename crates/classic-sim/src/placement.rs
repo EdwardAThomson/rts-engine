@@ -4,7 +4,7 @@
 //! diagonals included), and a refinery's dock must not be a cliff. The numbers come from the `placement` module in
 //! the rules data.
 
-use crate::map::{MapData, Terrain};
+use crate::map::{MapData, Terrain, Tile};
 use crate::units::{Kind, Rules};
 use crate::world::GameState;
 
@@ -30,7 +30,7 @@ pub enum PlaceError {
     },
     /// Too far from any building the player owns (or the player owns none).
     TooFar,
-    /// The building's exit (a refinery's dock) would be off the map or on a cliff.
+    /// A refinery would have no tile round it for a harvester to unload on: all off the map, cliff or buildings.
     BadExit,
     /// The player has no finished building of this kind waiting at a yard.
     NotReady,
@@ -120,8 +120,10 @@ pub fn check(
         return Err(PlaceError::TooFar);
     }
     if k.refinery {
-        let dock = crate::world::dock_at(k, x, y);
-        if !map.passable(dock.x, dock.y) {
+        // Harvesters unload on any side, so one tile round it that a harvester could stand on is enough.
+        let building_on =
+            |t: Tile| state.entities.iter().any(|e| rules.kind(e.kind).building && footprint(e).contains(t.x, t.y));
+        if !crate::world::around(x, y, k.width, k.height).any(|t| map.passable(t.x, t.y) && !building_on(t)) {
             return Err(PlaceError::BadExit);
         }
     }

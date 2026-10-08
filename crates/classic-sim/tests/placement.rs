@@ -3,7 +3,8 @@
 //!
 //! On the base map below, player 0 starts with its yard at (1, 1), its power plant at (3, 1) and its 3x2 refinery at
 //! (1, 3), its harvester on the dock under the refinery's middle column at (2, 5) and its tank at (4, 5). Player 1's
-//! base starts at (12, 1). The cliff at (6, 5) and (7, 5) sits where a refinery placed at (5, 3) would need its dock.
+//! base starts at (12, 1). The cliff at (6, 5) and (7, 5) sits under where a refinery placed at (5, 3) would draw its
+//! dock pad, but harvesters unload on any side, so that refinery may go there.
 
 use classic_data::{RulesTable, json};
 use classic_sim::world::Event;
@@ -92,6 +93,49 @@ fn each_player_starts_with_a_yard_a_power_plant_and_a_refinery_with_its_harveste
     assert!(g.pathfinder.passable(4, 3), "beside the refinery is open");
 }
 
+/// Two starts, the second the first turned half round: 20x12, yards at (2, 1) and (16, 9).
+const TURNED: &str = "\
+####################
+##1#################
+####################
+####################
+####################
+####################
+####################
+####################
+####################
+################2###
+####################
+####################
+";
+
+#[test]
+fn a_start_in_the_bottom_half_is_laid_out_as_the_half_turn_of_one_in_the_top_half() {
+    let g = game_on(TURNED, None);
+    let (w, h) = (g.map.width, g.map.height);
+    // Each entity as its kind and footprint (left, top, right, bottom); player 0's turned half round.
+    let side = |p: u32| {
+        let mut v: Vec<_> = g
+            .state
+            .entities
+            .iter()
+            .filter(|e| e.owner == p)
+            .map(|e| {
+                let (t, k) = (e.tile(), g.rules.kind(e.kind));
+                let r = (t.x, t.y, t.x + k.width - 1, t.y + k.height - 1);
+                let r = if p == 0 { (w - 1 - r.2, h - 1 - r.3, w - 1 - r.0, h - 1 - r.1) } else { r };
+                (k.id.clone(), r)
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    println!("player 1: {:?}", side(1));
+    assert_eq!(side(0), side(1));
+    let refinery = g.state.entity(unit(&g, 1, "refinery")).unwrap().tile();
+    assert_eq!(refinery, Tile { x: 15, y: 7 }, "above the yard, towards the middle of the map");
+}
+
 #[test]
 fn a_building_touching_your_base_is_placed_and_blocks_its_footprint() {
     let mut g = base(None);
@@ -119,14 +163,30 @@ fn every_placement_rule_refuses_with_its_reason() {
         ("on the harvester", k("gun_turret"), 0, 2, 5, PlaceError::Blocked { x: 2, y: 5 }),
         ("one tile out", k("power_plant"), 0, 6, 1, PlaceError::TooFar),
         ("next to someone else's base", k("power_plant"), 1, 5, 1, PlaceError::TooFar),
-        ("a refinery whose dock is a cliff", k("refinery"), 0, 5, 3, PlaceError::BadExit),
     ];
     for (what, kind, player, x, y, want) in cases {
         let got = g.can_place(player, kind, x, y);
         println!("{what}: {got:?}");
         assert_eq!(got, Err(want), "{what}");
     }
-    assert_eq!(g.can_place(0, k("refinery"), 5, 2), Ok(()), "the same refinery a row up has a rock dock");
+    assert_eq!(g.can_place(0, k("refinery"), 5, 3), Ok(()), "cliff under its pad, rock on its other sides");
+}
+
+/// Cliff round a refinery-sized hollow beside the power plant, so a refinery there would have nowhere to unload.
+const HOLLOW: &str = "\
+####XXXXX###
+#1######X###
+########X###
+####XXXXX###
+############
+############
+";
+
+#[test]
+fn a_refinery_with_no_side_to_unload_on_is_refused() {
+    let g = game_on(HOLLOW, None);
+    let refinery = kind(&g, "refinery");
+    assert_eq!(g.can_place(0, refinery, 5, 1), Err(PlaceError::BadExit), "cliff all round, the plant on the left");
 }
 
 #[test]
