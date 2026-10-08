@@ -10,19 +10,13 @@ use classic_sim::Game;
 use classic_sim::units::TICKS_PER_SECOND;
 
 use crate::platform::{Font, Rect, SpriteBatch};
+use crate::theme::Theme;
 
 const BUTTON_W: f32 = 280.0;
 const BUTTON_H: f32 = 36.0;
 const GAP: f32 = 10.0;
 
 const SHADE: [u8; 4] = [0, 0, 0, 170];
-const PANEL: [u8; 4] = [22, 22, 26, 240];
-const BUTTON: [u8; 4] = [44, 44, 52, 255];
-const HOVER: [u8; 4] = [70, 70, 84, 255];
-const TEXT: [u8; 4] = [235, 235, 225, 255];
-const DIM: [u8; 4] = [150, 150, 150, 255];
-const GOOD: [u8; 4] = [70, 200, 90, 255];
-const BAD: [u8; 4] = [220, 60, 50, 255];
 
 /// Which screen shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +38,10 @@ pub enum Action {
     Start,
     /// Flip the computer opponents on or off for the next game.
     Opponents,
+    /// The next map for the next game.
+    Map,
+    /// The next faction for the local player in the next game.
+    Faction,
     Resume,
     /// The same map and options again, from the start.
     Restart,
@@ -62,17 +60,36 @@ pub struct Menu {
     pub screen: Screen,
     /// Whether the next game has computer opponents for every other player.
     pub opponents: bool,
+    /// The names of the maps on offer, and the one picked for the next game. With one map there is no choice.
+    pub maps: Vec<String>,
+    pub map: usize,
+    /// The names of the pack's factions, and the local player's for the next game.
+    pub factions: Vec<String>,
+    pub faction: usize,
     /// UI scale: 1 at 100%.
     pub scale: f32,
     /// Whether a Quit button makes sense (not in the browser, where the page stays).
     pub can_quit: bool,
+    /// The pack's colours.
+    pub theme: Theme,
     /// The setting pack's title, shown on the title screen.
     title: String,
 }
 
 impl Menu {
     pub fn new(title: &str) -> Menu {
-        Menu { screen: Screen::Title, opponents: true, scale: 1.0, can_quit: true, title: title.to_string() }
+        Menu {
+            screen: Screen::Title,
+            opponents: true,
+            maps: Vec::new(),
+            map: 0,
+            factions: Vec::new(),
+            faction: 0,
+            scale: 1.0,
+            can_quit: true,
+            theme: Theme::default(),
+            title: title.to_string(),
+        }
     }
 
     /// Whether the game should run and take the input.
@@ -84,10 +101,18 @@ impl Menu {
     pub fn layout(&self, screen: (f32, f32)) -> Vec<Item> {
         let mut items: Vec<(Action, String)> = match self.screen {
             Screen::Playing => return Vec::new(),
-            Screen::Title => vec![
-                (Action::Start, "START".to_string()),
-                (Action::Opponents, format!("OPPONENTS: {}", if self.opponents { "COMPUTER" } else { "NONE" })),
-            ],
+            Screen::Title => {
+                let mut items = vec![(Action::Start, "START".to_string())];
+                if self.maps.len() > 1 {
+                    items.push((Action::Map, format!("MAP: {}", self.maps[self.map].to_uppercase())));
+                }
+                if self.factions.len() > 1 {
+                    items.push((Action::Faction, format!("FACTION: {}", self.factions[self.faction].to_uppercase())));
+                }
+                let opponents = if self.opponents { "COMPUTER" } else { "NONE" };
+                items.push((Action::Opponents, format!("OPPONENTS: {opponents}")));
+                items
+            }
             Screen::Paused => vec![
                 (Action::Resume, "RESUME".to_string()),
                 (Action::Restart, "RESTART".to_string()),
@@ -115,11 +140,15 @@ impl Menu {
             .collect()
     }
 
-    /// A left click at (x, y): the action of the button under it, if any. The opponents switch flips here.
+    /// A left click at (x, y): the action of the button under it, if any. The switches (map, faction, opponents)
+    /// change here.
     pub fn click(&mut self, screen: (f32, f32), (x, y): (f32, f32)) -> Option<Action> {
         let action = self.layout(screen).into_iter().find(|i| i.rect.contains(x, y))?.action;
-        if action == Action::Opponents {
-            self.opponents = !self.opponents;
+        match action {
+            Action::Opponents => self.opponents = !self.opponents,
+            Action::Map => self.map = (self.map + 1) % self.maps.len().max(1),
+            Action::Faction => self.faction = (self.faction + 1) % self.factions.len().max(1),
+            _ => {}
         }
         Some(action)
     }
@@ -161,10 +190,12 @@ impl Menu {
         let first = items.first().map_or(screen.1 / 2.0, |i| i.rect.y);
         let last = items.last().map_or(screen.1 / 2.0, |i| i.rect.y + i.rect.h);
         let (heading, colour, sub) = match self.screen {
-            Screen::Title => (self.title.to_uppercase(), TEXT, "SKIRMISH".to_string()),
-            Screen::Paused => ("PAUSED".to_string(), TEXT, clock(game)),
-            Screen::Over { won: true } => ("VICTORY".to_string(), GOOD, format!("WON IN {}", clock(game))),
-            Screen::Over { won: false } => ("DEFEAT".to_string(), BAD, format!("LOST AFTER {}", clock(game))),
+            Screen::Title => (self.title.to_uppercase(), self.theme.accent, "SKIRMISH".to_string()),
+            Screen::Paused => ("PAUSED".to_string(), self.theme.text, clock(game)),
+            Screen::Over { won: true } => ("VICTORY".to_string(), self.theme.good, format!("WON IN {}", clock(game))),
+            Screen::Over { won: false } => {
+                ("DEFEAT".to_string(), self.theme.bad, format!("LOST AFTER {}", clock(game)))
+            }
             Screen::Playing => return,
         };
         // The heading shrinks to fit a narrow window.
@@ -173,20 +204,20 @@ impl Menu {
         let head_h = Font::height(size) + Font::height(text) + 34.0 * s;
         let panel =
             Rect::new((screen.0 - panel_w) / 2.0, first - head_h - 20.0 * s, panel_w, last - first + head_h + 40.0 * s);
-        batch.fill(panel, PANEL);
-        batch.outline(panel, 1.0, [90, 90, 100, 255]);
+        batch.fill(panel, self.theme.panel);
+        batch.outline(panel, 1.0, self.theme.edge);
         let hx = (screen.0 - Font::width(&heading, size)) / 2.0;
         font.draw(batch, &heading, hx, panel.y + 16.0 * s, size, colour);
         let sx = (screen.0 - Font::width(&sub, text)) / 2.0;
-        font.draw(batch, &sub, sx, panel.y + 24.0 * s + Font::height(size), text, DIM);
+        font.draw(batch, &sub, sx, panel.y + 24.0 * s + Font::height(size), text, self.theme.dim);
         for i in &items {
             let over = i.rect.contains(mouse.0, mouse.1);
-            batch.fill(i.rect, if over { HOVER } else { BUTTON });
+            batch.fill(i.rect, if over { self.theme.hover } else { self.theme.button });
             if over {
-                batch.outline(i.rect, 1.0, TEXT);
+                batch.outline(i.rect, 1.0, self.theme.text);
             }
             let lx = i.rect.x + (i.rect.w - Font::width(&i.label, text)) / 2.0;
-            font.draw(batch, &i.label, lx, i.rect.y + (i.rect.h - Font::height(text)) / 2.0, text, TEXT);
+            font.draw(batch, &i.label, lx, i.rect.y + (i.rect.h - Font::height(text)) / 2.0, text, self.theme.text);
         }
     }
 }
@@ -195,4 +226,17 @@ impl Menu {
 fn clock(game: &Game) -> String {
     let secs = game.state.tick / TICKS_PER_SECOND;
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+/// A map's name for the menu: its first comment line up to a colon (`; Skirmish map 1: two players ...`), else its
+/// file name without the folder or `.txt`.
+pub fn map_name(path: &str, text: &str) -> String {
+    let heading = text.lines().next().and_then(|l| l.strip_prefix(';')).map(|l| l.split(':').next().unwrap_or(l));
+    match heading.map(str::trim).filter(|h| !h.is_empty()) {
+        Some(h) => h.to_string(),
+        None => {
+            let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+            file.strip_suffix(".txt").unwrap_or(file).to_string()
+        }
+    }
 }

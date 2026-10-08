@@ -9,6 +9,7 @@
 pub mod canvas;
 pub mod designs;
 pub mod png;
+pub mod theme;
 
 use canvas::{Canvas, Noise, Pen, SUB, finish};
 use designs as d;
@@ -271,66 +272,22 @@ fn rubble(w: usize, h: usize) -> Canvas {
     c
 }
 
-/// A nine-slice panel frame, 24 pixels square with 8 pixel corners, for UI panels.
-fn panel() -> Canvas {
-    let mut c = Canvas::new(24, 24);
-    for y in 0..24 {
-        for x in 0..24 {
-            let edge = x.min(y).min(23 - x).min(23 - y);
-            c.px[y * 24 + x] = match edge {
-                0 => [0x0c, 0x0e, 0x10, 255],
-                1 if x < 23 - y => [0x7a, 0x84, 0x90, 255],
-                1 => [0x22, 0x28, 0x30, 255],
-                2 | 3 => [0x48, 0x52, 0x5e, 255],
-                4 if x < 23 - y => [0x22, 0x28, 0x30, 255],
-                4 => [0x5a, 0x64, 0x70, 255],
-                _ => [0x1e, 0x24, 0x2c, 235],
-            };
-        }
-    }
-    for (x, y) in [(2, 2), (21, 2), (2, 21), (21, 21)] {
-        c.px[y * 24 + x] = [0xb0, 0xb8, 0xc0, 255];
-    }
-    c
-}
-
-/// A button in three states side by side: normal, hover, pressed; 48 by 16 each.
-fn button() -> Canvas {
-    let mut c = Canvas::new(48 * 3, 16);
-    for s in 0..3 {
-        let face: [u8; 3] = [[0x3a, 0x44, 0x50], [0x4a, 0x58, 0x68], [0x2a, 0x32, 0x3c]][s];
-        let (hi, lo) =
-            if s == 2 { ([0x14, 0x18, 0x1c], [0x6a, 0x76, 0x84]) } else { ([0x7a, 0x86, 0x94], [0x14, 0x18, 0x1c]) };
-        for y in 0..16 {
-            for x in 0..48 {
-                let col = if x == 0 || y == 0 {
-                    hi
-                } else if x == 47 || y == 15 {
-                    lo
-                } else {
-                    face
-                };
-                c.px[y * c.w + s * 48 + x] = [col[0], col[1], col[2], 255];
-            }
-        }
-    }
-    c
-}
-
 const THEME_CSS: &str =
-    "/* The generic pack's UI theme: plain dark panels. Colours only; the frames are theme/panel.png (nine-slice,
-   8 px corners) and theme/button.png (normal, hover, pressed; 48 x 16 each). */
+    "/* The generic pack's UI theme: dark steel panels. The player reads the colours (custom properties, #rrggbb or
+   #rrggbbaa); the frames, cursors, emblems and fonts are listed in theme/theme.json. */
 :root {
-  --panel-bg: #1e242c;
-  --panel-edge: #48525e;
+  --panel-bg: #16161af0;
+  --panel-edge: #464650;
   --panel-light: #7a8490;
   --panel-dark: #0c0e10;
-  --text: #d8dde2;
-  --text-dim: #8a929a;
+  --button: #2c2c34;
+  --button-hover: #464654;
+  --text: #ebebe1;
+  --text-dim: #969696;
   --accent: #d9b43a;
-  --good: #5cbf60;
-  --warn: #d9b43a;
-  --bad: #d04030;
+  --good: #46c85a;
+  --warn: #ebaf28;
+  --bad: #dc3c32;
   --font: \"DejaVu Sans Mono\", \"Consolas\", monospace;
 }
 ";
@@ -430,8 +387,14 @@ pub fn generate() -> Vec<File> {
         ));
     }
 
-    files.push(png_file("theme/panel.png".into(), &panel()));
-    files.push(png_file("theme/button.png".into(), &button()));
+    let (pictures, svgs, theme_index) = theme::generate();
+    for p in pictures {
+        files.push(png_file(p.path, &p.canvas));
+    }
+    for (path, text) in svgs {
+        files.push(File { path, bytes: text.into_bytes() });
+    }
+    files.push(File { path: "theme/theme.json".into(), bytes: theme_index.into_bytes() });
     files.push(File { path: "theme/theme.css".into(), bytes: THEME_CSS.as_bytes().to_vec() });
 
     let remap: Vec<String> = d::REMAP.iter().map(|c| hex(u32::from_be_bytes([0, c[0], c[1], c[2]]))).collect();
@@ -467,7 +430,7 @@ pub fn generate() -> Vec<File> {
 
     let provenance: String = files
         .iter()
-        .filter(|f| f.path.ends_with(".png") || f.path.ends_with(".css"))
+        .filter(|f| f.path.ends_with(".png") || f.path.ends_with(".css") || f.path.ends_with(".svg"))
         .map(|f| {
             format!(
                 "{{\"file\": \"{}\", \"source\": \"original\", \"made_by\": \"drawn from code: crates/classic-tools/src/art\", \"licence\": \"MIT\"}}\n",

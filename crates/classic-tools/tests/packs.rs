@@ -133,3 +133,26 @@ fn a_pack_given_as_files_loads_as_it_does_from_its_folder() {
     let errors = Pack::from_files(&dir, &with_script, &read, &rules).unwrap_err();
     assert_eq!(errors, ["art/units/run.js: not a data or asset file; packs hold no code"]);
 }
+
+#[test]
+fn a_pack_offers_its_own_maps_and_each_must_be_in_it() {
+    let dir = variant("maps", |d| {
+        std::fs::create_dir_all(d.join("maps")).unwrap();
+        std::fs::write(d.join("maps/dunes.txt"), MAP).unwrap();
+        replace(d, "setting.json", "\"features\": {}", "\"maps\": [\"maps/dunes.txt\"],\n  \"features\": {}");
+    });
+    let pack = Pack::load(&dir, &RulesTable::builtin()).unwrap();
+    assert_eq!(pack.maps, ["maps/dunes.txt"]);
+    assert!(setting::load("generic").unwrap().maps.is_empty(), "no maps: the engine's are offered");
+
+    replace(&dir, "setting.json", "[\"maps/dunes.txt\"]", "[\"maps/dunes.txt\", \"maps/gone.txt\", \"../x.txt\", 3]");
+    let errors = Pack::load(&dir, &RulesTable::builtin()).unwrap_err();
+    println!("{errors:#?}");
+    let expect =
+        ["\"maps/gone.txt\" is not in the pack", "\"../x.txt\" must be a .txt path inside", "a number is not a path"];
+    for e in expect {
+        assert!(errors.iter().any(|x| x.contains(e)), "missing {e:?} in {errors:#?}");
+    }
+    assert_eq!(errors.len(), expect.len(), "{errors:#?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -78,6 +78,14 @@ impl Canvas {
         self.fill((cx - r, cy - r, cx + r, cy + r), c, |x, y| (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r);
     }
 
+    /// A ring: every pixel between radius `inner` and `outer` of (`cx`, `cy`), all in sixteenths of a pixel.
+    pub fn ring(&mut self, cx: i64, cy: i64, outer: i64, inner: i64, c: Rgba) {
+        self.fill((cx - outer, cy - outer, cx + outer, cy + outer), c, |x, y| {
+            let d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+            d <= outer * outer && d > inner * inner
+        });
+    }
+
     /// Copy `src` onto this canvas with its top-left corner at pixel (`x`, `y`), blending.
     pub fn stamp(&mut self, src: &Canvas, x: i64, y: i64) {
         for sy in 0..src.h {
@@ -140,6 +148,13 @@ impl<'a> Pen<'a> {
     pub fn circle(&mut self, x: i64, y: i64, r: i64, c: Rgba) {
         let (cx, cy) = self.map((x, y));
         self.canvas.disc(cx, cy, r * HALF * self.num / self.den, c);
+    }
+
+    /// A ring `width` half pixels wide whose outer edge is `r` half pixels from (`x`, `y`).
+    pub fn ring(&mut self, x: i64, y: i64, r: i64, width: i64, c: Rgba) {
+        let (cx, cy) = self.map((x, y));
+        let k = HALF * self.num / self.den;
+        self.canvas.ring(cx, cy, r * k, (r - width) * k, c);
     }
 
     /// A thick line from one point to another, `width` half pixels across.

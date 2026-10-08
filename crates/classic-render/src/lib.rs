@@ -12,8 +12,10 @@ pub mod feed;
 pub mod hud;
 pub mod menu;
 pub mod scene;
+pub mod skin;
 pub mod sound;
 pub mod studio;
+pub mod theme;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
@@ -22,4 +24,5 @@ pub use rts_platform as platform;
 pub use art::Art;
 pub use hud::{Hud, View};
 pub use scene::{Camera, Scene};
+pub use skin::Skin;
 pub use sound::{Listener, SoundBoard};

@@ -4,7 +4,8 @@
 //! - only data and assets: no file a browser or shell could run;
 //! - `setting.json` names known modules only, and at least one faction, each with a unique id;
 //! - `names.json` names known ids only, and every built entity the pack uses has a name;
-//! - `tuning.json`, when present, moves known numbers within their ranges.
+//! - `tuning.json`, when present, moves known numbers within their ranges;
+//! - the maps `setting.json` lists are text files in the pack.
 //!
 //! The pack never changes the engine's code paths; it only fills in names, numbers and (later) asset paths.
 
@@ -36,6 +37,9 @@ pub struct Pack {
     pub features: BTreeMap<String, bool>,
     /// The entity ids the pack uses; `None` means every one.
     pub entities: Option<Vec<String>>,
+    /// The pack's own skirmish maps, as paths in the pack (`setting.json`'s `maps`), in the order offered. Empty
+    /// means the engine's maps.
+    pub maps: Vec<String>,
     /// Display name for each generic id.
     pub names: BTreeMap<String, String>,
     /// The engine's rules with the pack's tuning applied.
@@ -168,6 +172,26 @@ impl Pack {
             }
         };
 
+        let mut maps = Vec::new();
+        match setting.get("maps") {
+            None => {}
+            Some(Value::Array(list)) => {
+                for v in list {
+                    match v.as_str() {
+                        Some(m) if m.contains("..") || m.starts_with('/') || !m.ends_with(".txt") => {
+                            errors.push(format!("setting.json: maps: \"{m}\" must be a .txt path inside the pack"))
+                        }
+                        Some(m) if !files.iter().any(|f| f == m) => {
+                            errors.push(format!("setting.json: maps: \"{m}\" is not in the pack"))
+                        }
+                        Some(m) => maps.push(m.to_string()),
+                        None => errors.push(format!("setting.json: maps: {} is not a path", v.kind())),
+                    }
+                }
+            }
+            Some(_) => errors.push("setting.json: \"maps\" must be a list of paths".into()),
+        }
+
         let mut names = BTreeMap::new();
         match read("names.json", &mut errors) {
             None => errors.push("names.json: missing".into()),
@@ -201,6 +225,7 @@ impl Pack {
             factions,
             features,
             entities,
+            maps,
             names,
             rules: tuned,
             warnings: Vec::new(),
