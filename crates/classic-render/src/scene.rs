@@ -51,9 +51,42 @@ pub struct Scene {
     /// How many of the game's events have been read.
     seen: usize,
     pub selected: Vec<u32>,
+    /// Control groups: the units kept under each number key, 0 to 9.
+    pub groups: [Vec<u32>; 10],
 }
 
 impl Scene {
+    /// Ctrl and a number: keep `player`'s selected units under group `n`, replacing what it held. Buildings and
+    /// other players' entities stay out of groups.
+    pub fn set_group(&mut self, game: &Game, player: u32, n: usize) {
+        let mine =
+            |id: &u32| game.state.entity(*id).is_some_and(|e| e.owner == player && !game.rules.kind(e.kind).building);
+        self.groups[n] = self.selected.iter().copied().filter(mine).collect();
+    }
+
+    /// A number: select group `n`. Returns true when the group was already the selection (a second press), so the
+    /// caller can centre the view on it; an empty group leaves the selection alone.
+    pub fn recall_group(&mut self, n: usize) -> bool {
+        if self.groups[n].is_empty() {
+            return false;
+        }
+        let again = self.selected == self.groups[n];
+        self.selected = self.groups[n].clone();
+        again
+    }
+
+    /// The middle of the selected entities, in tiles.
+    pub fn selection_centre(&self, game: &Game) -> Option<(f32, f32)> {
+        let found: Vec<&Entity> = self.selected.iter().filter_map(|&id| game.state.entity(id)).collect();
+        if found.is_empty() {
+            return None;
+        }
+        let n = found.len() as f32;
+        let x = found.iter().map(|e| e.x as f32).sum::<f32>() / n / TILE as f32;
+        let y = found.iter().map(|e| e.y as f32).sum::<f32>() / n / TILE as f32;
+        Some((x, y))
+    }
+
     /// Call before each tick: remember where everything is.
     pub fn before_step(&mut self, game: &Game) {
         self.prev = game.state.entities.iter().map(|e| (e.id, (e.x, e.y))).collect();
@@ -77,6 +110,9 @@ impl Scene {
         }
         self.facing.retain(|id, _| game.state.entity(*id).is_some());
         self.selected.retain(|id| game.state.entity(*id).is_some());
+        for g in &mut self.groups {
+            g.retain(|id| game.state.entity(*id).is_some());
+        }
         if game.events.len() < self.seen {
             self.seen = 0;
         }

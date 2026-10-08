@@ -6,12 +6,12 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 118 checks, about 1 s after the first build
+cargo test                                                    # 123 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
-cargo run --release --bin play                                # play against the computer: build from the rail, drag to select, right-click to order, M mutes (--ai none: alone)
+cargo run --release --bin play                                # play against the computer: build from the rail, drag to select, right-click to order, ctrl+number groups, H home, M mutes (--ai none: alone)
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
@@ -45,7 +45,7 @@ node web/play/check.mjs          # checks it in headless Chromium, on WebGPU and
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
+| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/play/` | The page for the browser build of the player: a full-window canvas. `check.mjs` opens it in headless Chromium on WebGPU and on WebGL2. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
@@ -112,6 +112,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   lights exactly its own pixels. The minimap keeps the map's shape, maps its corners and centre to the map's,
   shows the player's base in their colour, and its clicks move the view or ask for an order without ordering
   anything itself.
+- The selection card and message feed: the card draws in its place between the grid and the queue; the feed tells
+  the local player that their building is ready (another player's is not mentioned), that power ran short and came
+  back, that units are under attack (at most once per 20 seconds however many hits) and that a harvester was lost,
+  by name, and drops each line after 8 seconds; a pack's `ui/messages.json` rewords a message and an unknown id is
+  warned about. Control groups keep only the player's own units, a second press asks to centre, and a destroyed
+  unit leaves its group; Tab steps through the factory tabs and wraps.
 - Sound (no sound card; the mixer renders into a buffer): every game event plays a sound or is listed as silent on
   purpose; every sound id has a generic file; a tank battle plays cannon, impact and explosion sounds and ends
   with the same state hash as the same game unheard; 40 tanks fighting never exceed the 24-voice and
@@ -145,9 +151,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   stalemate behind their turrets. In the desktop player it was checked only in a short smoke run, not played by a
   person.
 - No storage cap, tech levels, factory upgrades or starport.
-- The renderer has no selection card, messages or menus yet; the rail has no tabs by category, hotkeys, pause per
-  item or primary factory choice yet; cliffs are plain dark tiles, and the art is the generic pack's placeholders.
-  The player was checked under a virtual display
+- The renderer has no menus yet; the rail has no tabs by category, pause per item or primary factory choice yet,
+  the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and the
+  art is the generic pack's placeholders. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
   volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and

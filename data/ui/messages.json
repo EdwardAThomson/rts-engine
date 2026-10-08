@@ -1,0 +1,19 @@
+{
+  "about": "The lines the message feed shows, by message id. `{name}` is the pack's name for the building or unit concerned. A setting pack can reword any of them in its own `ui/messages.json`, in the same shape; ids it leaves out keep these words. Which event shows which id is in `crates/classic-render/src/feed.rs`.",
+  "messages": {
+    "building_ready": "{name} ready to place",
+    "unit_ready": "{name} ready",
+    "cannot_place": "Cannot place {name} there",
+    "queue_full": "Queue full",
+    "needs_building": "{name} needs another building first",
+    "no_credits": "Not enough credits: {name} on hold",
+    "low_power": "Low power",
+    "power_restored": "Power restored",
+    "base_attacked": "Base under attack",
+    "units_attacked": "Units under attack",
+    "building_lost": "{name} destroyed",
+    "unit_lost": "{name} lost",
+    "harvester_no_resource": "{name} idle: no resource left",
+    "harvester_no_refinery": "{name} idle: no refinery"
+  }
+}

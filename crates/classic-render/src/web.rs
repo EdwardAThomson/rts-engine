@@ -8,6 +8,7 @@ use std::path::Path;
 use classic_data::{Pack, RulesTable};
 
 use crate::art::{self, ART_INDEX};
+use crate::feed::MESSAGES_FILE;
 use crate::platform::{Files, web};
 use crate::sound::{self, SOUND_INDEX};
 
@@ -24,6 +25,8 @@ pub struct Loaded {
     pub art: Files,
     /// The sounds' files: the generic pack's, then the pack's own if it has any.
     pub sounds: Vec<Files>,
+    /// The pack's own wording of the message feed, if it has any.
+    pub messages: Files,
     pub map: String,
 }
 
@@ -62,8 +65,13 @@ pub async fn load(setting: &str, map: &str) -> Result<Loaded, String> {
         sounds.push(Files::Memory { label: d, files });
     }
 
+    let messages = Files::Memory {
+        label: dir.clone(),
+        files: web::fetch_files(&format!("{ROOT}{dir}/"), &[MESSAGES_FILE.to_string()]).await?,
+    };
+
     let mut fetched = web::fetch_files(ROOT, &[map.to_string()]).await?;
     let map_bytes = fetched.remove(map).ok_or_else(|| format!("{map}: not found"))?;
     let map = String::from_utf8(map_bytes).map_err(|e| format!("{map}: {e}"))?;
-    Ok(Loaded { pack, art: Files::Memory { label: art_dir, files }, sounds, map })
+    Ok(Loaded { pack, art: Files::Memory { label: art_dir, files }, sounds, messages, map })
 }
