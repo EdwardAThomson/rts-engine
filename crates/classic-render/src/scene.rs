@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 
 use classic_sim::combat::facing_to;
 use classic_sim::map::{RESOURCE_PER_TILE, TILE};
-use classic_sim::world::Event;
 use classic_sim::{Entity, Game, Terrain};
 
 use crate::art::{Art, Strip};
+use crate::effects::{Effects, FIRE_TICKS};
 use crate::platform::{Rect, SpriteBatch};
 use crate::studio::{Frame, SHADOW_ALPHA};
 
@@ -30,17 +30,6 @@ impl Camera {
         (sx / self.zoom + self.x, sy / self.zoom + self.y)
     }
 }
-
-/// An explosion or spark playing out where something happened.
-struct Effect {
-    id: &'static str,
-    x: i64,
-    y: i64,
-    start: u32,
-}
-
-/// Ticks each frame of an effect stays on screen.
-const EFFECT_TICKS: u32 = 2;
 
 /// A squad member lost to damage, fading where it fell.
 struct Fallen {
@@ -68,7 +57,8 @@ pub struct Scene {
     facing: BTreeMap<u32, i64>,
     /// Positions before the latest tick, for drawing between ticks.
     prev: BTreeMap<u32, (i64, i64)>,
-    effects: Vec<Effect>,
+    /// Muzzle flashes, shots, explosions and smoke.
+    pub fx: Effects,
     /// Members each squad showed when last drawn, so the ones it loses can fall.
     shown: BTreeMap<u32, usize>,
     fallen: Vec<Fallen>,
@@ -114,6 +104,7 @@ impl Scene {
     /// Call before each tick: remember where everything is.
     pub fn before_step(&mut self, game: &Game) {
         self.prev = game.state.entities.iter().map(|e| (e.id, (e.x, e.y))).collect();
+        self.fx.before_step(game);
     }
 
     /// Call after each tick: turn bodies the way they moved, start effects for what happened and forget the dead.
@@ -141,18 +132,7 @@ impl Scene {
         if game.events.len() < self.seen {
             self.seen = 0;
         }
-        for ev in &game.events[self.seen..] {
-            match *ev {
-                Event::ProjectileHit { tick, x, y, .. } => {
-                    self.effects.push(Effect { id: "explosion_small", x, y, start: tick })
-                }
-                Event::Destroyed { tick, kind, x, y, .. } => {
-                    let id = if game.rules.kind(kind).building { "explosion_large" } else { "explosion_medium" };
-                    self.effects.push(Effect { id, x, y, start: tick });
-                }
-                _ => {}
-            }
-        }
+        self.fx.after_step(game, &game.events[self.seen..]);
         self.seen = game.events.len();
     }
 
@@ -171,6 +151,7 @@ impl Scene {
         let tile = art.tile;
         let px = tile / TILE as f32;
         let tick = game.state.tick;
+        self.fx.update(game, art, &self.facing);
         // The map, only the tiles on screen.
         let (wx0, wy0) = cam.to_world(0.0, 0.0);
         let (wx1, wy1) = cam.to_world(w, h);
@@ -264,9 +245,13 @@ impl Scene {
             draw_look(batch, art, cam.zoom, &f.member, f.owner, (sx, sy), cell, &pose);
             true
         });
+        // Muzzle flashes the bodies hide, under them.
+        self.fx.draw(batch, art, game, cam, alpha, true);
         for e in units {
             let k = game.rules.kind(e.kind);
             let (wx, wy) = at(e);
+            // A soldier who just fired holds the firing pose.
+            let firing = self.fx.fired.get(&e.id).map(|&t| tick.saturating_sub(t)).filter(|&age| age < FIRE_TICKS);
             let facing = *self.facing.get(&e.id).unwrap_or(&e.facing);
             let moving = self.prev.get(&e.id).is_some_and(|&p| p != (e.x, e.y));
             let walk = if moving { tick / WALK_TICKS } else { 0 };
@@ -283,14 +268,14 @@ impl Scene {
                 for i in order {
                     let (x, y) = place(i);
                     let (sx, sy) = cam.to_screen(x, y);
-                    let step = if moving { squad.step(i, walk, cycle) } else { 0 };
-                    let pose = Pose {
-                        facing,
-                        turret: facing,
-                        anims: if moving { &["walk", "move"] } else { &["idle"] },
-                        step,
-                        alpha: 255,
+                    let (anims, step): (&[&str], u32) = match firing {
+                        Some(age) => (&["fire"], age),
+                        None if moving => (&["walk", "move"], squad.step(i, walk, cycle)),
+                        None => (&["idle"], 0),
                     };
+                    // A soldier fires the way the unit aims.
+                    let body = if firing.is_some() { e.facing } else { facing };
+                    let pose = Pose { facing: body, turret: body, anims, step, alpha: 255 };
                     let cell = Rect::new(
                         sx - tile * cam.zoom / 2.0,
                         sy - tile * cam.zoom / 2.0,
@@ -314,30 +299,8 @@ impl Scene {
             };
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), cell, &pose);
         }
-        for p in &game.state.projectiles {
-            let name = game.state.weapon_ids.get(p.weapon.0 as usize).map_or("", |s| s.as_str());
-            let effect = if name.contains("rocket") { "rocket" } else { "shell" };
-            let (sx, sy) = cam.to_screen(p.x as f32 * px, p.y as f32 * px);
-            match art.effect(effect) {
-                Some(s) => {
-                    let (fw, fh) = (s.w * cam.zoom, s.h * cam.zoom);
-                    batch.sprite(s.tex, s.frame(0), Rect::new(sx - fw / 2.0, sy - fh / 2.0, fw, fh), [255; 4]);
-                }
-                None => batch.fill(Rect::new(sx - 2.0, sy - 2.0, 4.0, 4.0), [255, 230, 120, 255]),
-            }
-        }
-        // Explosions, dropping those that have finished.
-        self.effects.retain(|fx| {
-            let Some(s) = art.effect(fx.id) else { return false };
-            let frame = tick.saturating_sub(fx.start) / EFFECT_TICKS;
-            if frame >= s.frames {
-                return false;
-            }
-            let (sx, sy) = cam.to_screen(fx.x as f32 * px, fx.y as f32 * px);
-            let (fw, fh) = (s.w * cam.zoom, s.h * cam.zoom);
-            batch.sprite(s.tex, s.frame(frame), Rect::new(sx - fw / 2.0, sy - fh / 2.0, fw, fh), [255; 4]);
-            true
-        });
+        self.fx.draw_shots(batch, art, game, cam, alpha);
+        self.fx.draw(batch, art, game, cam, alpha, false);
         // Selection boxes, and health bars on whatever is selected or hurt.
         for e in &game.state.entities {
             let k = game.rules.kind(e.kind);
