@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 114 checks, about 1 s after the first build
+cargo test                                                    # 115 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
@@ -84,7 +84,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   another instead of driving through it; a move to a taken tile ends next to it; nine tanks sent to one tile end
   on nine tiles round it; an idle own tank steps aside, and an enemy one never does, so the mover gives up; two
   tanks meeting head-on in a corridor get past each other; twelve tanks squeeze through a one-tile gap with none
-  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a factory's new
+  stuck; an own tank on a refinery dock gives way to the harvester while an enemy one blocks it; a harvester
+  queued for a dock steps aside for the one leaving it, and both keep delivering; a factory's new
   units drive clear of its exit; collision replays from the command log.
 - Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
   colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same
@@ -119,9 +120,6 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 - Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Two harvesters can wait on each other for good at a refinery dock (one on the dock heading out, one queued for
-  it); seen on `skirmish-01` when a factory exit sat beside the dock. The computer opponent nudges a stuck
-  harvester aside, but the movement rule itself is not fixed yet.
 - Combat has no crushing, infantry, aircraft or special weapons, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files

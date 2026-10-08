@@ -324,3 +324,65 @@ fn collision_replays_from_the_command_log() {
     println!("yielded {}, live {} replay {}", count(&live, "unit_yielded"), live.hash(), replay.hash());
     assert_eq!(replay.hash(), live.hash());
 }
+
+/// Bases above; a resource row below the dock, two tiles down.
+const DOCK_FIELD: &str = "\
+########################
+#1################2#####
+########################
+########################
+########################
+########################
+########################
+~~~~~~~~~~~~~~~~~~~~~~~~
+XXXXXXXXXXXXXXXXXXXXXXXX
+";
+
+/// Two own harvesters share one dock: the first unloads on it while the second, also full, queues on the only
+/// tile between the dock and the field. The one leaving and the one queued must not wait on each other for good.
+#[test]
+fn a_harvester_leaving_its_dock_and_the_next_one_queued_for_it_both_get_through() {
+    let mut g = game(DOCK_FIELD);
+    let hk = kind(&g, "harvester");
+    let full = g.rules.kind(hk).harvester.as_ref().unwrap().capacity;
+    let h1 = g.state.entities.iter().find(|e| e.owner == 0 && e.cargo.is_some()).unwrap().id;
+    let home = g.state.entity(h1).unwrap().home_id;
+    assert_eq!(at(&g, h1), Tile { x: 2, y: 5 }, "starts on its dock");
+    // The higher id queues, so the old rule (a waiting unit yields only to a lower id) never let it give way.
+    let h2 = g.spawn(hk, 0, 2, 6);
+    for e in g.state.entities.iter_mut() {
+        if e.id == h1 || e.id == h2 {
+            e.cargo = Some(full);
+            e.task = Some(Task::Mining);
+            e.order = Order::Harvest;
+            e.home_id = home;
+        }
+        e.reload = 100_000;
+    }
+    let delivered_by = |g: &Game, id: u32| {
+        g.events.iter().filter(|e| matches!(e, Event::Delivered { unit, .. } if *unit == id)).count()
+    };
+    let mut last = 0;
+    let mut longest_gap = 0;
+    for t in 1..=3000 {
+        g.step(1);
+        check_occupancy(&g);
+        let n = count(&g, "delivered");
+        if n > last {
+            last = n;
+            longest_gap = 0;
+        } else {
+            longest_gap += 1;
+            assert!(longest_gap < 900, "tick {t}: no delivery for {longest_gap} ticks");
+        }
+    }
+    let yielded =
+        g.events.iter().any(|e| matches!(e, Event::UnitYielded { unit, asker, .. } if *unit == h2 && *asker == h1));
+    println!(
+        "deliveries: h1 {}, h2 {}; the queued one gave way: {yielded}",
+        delivered_by(&g, h1),
+        delivered_by(&g, h2)
+    );
+    assert!(yielded, "the queued harvester stepped aside for the one leaving the dock");
+    assert!(delivered_by(&g, h1) >= 2 && delivered_by(&g, h2) >= 2, "both keep delivering");
+}

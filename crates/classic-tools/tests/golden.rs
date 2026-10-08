@@ -2,7 +2,7 @@
 //! before the port). Matching them shows the port plays exactly the same games: same paths, same node counts,
 //! same state hashes, tick for tick.
 //!
-//! Six rule changes since then re-recorded values on purpose, each checked to change nothing else:
+//! Seven rule changes since then re-recorded values on purpose, each checked to change nothing else:
 //! - the tank's generic id became `battle_tank` (the hash spells each entity's id): state hashes only;
 //! - buildings block ground movement, so units and harvesters path round each refinery: state hashes and the
 //!   nodes expanded during ticks. Standalone paths, path checksums, credits and the tank's position are unchanged;
@@ -22,7 +22,12 @@
 //!   find ways round each other. Each start tank stands in its harvester's way and steps aside, so idle games differ
 //!   from tick 449 on (seed 4's first change is at tick 450); the scripted games and bench scenes differ too, and the
 //!   bench scenes' credits fall as harvesters queue behind tanks. Standalone paths, path checksums, the lone tank's
-//!   hash and position, and every hash before the first meeting are unchanged.
+//!   hash and position, and every hash before the first meeting are unchanged;
+//! - a harvester queued next to its dock steps aside for the one leaving the dock, instead of both waiting for good
+//!   (rules-movement.md, section 6): in the bench scenes, where harvesters crowd a dock, seed 2's hashes differ
+//!   from tick 750 and seed 1's at tick 900, with the nodes expanded during ticks and seed 1's credits (2,000, not
+//!   2,200, at tick 900).
+//!   Standalone paths, path checksums, the scripted and idle games and every earlier hash are unchanged.
 
 use classic_sim::path::Pathfinder;
 use classic_sim::{CommandOrder, Game, GameOptions, parse_map};
@@ -170,9 +175,9 @@ fn bench_scene_seed_1_matches() {
         path_check: 0x3b120bc1,
         path_nulls: 23,
         path_nodes: 167_392,
-        tick_nodes: 1_711_023,
-        hashes: ["a9b026dd", "2a31aa41", "e07ddae5", "8eb4cc23", "e77b34b2", "350436dc"],
-        credits: [1400, 2200],
+        tick_nodes: 1_711_915,
+        hashes: ["a9b026dd", "2a31aa41", "e07ddae5", "8eb4cc23", "e77b34b2", "9dc13cea"],
+        credits: [1400, 2000],
     });
 }
 
@@ -185,8 +190,8 @@ fn bench_scene_seed_2_matches() {
         path_check: 0x388dc4f4,
         path_nulls: 22,
         path_nodes: 584_041,
-        tick_nodes: 6_164_828,
-        hashes: ["7faf7994", "e6eef322", "856dd770", "991baa42", "e86677a9", "3ce23d09"],
+        tick_nodes: 6_151_364,
+        hashes: ["7faf7994", "e6eef322", "856dd770", "991baa42", "8e4a050e", "225dc6b9"],
         credits: [1400, 2000],
     });
 }
