@@ -12,6 +12,7 @@ cargo run --release --bin cli -- --setting private                       # the s
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo run --release --bin play                                # play on the desktop: drag to select, right-click to order, M mutes
+cargo run --release --bin play -- --map maps/skirmish-01.txt  # against the computer opponent (--ai none for none)
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
@@ -33,7 +34,7 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, sound mixer and device, WAV files). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`. |
+| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, sound mixer and device, WAV files). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. |
@@ -89,7 +90,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
   colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same
   frame twice gives the same pixels and drawing never changes the game's hash; shots and explosions appear from
-  events; recolouring swaps exact remap pixels only. The desktop player opens, selects and orders under Xvfb.
+  events; recolouring swaps exact remap pixels only. The desktop player opens, selects and orders under Xvfb, and its computer opponent issues
+  orders there.
 - Sound (no sound card; the mixer renders into a buffer): every game event plays a sound or is listed as silent on
   purpose; every sound id has a generic file; a tank battle plays cannon, impact and explosion sounds and ends
   with the same state hash as the same game unheard; 40 tanks fighting never exceed the 24-voice and
@@ -120,7 +122,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
   value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` often play to a
-  stalemate behind their turrets. It is not yet wired into the desktop player.
+  stalemate behind their turrets. In the desktop player it was checked only in a short smoke run, not played
+  by a person; until the production rail lands there, the human side can't build.
 - No storage cap, tech levels, factory upgrades or starport.
 - The renderer is desktop only so far, with no sidebar, minimap or menus; cliffs are
   plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
