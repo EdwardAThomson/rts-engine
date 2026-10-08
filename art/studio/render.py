@@ -13,6 +13,8 @@ What a model file defines, by category (art/models/<category>/<id>.py; see art/R
                        HEAD_HEIGHT for defence turrets; JOINS = True and build(root, joins) for walls
   infantry             build(root, joints), parts parented to the joints of st.rig(); optional
                        rig_pose(joints, anim, frame, frames) in place of st.pose
+  creatures            build(root), ANIMS and pose(root, anim, frame): one facing; the ground hides whatever
+                       is below z = 0, so a creature can rise out of it and sink back
 
 Every frame is written as <part>-<anim>-fFF-NN.png (FF the facing clockwise from north, NN the frame), with
 <...>.shadow.png beside it where the part casts a shadow, and meta.json describes the jobs and where the origin
@@ -34,7 +36,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import rts_studio as st  # noqa: E402
 
 ART = Path(__file__).parent.parent
-KINDS = {"vehicles": "vehicle", "aircraft": "aircraft", "buildings": "building", "infantry": "infantry"}
+KINDS = {"vehicles": "vehicle", "aircraft": "aircraft", "buildings": "building", "infantry": "infantry",
+         "creatures": "creature"}
 # Rest frames for buildings, then the construction frames: a clip at these fractions of the model's height.
 BUILD_STAGES = (0.0, 0.35, 0.7, 1.0)
 INFANTRY_ANIMS = {"idle": 1, "walk": 6, "fire": 3, "die-1": 8, "die-2": 8}
@@ -212,6 +215,9 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
         ctx["joints"] = st.rig(root)
         mod.build(root, ctx["joints"])
         ctx["groups"]["body"] = st.meshes(root)
+    elif kind == "creature":
+        mod.build(root)
+        ctx["groups"]["body"] = st.meshes(root)
     else:
         mod.build_hull(root)
         ctx["groups"]["hull"] = st.meshes(root)
@@ -221,7 +227,7 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
             ctx["groups"]["turret"] = st.meshes(ring)
     import bpy
     bpy.context.view_layer.update()  # parts under a moved group (a hinge, a rotor) need fresh world matrices
-    ctx["intact_bounds"] = st.bounds(root)
+    ctx["intact_bounds"] = st.bounds(root) if kind != "creature" else creature_bounds(mod, root)
     ctx["groups"] = {k: [o.name for o in v] for k, v in ctx["groups"].items()}  # variants may delete objects
 
     if variant == "wreck":
@@ -255,7 +261,30 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
         ctx[f"{key}_rest"] = [(tuple(o.location), tuple(o.scale)) if key == "doors" else tuple(o.rotation_euler)
                               for o in tops]
     ctx["muzzle"] = next((o for o in root.children_recursive if o.name.split(".")[0] == "muzzle"), None)
+    if kind == "creature":
+        ctx["cut"] = [st.ground_cut()]
+        ctx["all"] = ctx["all"] + ctx["cut"]
     return ctx
+
+
+def creature_bounds(mod, root):
+    """A creature's canvas has to hold every pose, not just the first, but only what shows above the ground."""
+    import bpy
+    b = None
+    for anim, n in getattr(mod, "ANIMS", {}).items():
+        for k in range(n if isinstance(n, int) else n["frames"]):
+            mod.pose(root, anim, k)
+            bpy.context.view_layer.update()
+            f = st.bounds_of(st.meshes(root), above=0.0)
+            if f["radius"] == 0.0 and f["top"] == 0.0:
+                continue  # nothing above ground in this pose
+            b = f if b is None else {"radius": max(b["radius"], f["radius"]), "top": max(b["top"], f["top"]),
+                                     "min": [min(b["min"][i], f["min"][i]) for i in (0, 1)],
+                                     "max": [max(b["max"][i], f["max"][i]) for i in (0, 1)]}
+    first = next(iter(mod.ANIMS))
+    mod.pose(root, first, 0)
+    bpy.context.view_layer.update()
+    return b
 
 
 def plan(mod, kind, facings, has_wreck):
@@ -348,6 +377,12 @@ def plan(mod, kind, facings, has_wreck):
                             select=lambda ctx: (ctx["all"], [], ctx["all"]),
                             pose=lambda ctx, k, a=a, n=n: getattr(mod, "rig_pose", st.pose)(ctx["joints"], a, k, n),
                             yaw=math.pi / 2 if die else 0.0))
+        out.append(("intact", jobs))
+    elif kind == "creature":
+        jobs = [Job("body", a, 1, c["frames"], shadow=True,
+                    pose=lambda ctx, k, a=a: mod.pose(ctx["root"], a, k),
+                    select=lambda ctx: (ctx["groups"]["body"], ctx["cut"], ctx["groups"]["body"]))
+                for a, c in anims.items()]
         out.append(("intact", jobs))
     return out
 

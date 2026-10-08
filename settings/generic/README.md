@@ -20,6 +20,7 @@ and the drawings disagree. `provenance.jsonl` records each file's source.
   fallback colours and by packs without tiles. `art/features/` holds things drawn over the ground.
 - `art/icons/` holds 64 x 48 sidebar icons for every unit, building and superpower.
 - `art/effects/` holds explosions, smoke, sparks, muzzle flashes, projectiles, craters, scorch marks and rubble.
+  The player draws the detailed effects in `art/sprites/effects/` instead where they exist (below).
 - `theme/theme.json` indexes the UI skin: nine-slice frames for the rail, panels, wells (`inset`), tooltips and the
   factory tabs (closed, open), buttons in four states (normal, hover, pressed, disabled), 23 cursors at 32 and 64 px
   with their hotspots (`theme/cursors/`), and an emblem per faction as SVG and PNG (`theme/emblems/`). `theme.css`
@@ -29,6 +30,11 @@ and the drawings disagree. `provenance.jsonl` records each file's source.
 
 Faction colour: pixels in the four `remap` colours in `art.json` (magenta shades) are swapped, by exact value, for
 the four shades of the owning faction's ramp. The generator refuses any drawing that blends over a key colour.
+
+The detailed effects (`art/sprites/effects-0.png` and `art/sprites/effects/<id>.json`: explosions, smoke and dust
+puffs, sparks, muzzle flashes facing 16 ways, shells, rockets and a looping fire) are drawn from code too, by
+`python3 art/effects/effects.py` at the studio's scale; see `art/README.md`, "Effects". Craters, scorch marks and
+rubble are still the placeholders.
 
 Not drawn yet: wrecks, building animations, a logo and a menu background.
 

@@ -8,6 +8,7 @@
 //! any player sends.
 
 pub mod art;
+pub mod effects;
 pub mod feed;
 pub mod hud;
 pub mod menu;

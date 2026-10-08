@@ -53,13 +53,14 @@ pack.
   paint, reference sizes, the footprint inset, the atlas pages and the portrait camera.
 - `studio/rts_studio.py`: scene, lights, materials, part helpers (`block`, `cylinder`, `cone`, `sphere`,
   `wedge`, `beam`, `group`), the frame helpers (`default_damage`, `default_wreck`, `construction`, `rubble`,
-  `scorched`, `burnt`), the infantry rig (`rig`, `pose`) and the portrait camera.
+  `scorched`, `burnt`), the infantry rig (`rig`, `pose`), the ground holdout for creatures (`ground_cut`) and the
+  portrait camera.
 - `studio/render.py`: renders every frame a model asks for (below), with shadow passes, into a render folder with
   `meta.json`, and appends the job's time to `art/timings.jsonl`.
 - `studio/icon.py`: the build icon from the portrait camera (35° up, turned 30°, dark backdrop).
 - `studio/pack.py`: masks team paint and makes it neutral grey, downscales, stretches by 1/sin 60° so footprints
   are square on screen, trims, and packs one 4096 × 4096 page per category (`units-0`, `buildings-0`,
-  `infantry-0`, `air-0`, `effects-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
+  `infantry-0`, `air-0`, `effects-0`, `creatures-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
   a page would overflow.
 - `studio/check.py`: the checks below.
 - `studio/export_gltf.py`: the same models as glTF binaries for a real-time 3D renderer (below).
@@ -67,7 +68,8 @@ pack.
 - `studio/tileset.py`: terrain tiles from a terrain set file (below); no Blender needed.
 - `terrain/<set>.json`: a terrain set's colours, materials and sizes (`desert.json` for the generic pack).
 - `studio/samples/`: the studio's own test models (the facing arrow, a building, a defence turret, a wall) and the
-  infantry prototype `soldier.py` on the rig. None is a game asset.
+  infantry prototype `soldier.py` on the rig, and `test_creature.py`, a post that rises out of the ground. None is a
+  game asset.
 - `jobs.jsonl`: one line per asset in the plan, with its batch, frames and status. `timings.jsonl`: every render's
   real time, so the plan's estimates can be replaced with measurements.
 
@@ -94,6 +96,7 @@ optional: a model that leaves a hook out gets the studio's default.
 | `TEAM = False` | all | No team paint expected (walls, rubble): the coverage check is skipped |
 | `build(root, joints)` | infantry | Parts parented to the rig's joints; idle 1, walk 6, fire 3 at 8 facings, and die-1, die-2 of 8 frames from one side |
 | `rig_pose(joints, anim, frame, frames)` | infantry | Replaces `st.pose` for that model (how it holds its weapon, kneeling or standing fire) |
+| `build(root)`, `ANIMS = {anim: frames}`, `pose(root, anim, frame)` | creature | One facing, one job per anim, each frame with a shadow. The ground is a holdout, so anything below z = 0 is hidden and a creature can rise out of it and sink back; the canvas holds the largest above-ground extent over every pose. A model outside `creatures/` sets `CATEGORY = "creatures"` |
 | An empty named `muzzle` | all | The weapon's barrel tip (`_soldier.muzzle` for infantry): recorded in every frame as the sprite JSON's `muzzle`; a glTF export keeps it as a node |
 
 `rng` is a `random.Random` seeded from the id and the frame, so every render of a hook is the same. A moving part
@@ -185,6 +188,31 @@ Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its
 `colour` is the layer's minimap colour. A pack with no `art/tiles/tileset.json` of its own draws the generic
 pack's, and with none in either the art index's plain `terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
 and sizes, written into that pack's `art/tiles/`.
+
+## Effects
+
+`effects/effects.py` draws the effects the player plays (explosions, smoke and dust puffs, sparks, muzzle flashes,
+shells, rockets and a looping fire) from code with numpy, not Blender: hot lit puffs that cool to smoke, flame
+tongues, sparks on ballistic arcs. They are lit by the studio's key light, rendered at 3× and packed at the
+studio's scale (64 atlas pixels per tile), so they sit with the detailed sprites. This follows the asset plan's
+"code first" for effects; Blender's smoke simulation stays untested.
+
+```bash
+python3 art/effects/effects.py                                   # writes settings/generic/art/sprites/effects*
+python3 art/effects/effects.py --only explosion_medium --sheet /tmp/fx.png   # a contact sheet, writes no page
+```
+
+It writes one page, `effects-0.png` (no team paint, so no mask), and `effects/<id>.json` in the format above with one
+part, `effect`, whose `idle` anim holds the frames facing by facing (muzzle flashes, shells and rockets face 16
+ways). Each frame's pivot is where the effect happens: an explosion's ground point, a barrel tip, the foot of a
+fire. A run takes under a minute and writes the same bytes each time on the same numpy. The renderer's list of
+effect ids is `EFFECTS` in `crates/classic-render/src/art.rs`; a pack without one of them falls back to the
+placeholder strip its `art.json` lists, or draws nothing.
+
+Muzzle points: infantry carry theirs in the sprite JSON. For vehicles and defence turrets the renderer measures the
+barrel tip from the turret's (or a turretless vehicle's hull's) frames when it loads them: the opaque pixels
+furthest out from the middle in the way each frame faces. A model can still add a `muzzle` empty to have the studio
+record an exact one.
 
 ## 3D models
 

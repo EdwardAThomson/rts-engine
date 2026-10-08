@@ -111,6 +111,8 @@ pub struct Art {
     /// Each sprite once per faction ramp, in owner order.
     sprites: BTreeMap<String, Vec<Strip>>,
     effects: BTreeMap<String, Strip>,
+    /// The detailed effects (`art/sprites/effects/`), for the ids that have them; their page is in `studio`.
+    fx: BTreeMap<String, studio::Sprite>,
     /// Each build icon once per faction ramp, in owner order.
     icons: BTreeMap<String, Vec<Strip>>,
     /// Units drawn as several members, by unit id.
@@ -180,6 +182,7 @@ impl Art {
             terrain: BTreeMap::new(),
             sprites: BTreeMap::new(),
             effects: BTreeMap::new(),
+            fx: BTreeMap::new(),
             icons: BTreeMap::new(),
             squads: parse_squads(&doc)?,
             studio: Studio::default(),
@@ -201,30 +204,55 @@ impl Art {
             .iter()
             .map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or("")))
             .collect();
-        for path in studio::candidates(kinds) {
+        // Each sprite with the layer it came from: its page is the one beside it, in the same layer, and two layers'
+        // pages can share a name, so pages are keyed by layer and name.
+        let mut found = Vec::new();
+        for path in studio::candidates(kinds).into_iter().chain(effect_candidates()) {
             let Ok((layer, bytes)) = read(&path) else { continue };
-            let files = &layers[layer];
             let text = String::from_utf8_lossy(&bytes);
-            let mut sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", files.name(&path)))?;
-            let id = path.rsplit('/').next().unwrap_or("").trim_end_matches(".json").to_string();
-            // Its page is the one beside it, in the same layer: two layers' pages can share a name.
-            let [img, mask] = studio::page_files(&sprite.atlas);
-            sprite.atlas = format!("{layer}/{}", sprite.atlas);
-            if !art.studio.pages.contains_key(&sprite.atlas) {
-                let (w, h, rgba) = decode_png(&files.read(&img)?, &img)?;
-                let (mw, mh, mask_px) = decode_png(&files.read(&mask)?, &mask)?;
-                if (mw, mh) != (w, h) {
-                    return Err(format!("{mask}: {mw}x{mh}, but its page is {w}x{h}"));
-                }
-                let mut pages = Vec::new();
-                for ramp in &owner_ramps {
-                    let mut px = rgba.clone();
-                    studio::paint(&mut px, &mask_px, ramp);
-                    pages.push(batch.texture(gpu, w, h, &px));
-                }
-                art.studio.pages.insert(sprite.atlas.clone(), pages);
+            let mut sprite = studio::Sprite::parse(&text).map_err(|e| format!("{}: {e}", layers[layer].name(&path)))?;
+            let page = sprite.atlas.clone();
+            sprite.atlas = format!("{layer}/{page}");
+            found.push((path, layer, page, sprite));
+        }
+        // A page at a time: measure the muzzles its sprites lack, then paint it in each owner's colours. A page with
+        // no team mask (effects) is loaded once, as it is.
+        let atlases: std::collections::BTreeSet<(usize, String)> =
+            found.iter().map(|(_, layer, page, _)| (*layer, page.clone())).collect();
+        for (layer, page) in atlases {
+            let files = &layers[layer];
+            let key = format!("{layer}/{page}");
+            let [img, mask] = studio::page_files(&page);
+            let (w, h, rgba) = decode_png(&files.read(&img)?, &img)?;
+            for (path, _, _, sprite) in found.iter_mut().filter(|(_, _, _, s)| s.atlas == key) {
+                let body_gun = ["/units/", "/air/"].iter().any(|f| path.contains(f));
+                sprite.find_muzzles(&rgba, w, body_gun);
             }
-            art.studio.sprites.insert(id, sprite);
+            let pages = match files.read(&mask) {
+                Ok(bytes) => {
+                    let (mw, mh, mask_px) = decode_png(&bytes, &mask)?;
+                    if (mw, mh) != (w, h) {
+                        return Err(format!("{mask}: {mw}x{mh}, but its page is {w}x{h}"));
+                    }
+                    let mut pages = Vec::new();
+                    for ramp in &owner_ramps {
+                        let mut px = rgba.clone();
+                        studio::paint(&mut px, &mask_px, ramp);
+                        pages.push(batch.texture(gpu, w, h, &px));
+                    }
+                    pages
+                }
+                Err(_) => vec![batch.texture(gpu, w, h, &rgba)],
+            };
+            art.studio.pages.insert(key, pages);
+        }
+        for (path, _, _, sprite) in found {
+            let id = path.rsplit('/').next().unwrap_or("").trim_end_matches(".json").to_string();
+            if path.contains("/effects/") {
+                art.fx.insert(id, sprite);
+            } else {
+                art.studio.sprites.insert(id, sprite);
+            }
         }
         // The tile set and its page come from the same layer.
         if let Ok((layer, bytes)) = read(tiles::TILESET) {
@@ -275,6 +303,33 @@ impl Art {
     pub fn effect(&self, id: &str) -> Option<&Strip> {
         self.effects.get(id)
     }
+
+    /// The detailed effect `id` and its page, if the pack has one.
+    pub fn fx(&self, id: &str) -> Option<(&studio::Sprite, TexId)> {
+        let s = self.fx.get(id)?;
+        Some((s, *self.studio.pages.get(&s.atlas)?.first()?))
+    }
+}
+
+/// The effects the renderer plays, by generic id. A pack draws each as a detailed effect in
+/// `art/sprites/effects/<id>.json` (`art/effects/effects.py` makes the generic pack's), else as the placeholder strip
+/// `art.json` lists under `effects`, else not at all.
+pub const EFFECTS: [&str; 11] = [
+    "explosion_small",
+    "explosion_medium",
+    "explosion_large",
+    "smoke_puff",
+    "dust_puff",
+    "hit_spark",
+    "muzzle_flash_gun",
+    "muzzle_flash_rocket",
+    "shell",
+    "rocket",
+    "fire",
+];
+
+fn effect_candidates() -> Vec<String> {
+    studio::candidates(EFFECTS.iter().map(|id| (*id, "effect")))
 }
 
 /// The art index, from the pack's folder.
@@ -297,15 +352,17 @@ pub fn art_files(index: &str) -> Result<Vec<String>, String> {
     }
     // The terrain tile set, if the pack has one.
     files.extend([tiles::TILESET.to_string(), tiles::TILESET_PAGE.to_string()]);
-    // Where the studio's packed sprites may be; most ids have none yet.
+    // Where the studio's packed sprites and the detailed effects may be; a pack need not have them.
     let ids = doc.get("sprites").and_then(Value::as_object).unwrap_or(&[]).iter();
     files.extend(studio::candidates(
         ids.map(|(id, e)| (id.as_str(), e.get("kind").and_then(Value::as_str).unwrap_or(""))),
     ));
+    files.extend(effect_candidates());
     Ok(files)
 }
 
-/// The atlas pages the studio sprites among `files` (path and contents) are on, for a loader that fetches in turn.
+/// The atlas pages the studio sprites among `files` (path and contents) are on, with their team masks, for a loader
+/// that fetches in turn. A page with no team paint (effects) has no mask; the loader takes it as it is.
 pub fn atlas_files<'a>(files: impl IntoIterator<Item = (&'a String, &'a Vec<u8>)>) -> Vec<String> {
     let mut pages = std::collections::BTreeSet::new();
     for (path, bytes) in files {
