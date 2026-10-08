@@ -6,7 +6,7 @@ the same games. Every world it plays (names, factions, art, audio, campaign, UI 
 **setting pack**; today packs supply names, factions and tuning.
 
 ```bash
-cargo test                                                    # 115 checks, about 1 s after the first build
+cargo test                                                    # 118 checks, about 1 s after the first build
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
 cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
@@ -15,6 +15,18 @@ cargo run --release --bin play                                # play against the
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
 python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
+```
+
+The same player runs in the browser, drawing with WebGPU, or WebGL2 where the browser has no WebGPU. Build it with
+[wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen)'s command-line tool, at the version `Cargo.lock` gives
+the `wasm-bindgen` library (`cargo install wasm-bindgen-cli --version <that version>`), then serve the repository
+root:
+
+```bash
+cargo build --release --target wasm32-unknown-unknown -p classic-render --bin play
+wasm-bindgen --target web --no-typescript --out-dir web/play/pkg target/wasm32-unknown-unknown/release/play.wasm
+python3 -m http.server 8000      # then open http://localhost:8000/web/play/ (options: ?setting=generic&seed=3)
+node web/play/check.mjs          # checks it in headless Chromium, on WebGPU and WebGL2 (needs Playwright)
 ```
 
 ## What's in it
@@ -33,8 +45,9 @@ python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ t
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
 | `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the desktop player: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`. |
+| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, queue, minimap) and placing buildings. `platform/` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page). `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
+| `web/play/` | The page for the browser build of the player: a full-window canvas. `check.mjs` opens it in headless Chromium on WebGPU and on WebGL2. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. The tests' map. |
 | `maps/skirmish-01.txt` | 64 x 40, two large rock plateaus with room to build, near, far and contested resource fields, outcrops and cliff ridges. The desktop player's map. |
@@ -105,6 +118,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   three-cannons caps; a fight off screen is panned towards its side and one far away is silent; only the local
   player hears their own deliveries; the generic sounds match their recipes byte for byte and each has a
   provenance line.
+- The browser build of the player (headless Chromium, software GPU): it draws the map with WebGPU and, with
+  WebGPU switched off, with WebGL2; the game ticks and Space pauses it. Art loaded from fetched files draws the same
+  frame as art read from its folder, and a pack given as files loads as it does from its folder.
 - `isqrt` equals `floor(sqrt(n))` on squares, their neighbours and a sweep; the hash streams exactly the
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
@@ -129,12 +145,18 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   stalemate behind their turrets. In the desktop player it was checked only in a short smoke run, not played by a
   person.
 - No storage cap, tech levels, factory upgrades or starport.
-- The renderer is desktop only so far, with no selection card, messages or menus; the rail has no tabs by
-  category, hotkeys, pause per item or primary factory choice yet; cliffs are
-  plain dark tiles, and the art is the generic pack's placeholders. The player was checked under a virtual display
+- The renderer has no selection card, messages or menus yet; the rail has no tabs by category, hotkeys, pause per
+  item or primary factory choice yet; cliffs are plain dark tiles, and the art is the generic pack's placeholders.
+  The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
-  volume sliders yet, and no sound in the browser. The placeholder sounds were checked by tests and numbers
+  volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and
+  it has not been heard there. The placeholder sounds were checked by tests and numbers
   (length, peak, never clipping), not yet by ear, and the player has not been run with a real sound card.
+- The browser build was checked only in headless Chromium on its software GPU, not in Firefox or Safari, on a
+  phone, or on a real GPU. Headless Chromium never shows a WebGPU canvas, so the check reads that frame back from
+  the GPU instead of taking a screenshot. A pack in the browser is checked over the files fetched (its data files,
+  the art `art.json` names and the sounds `audio/sounds.json` names), not every file in its folder, and the page has
+  no touch controls.
 - The web viewer (`web/viewer/`) is the debug view: plain shapes on a 2D canvas, checked in headless Chromium.
 - Bench numbers are from one 4-vCPU cloud VM, not a desktop or a browser.

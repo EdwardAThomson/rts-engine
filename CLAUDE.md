@@ -15,12 +15,16 @@ cargo run --release --bin bench              # performance; prints hashes to com
 cargo run --release --bin play               # the desktop player (needs a GPU; tests use Mesa's software one)
 cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs   # web build
 python3 -m http.server 8000                  # then http://localhost:8000/web/viewer/ draws a game in the browser
+cargo build --release --target wasm32-unknown-unknown -p classic-render --bin play \
+  && wasm-bindgen --target web --no-typescript --out-dir web/play/pkg target/wasm32-unknown-unknown/release/play.wasm
+                                             # the player in the browser: /web/play/; node web/play/check.mjs checks it
 ```
 
 The toolchain is pinned in `rust-toolchain.toml`. The simulation, data and tools crates have no third-party
 dependencies; only the renderer (`classic-render`) has them: wgpu, winit, pollster, png and cpal (sound; on Linux
-it builds against ALSA's headers, `libasound2-dev`, or build without the `device` feature for a silent player). Add
-one only when it clearly pays for itself.
+it builds against ALSA's headers, `libasound2-dev`, or build without the `device` feature for a silent player), plus
+wasm-bindgen, wasm-bindgen-futures, js-sys and web-sys for its browser build (wgpu, winit and cpal use them there
+anyway). Add one only when it clearly pays for itself.
 
 The shared core lives in the public `rts-core` repository and is pinned by commit (`Cargo.toml`,
 `[workspace.dependencies]`). Changes to it go there, not here; moving the pin forward must keep the golden tests

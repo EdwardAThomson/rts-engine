@@ -3,3 +3,7 @@
 settings-private/
 *.log
 __pycache__/
+# The browser player's generated bindings and WebAssembly (wasm-bindgen output).
+/web/play/pkg/
+# Playwright for the browser check (web/play/check.mjs), installed by CI with npm.
+/node_modules/

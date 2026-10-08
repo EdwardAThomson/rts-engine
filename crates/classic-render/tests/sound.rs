@@ -168,3 +168,25 @@ fn interface_sounds_play_by_id() {
     }
     assert!(b.ui("no_such_sound").is_none());
 }
+
+#[test]
+fn sounds_fetched_into_memory_load_as_they_do_from_the_pack_folder() {
+    // The browser build fetches the files `audio/sounds.json` names, then loads them from memory.
+    let generic = setting::root().join("settings/generic");
+    let index = std::fs::read_to_string(generic.join(classic_render::sound::SOUND_INDEX)).unwrap();
+    let mut files = BTreeMap::new();
+    for f in classic_render::sound::files_named(&index).into_iter().chain([classic_render::sound::SOUND_INDEX.into()]) {
+        files.insert(f.clone(), std::fs::read(generic.join(&f)).unwrap());
+    }
+    let fetched = [classic_render::platform::Files::Memory { label: "fetched".into(), files }];
+    let (mut a, mut b) = (Mixer::new(48_000), Mixer::new(48_000));
+    let from_folder = board(&mut a);
+    let from_memory = SoundBoard::from_files(&fetched, 0, 1, &mut b);
+    assert!(from_memory.warnings.is_empty(), "{:?}", from_memory.warnings);
+    for (x, y) in from_folder.tables.defs.iter().zip(&from_memory.tables.defs) {
+        assert_eq!(x.clips.len(), y.clips.len(), "{}", x.id);
+        for (&cx, &cy) in x.clips.iter().zip(&y.clips) {
+            assert_eq!(a.clip(cx).seconds(), b.clip(cy).seconds(), "{}", x.id);
+        }
+    }
+}
