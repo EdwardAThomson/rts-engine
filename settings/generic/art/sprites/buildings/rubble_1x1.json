@@ -1,0 +1,1 @@
+{"id": "rubble_1x1", "atlas": "buildings-0", "facings": 1, "scale": 2, "parts": {"building": {"facings": 1, "anims": {"idle": {"length": 1, "frames": [[2785, 0, 61, 51, -3, -6]]}}}}, "footprint": [1, 1]}

@@ -42,6 +42,58 @@ def sprite(atlas, mask, frame, team, shadow=False):
     return Image.fromarray((img * 255).round().astype(np.uint8), "RGBA"), (px, py)
 
 
+def cells_for(doc, atlas, mask):
+    """Rows of cells for one entity: its base part turning (8 facings) in each team colour, then one row of every
+    other animation at facing 0, overlays drawn over the intact frame."""
+    parts = doc["parts"]
+    base = next(p for p in ("hull", "building", "body") if p in parts)
+    bp = parts[base]
+    n = bp["facings"]
+
+    def frame(part, anim, f, k):
+        a = parts[part]["anims"][anim]
+        return (f % a.get("facings", parts[part]["facings"])) * a["length"] + k
+
+    def view(f, team, anim="idle", k=0, extra=()):
+        a = bp["anims"][anim]
+        layers = []
+        if "shadow" in a:
+            layers.append(sprite(atlas, None, a["shadow"][frame(base, anim, f, k)], None, shadow=True))
+        layers.append(sprite(atlas, mask, a["frames"][frame(base, anim, f, k)], team))
+        if anim == "idle" and "turret" in parts:
+            t = parts["turret"]
+            layers.append(sprite(atlas, mask, t["anims"]["idle"]["frames"][f * t["facings"] // n], team))
+        if anim == "idle":
+            for name, p in parts.items():
+                if p.get("overlay"):
+                    an, ov = next(iter(p["anims"].items()))
+                    kk = dict(extra).get(name, 0)
+                    layers.append(sprite(atlas, mask, ov["frames"][kk], team))
+        return layers
+
+    rows = []
+    for team in RAMPS:
+        rows.append([view(i, team) for i in range(0, n, max(1, n // 8))])
+    extra = []
+    for anim, a in bp["anims"].items():
+        if anim != "idle" or a["length"] > 1:
+            facing = 2 * n // 8  # east, so walks and recoil read side on
+            extra += [view(facing, "blue", anim, k) for k in range(a["length"])]
+    for name, p in parts.items():
+        if p.get("overlay"):
+            an, ov = next(iter(p["anims"].items()))
+            extra += [view(0, "blue", extra=((name, k),)) for k in range(ov["length"])]
+        elif name not in (base, "turret"):
+            for anim, a in p["anims"].items():
+                step = max(1, p["facings"] // 8)
+                extra += [[sprite(atlas, None, a["shadow"][f * a["length"]], None, shadow=True)] * ("shadow" in a) +
+                          [sprite(atlas, mask, a["frames"][f * a["length"]], "blue")]
+                          for f in range(0, p["facings"], step)]
+    if extra:
+        rows.append(extra)
+    return rows
+
+
 def main():
     root, out = Path(sys.argv[1]), sys.argv[2]
     pages = {}
@@ -52,23 +104,9 @@ def main():
         if a not in pages:
             pages[a] = (np.asarray(Image.open(root / f"{a}.png").convert("RGBA"), np.float32) / 255,
                         np.asarray(Image.open(root / f"{a}.mask.png"), np.float32) / 255)
-        atlas, mask = pages[a]
-        base = "hull" if "hull" in doc["parts"] else "building"
-        n = doc["parts"][base]["facings"]
-        for team in RAMPS:
-            row = []
-            step = max(1, n // 8)
-            for i in range(0, n, step):
-                layers = []
-                if "shadow" in doc["parts"][base]:
-                    layers.append(sprite(atlas, None, doc["parts"][base]["shadow"]["frames"][i], None, shadow=True))
-                layers.append(sprite(atlas, mask, doc["parts"][base]["anims"]["idle"]["frames"][i], team))
-                if "turret" in doc["parts"]:
-                    t = doc["parts"]["turret"]
-                    k = i * t["facings"] // n
-                    layers.append(sprite(atlas, mask, t["anims"]["idle"]["frames"][k], team))
-                row.append(layers)
-            cells.append(row)
+        if "icon" in doc["parts"]:
+            continue
+        cells += cells_for(doc, *pages[a])
     cell = max(max(max(im.width, im.height) for im, _ in layers) for row in cells for layers in row) + 8
     cols = max(len(r) for r in cells)
     sheet = Image.new("RGBA", (cols * cell, len(cells) * cell), GROUND + (255,))

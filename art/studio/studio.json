@@ -10,7 +10,9 @@
   "facings": {
     "hull": 16,
     "turret": 32,
-    "building": 1
+    "building": 1,
+    "wreck": 8,
+    "infantry": 8
   },
   "margin_px": 2,
   "team_paint": {
@@ -39,8 +41,18 @@
     ]
   },
   "reference_sizes_m": {
-    "battle_tank_length": 6.3,
-    "harvester_length": 8.0
+    "about": "Real lengths (art-pipeline.md section 1); check.py holds every model within 5% of its entry. Infantry are built at 1.75x by the rig; the supply ship is modelled at half its 20 m.",
+    "scout_bike": 3.0,
+    "raider_bike": 3.0,
+    "quad": 4.0,
+    "battle_tank": 6.3,
+    "siege_tank": 7.5,
+    "harvester": 8.0,
+    "mcv": 8.5,
+    "super_h": 9.0,
+    "gunship": 7.0,
+    "carrier": 10.0,
+    "supply_ship": 10.0
   },
   "styles": {
     "about": "One set of models, several looks. A style changes how the studio renders and packs, never the models' size, pivots or frame layout, so any style drops into the same atlas format.",
@@ -60,5 +72,49 @@
       "palette": 48,
       "hard_alpha": true
     }
+  },
+  "max_building_height_tiles": 1.5,
+  "footprint_inset_m": 0.5,
+  "team_coverage": [
+    0.05,
+    0.4
+  ],
+  "atlas": {
+    "about": "One page per category, never more (renderer.md section 10); pack.py fails when a page overflows.",
+    "page": [
+      4096,
+      4096
+    ],
+    "pages": {
+      "vehicles": "units-0",
+      "buildings": "buildings-0",
+      "infantry": "infantry-0",
+      "aircraft": "air-0",
+      "effects": "effects-0",
+      "icons": "icons-0"
+    }
+  },
+  "portrait": {
+    "elevation_deg": 35,
+    "turn_deg": 30,
+    "render_size": [
+      768,
+      576
+    ],
+    "sizes": {
+      "1x": [
+        96,
+        72
+      ],
+      "2x": [
+        192,
+        144
+      ]
+    },
+    "samples": 64
+  },
+  "render_scale_by_category": {
+    "about": "Buildings render at 3x: at zoom 2 the refinery looked the same as at 4x (mean difference 1 in 255, 0.9% of pixels over 8, all on edges) for 45% less time (studio test, 2026-10-07).",
+    "buildings": 3
   }
 }

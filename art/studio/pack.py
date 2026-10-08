@@ -1,6 +1,6 @@
 """Pack rendered frames into atlases for the renderer (plans/rts/renderer.md, "Data"; art-pipeline.md section 2).
 
-    python3 art/studio/pack.py RENDER_DIR [RENDER_DIR ...] --out settings/generic/art/sprites [--preview PNG]
+    python3 art/studio/pack.py RENDER_DIR [RENDER_DIR ...] --out settings/generic/art/sprites
 
 Each RENDER_DIR is one entity rendered by render.py. For every frame this:
   1. finds team paint (the studio's green hue band), writes its strength to a mask and turns it neutral grey,
@@ -13,8 +13,8 @@ Then it shelf-packs every frame of a category into one page, writing <atlas>.png
 <category>/<id>.json with frames as [x, y, w, h, pivotX, pivotY]. Output depends only on the renders.
 """
 import argparse
-import colorsys
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,13 +23,24 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 STUDIO = json.loads((Path(__file__).parent / "studio.json").read_text())
-ATLAS = {"vehicles": "units-0", "buildings": "buildings-0"}
-CATEGORY = {"vehicles": "units", "buildings": "buildings"}
-PAGE_WIDTH = 2048
+ATLAS = STUDIO["atlas"]["pages"]
+PAGE = STUDIO["atlas"]["page"]
+SHADOW_FLOOR = 0.04
+FOLDER = {"vehicles": "units", "buildings": "buildings", "infantry": "infantry", "aircraft": "air",
+          "effects": "effects", "icons": "icons"}
 
 
 def load(path):
     return np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32) / 255
+
+
+def hue_of(rgb):
+    """colorsys.rgb_to_hsv's hue, for a whole image at once."""
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mx, mn = rgb.max(-1), rgb.min(-1)
+    d = np.maximum(mx - mn, 1e-12)
+    h = np.where(mx == r, (g - b) / d, np.where(mx == g, 2 + (b - r) / d, 4 + (r - g) / d))
+    return np.where(mx > mn, (h / 6) % 1.0, 0).astype(np.float32)
 
 
 def team_mask(rgba):
@@ -38,8 +49,7 @@ def team_mask(rgba):
     rgb = rgba[..., :3]
     mx, mn = rgb.max(-1), rgb.min(-1)
     sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
-    hsv = np.vectorize(lambda r, g, b: colorsys.rgb_to_hsv(r, g, b)[0], otypes=[np.float32])
-    hue = hsv(rgb[..., 0], rgb[..., 1], rgb[..., 2])
+    hue = hue_of(rgb)
     lo, hi = tp["hue_band"]
     s0 = tp["min_saturation"]
     mask = ((hue >= lo) & (hue <= hi)) * np.clip((sat - s0) / s0, 0, 1) * (rgba[..., 3] > 0)
@@ -74,10 +84,10 @@ def resize(arr, size):
     return np.clip(out, 0, 1)
 
 
-def shrink(rgba, mask, origin, style):
+def shrink(rgba, mask, origin, style, rs):
     """Downscale to atlas size. A style with pixel_size 2 shrinks to half that and doubles back with nearest
     neighbour, for chunky pixels at the same atlas scale; hard_alpha cuts edges to on or off."""
-    rs, st = STUDIO["render_scale"], STUDIO["vertical_stretch"]
+    st = STUDIO["vertical_stretch"]
     px = style["pixel_size"]
     h, w = rgba.shape[:2]
     size = (max(1, round(w / rs / px)), max(1, round(h * st / rs / px)))
@@ -107,36 +117,71 @@ def trim(rgba, mask, pivot):
     return crop, None if mask is None else mask[y0:y1, x0:x1], [round(pivot[0] - x0), round(pivot[1] - y0)]
 
 
+def image_path(rdir, job, f, n):
+    return rdir / f"{job['part']}-{job['anim']}-f{f:02d}-{n:02d}.png"
+
+
+def uncrop(rgba, job, size):
+    """An overlay was rendered inside a border; put it back on a full canvas so it shrinks exactly like the frame
+    it is drawn over and their pivots agree."""
+    if not job.get("crop"):
+        return rgba
+    x0, y0 = job["crop"][:2]
+    full = np.zeros((size[1], size[0], 4), np.float32)
+    h, w = min(rgba.shape[0], size[1] - y0), min(rgba.shape[1], size[0] - x0)
+    full[y0:y0 + h, x0:x0 + w] = rgba[:h, :w]
+    return full
+
+
 def frames_of(rdir, meta):
-    """Every frame of an entity: (part, kind, index, rgba, mask, pivot); kind is 'image' or 'shadow'."""
+    """Every frame of an entity: (part, anim, kind, rgba, mask, pivot), kind 'image' or 'shadow', in the order
+    the JSON lists them: per job, facing by facing, each facing's frames in turn."""
     style = STUDIO["styles"][meta.get("style", "detailed")]
-    names = [(part, i) for part, info in meta["parts"].items() for i in range(info["facings"])]
-    masked = neutralise([team_mask(load(rdir / f"{p}-idle-f{i:02d}-00.png")) for p, i in names])
+    scale = meta.get("render_scale", STUDIO["render_scale"])
+    size = meta["render_size"]
+    keys = [(job, f, n) for job in meta["jobs"] for f in range(job["facings"]) for n in range(job["frames"])]
+    missing = [str(image_path(rdir, *k)) for k in keys if not image_path(rdir, *k).exists()]
+    if missing:
+        sys.exit(f"{meta['id']}: {len(missing)} frames missing, e.g. {missing[0]} (a partial render?)")
+    masked = neutralise([team_mask(uncrop(load(image_path(rdir, *k)), k[0], size)) for k in keys])
     out = []
-    for (part, i), (rgba, mask) in zip(names, masked):
-        small, m, piv = shrink(rgba, mask, meta["origin_px"], style)
-        out.append((part, "image", i, *trim(small, m, piv)))
-        sp = rdir / f"{part}-idle-f{i:02d}-00.shadow.png"
-        if sp.exists():
+    for (job, f, n), (rgba, mask) in zip(keys, masked):
+        small, m, piv = shrink(rgba, mask, meta["origin_px"], style, scale)
+        out.append((job["part"], job["anim"], "image", *trim(small, m, piv)))
+        sp = image_path(rdir, job, f, n).with_suffix(".shadow.png")
+        if job.get("shadow"):
             sh = load(sp)
             sh[..., :3] = 0
-            small, _, piv = shrink(sh, None, meta["origin_px"], style)
-            out.append((part, "shadow", i, *trim(small, None, piv)))
+            # Drop the catcher's faint noise floor, so a shadow frame trims to the shadow, not the whole canvas.
+            sh[..., 3] = np.clip((sh[..., 3] - SHADOW_FLOOR) / (1 - SHADOW_FLOOR), 0, 1)
+            small, _, piv = shrink(sh, None, meta["origin_px"], style, scale)
+            out.append((job["part"], job["anim"], "shadow", *trim(small, None, piv)))
     return out
 
 
-def pack(frames):
+def icon_frames(rdir, meta):
+    """A build icon: the portrait render shrunk to each icon size, untrimmed, with its team mask."""
+    rgba, mask = neutralise([team_mask(load(rdir / "icon.png"))])[0]
+    out = []
+    for name, size in STUDIO["portrait"]["sizes"].items():
+        small = resize(rgba, tuple(size))
+        m = np.clip(resize(mask * rgba[..., 3], tuple(size)) / np.maximum(small[..., 3], 1e-4), 0, 1)
+        out.append(("icon", name, "image", small, m * (small[..., 3] > 0), [0, 0]))
+    return out
+
+
+def pack(frames, page):
     """Shelf-pack frames, tallest first, ties in input order; returns (x, y) per frame and the page size."""
     order = sorted(range(len(frames)), key=lambda k: (-frames[k].shape[0], k))
     pos, x, y, shelf = [None] * len(frames), 0, 0, 0
     for k in order:
         h, w = frames[k].shape[:2]
-        if x + w > PAGE_WIDTH:
+        if x + w > page[0]:
             x, y, shelf = 0, y + shelf, 0
         pos[k] = (x, y)
         x += w
         shelf = max(shelf, h)
-    return pos, (PAGE_WIDTH, y + shelf)
+    return pos, (page[0], y + shelf)
 
 
 def palettise(page, colours):
@@ -163,6 +208,13 @@ def write_page(path, frames, masks, pos, size, colours=0):
     Image.fromarray((mpage * 255).round().astype(np.uint8), "L").save(path.with_suffix(".mask.png"), optimize=True)
 
 
+def overflow(atlas, entities, size):
+    """Stop rather than start a page the renderer does not expect; name the biggest entities to trim."""
+    areas = sorted(((sum(f[3].shape[0] * f[3].shape[1] for f in fs), m["id"]) for m, fs in entities), reverse=True)
+    top = ", ".join(f"{eid} ({a // 1000}k px)" for a, eid in areas[:5])
+    sys.exit(f"{atlas}: needs {size[0]}x{size[1]}, over the {PAGE[0]}x{PAGE[1]} page. Largest: {top}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("renders", nargs="+")
@@ -171,38 +223,51 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    repo = Path(__file__).resolve().parents[2]
+    o = str(out.resolve())
+    # The git-ignored settings-private/ clone is the private repository, not this one.
+    inside = o.startswith(str(repo) + os.sep) and not o.startswith(str(repo / "settings-private") + os.sep)
     by_atlas = {}
     for rdir in map(Path, args.renders):
         meta = json.loads((rdir / "meta.json").read_text())
-        by_atlas.setdefault(ATLAS[meta["category"]], []).append((meta, frames_of(rdir, meta)))
+        if meta.get("external") and inside:
+            sys.exit(f"{meta['id']} comes from {meta['model']}, outside this repository: pack it into its own "
+                     f"pack's folder, never under {repo}")
+        frames = icon_frames(rdir, meta) if meta["kind"] == "icon" else frames_of(rdir, meta)
+        by_atlas.setdefault(ATLAS[meta["category"]], []).append((meta, frames))
 
     for atlas, entities in sorted(by_atlas.items()):
         flat = [f for _, fs in entities for f in fs]
-        pos, size = pack([f[3] for f in flat])
+        pos, size = pack([f[3] for f in flat], PAGE)
+        if size[1] > PAGE[1]:
+            overflow(atlas, entities, size)
         styles = {m.get("style", "detailed") for m, _ in entities}
         assert len(styles) == 1, f"{atlas}: one style per page, got {sorted(styles)}"
         write_page(out / atlas, [f[3] for f in flat], [f[4] for f in flat], pos, size,
                    STUDIO["styles"][styles.pop()]["palette"])
         k = 0
         for meta, fs in entities:
+            jobs = {(j["part"], j["anim"]): j for j in meta.get("jobs", [])}
             parts = {}
-            for part, kind, i, img, _, piv in fs:
+            for part, anim, kind, img, _, piv in fs:
                 x, y = pos[k]
                 k += 1
-                entry = parts.setdefault(part, {"facings": meta["parts"][part]["facings"],
-                                                "anims": {"idle": {"frames": []}}})
+                job = jobs.get((part, anim), {"facings": 1, "frames": 1})
+                entry = parts.setdefault(part, {"facings": job["facings"], "anims": {}})
+                if job.get("overlay"):
+                    entry["overlay"] = True
+                a = entry["anims"].setdefault(anim, {"length": job["frames"], "frames": []})
+                if job["facings"] != entry["facings"]:
+                    a["facings"] = job["facings"]  # e.g. infantry deaths, drawn the same from every side
                 frame = [x, y, img.shape[1], img.shape[0], piv[0], piv[1]]
-                if kind == "shadow":
-                    entry.setdefault("shadow", {"frames": []})["frames"].append(frame)
-                else:
-                    entry["anims"]["idle"]["frames"].append(frame)
+                a.setdefault("shadow", []).append(frame) if kind == "shadow" else a["frames"].append(frame)
             if "turret" in parts:
                 parts["turret"]["pivotOffset"] = [0, 0]
             doc = {"id": meta["id"], "atlas": atlas, "facings": max(p["facings"] for p in parts.values()),
                    "scale": 2, "parts": parts}
             if "footprint" in meta:
                 doc["footprint"] = meta["footprint"]
-            path = out / CATEGORY[meta["category"]] / f"{meta['id']}.json"
+            path = out / FOLDER[meta["category"]] / f"{meta['id']}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(doc, separators=(", ", ": ")) + "\n")
         print(f"{atlas}: {len(flat)} frames, page {size[0]}x{size[1]}")

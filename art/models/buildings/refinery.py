@@ -13,7 +13,7 @@ def build(root):
     load, glass = st.cargo(), st.glass()
     stripe = st.plain("stripe", (0.75, 0.55, 0.08))
     W, H = FOOTPRINT[0] * T, FOOTPRINT[1] * T
-    st.block((W - 0.6, H - 0.6, 0.3), (W / 2, -H / 2, 0.15), mat=conc, parent=root, bevel=0.08, name="pad")
+    st.block((W - 1.2, H - 1.2, 0.3), (W / 2, -H / 2, 0.15), mat=conc, parent=root, bevel=0.08, name="pad")
 
     # Processing hall across the west and middle columns, north half.
     hx, hy, hw, hl = W * 0.36, -H * 0.3, W * 0.62, H * 0.5
