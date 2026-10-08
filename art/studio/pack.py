@@ -8,7 +8,7 @@ Each RENDER_DIR is one entity rendered by render.py. For every frame this:
   2. downscales by the render scale, in premultiplied alpha, and stretches vertically by 1/sin(60), so the
      ground comes out square and footprints match tiles;
   3. draws a dark outline round the body frames of the categories studio.json's `outline` names (not shadows,
-     icons or building overlays), so units stand out on any ground;
+     icons, building overlays or decals), so units stand out on any ground;
   4. trims to content plus a margin and records the pivot: the ground point under a unit's origin, or a
      building footprint's north-west corner.
 Then it shelf-packs every frame of a category into one page, writing <atlas>.png, <atlas>.mask.png and
@@ -177,7 +177,8 @@ def frames_of(rdir, meta):
     out = []
     for (job, f, n), (rgba, mask) in zip(keys, masked):
         small, m, piv = shrink(rgba, mask, meta["origin_px"], style, scale)
-        if meta["category"] in STUDIO["outline"]["categories"] and not job.get("overlay"):
+        # decals (slabs, rubble) lie flat in the ground, so an outline would draw a kerb round them
+        if meta["category"] in STUDIO["outline"]["categories"] and not job.get("overlay") and not meta.get("decal"):
             small, m, piv = outline(small, m, piv)
         out.append((job["part"], job["anim"], "image", *trim(small, m, piv)))
         sp = image_path(rdir, job, f, n).with_suffix(".shadow.png")
