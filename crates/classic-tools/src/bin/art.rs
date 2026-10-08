@@ -27,8 +27,9 @@ fn remove_stale(dir: &Path, keep: &BTreeSet<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let p = e.path();
-        // `art/sprites/` holds the Blender renders packed by `art/studio`, not drawings.
-        if p.ends_with("art/sprites") {
+        // `art/sprites/` holds the Blender renders packed by `art/studio`, and `theme/fonts/` the fonts baked by
+        // `art/fonts/bake.py`, not drawings.
+        if p.ends_with("art/sprites") || p.ends_with("theme/fonts") {
             continue;
         }
         if p.is_dir() {

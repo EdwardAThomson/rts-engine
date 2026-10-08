@@ -8,6 +8,7 @@ use classic_data::json::{self, Value};
 
 use crate::platform::{Files, Gpu, Rect, SpriteBatch, TexId};
 use crate::studio::{self, Studio};
+use crate::tiles::{self, Tileset};
 
 /// A strip of equal frames laid left to right in one texture.
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +119,8 @@ pub struct Art {
     squads: BTreeMap<String, Squad>,
     /// The studio's packed sprites, for the ids that have them.
     pub studio: Studio,
+    /// The terrain tile set and its page, where the pack has one; it replaces the plain `terrain` tiles.
+    pub tileset: Option<(Tileset, TexId)>,
     /// The middle shade of each owner's ramp, in owner order.
     owners: Vec<[u8; 3]>,
 }
@@ -167,6 +170,7 @@ impl Art {
             icons: BTreeMap::new(),
             squads: parse_squads(&doc)?,
             studio: Studio::default(),
+            tileset: None,
             owners: owner_ramps.iter().map(|r| r[r.len() / 2]).collect(),
         };
         for (id, entry) in entries("terrain") {
@@ -227,6 +231,11 @@ impl Art {
                 art.studio.sprites.insert(id, sprite);
             }
         }
+        if let Ok(text) = files.read_text(tiles::TILESET) {
+            let set = Tileset::parse(&text)?;
+            let (w, h, rgba) = decode_png(&files.read(tiles::TILESET_PAGE)?, tiles::TILESET_PAGE)?;
+            art.tileset = Some((set, batch.texture(gpu, w, h, &rgba)));
+        }
         // Icons are plain file names, one picture each.
         for (id, file) in entries("icons") {
             let entry = Value::Object(vec![("file".into(), file.clone())]);
@@ -243,6 +252,11 @@ impl Art {
 
     pub fn terrain(&self, id: &str) -> Option<&Strip> {
         self.terrain.get(id)
+    }
+
+    /// The minimap colour of tile set layer `id`, where the pack has a tile set with that layer.
+    pub fn layer_colour(&self, id: &str) -> Option<[u8; 3]> {
+        self.tileset.as_ref()?.0.layer(id).map(|l| l.colour)
     }
 
     /// The sprite for generic id `id` in `owner`'s colours.
@@ -312,6 +326,8 @@ pub fn art_files(index: &str) -> Result<Vec<String>, String> {
     for (_, file) in doc.get("icons").and_then(Value::as_object).unwrap_or(&[]) {
         files.extend(file.as_str().map(String::from));
     }
+    // The terrain tile set, if the pack has one.
+    files.extend([tiles::TILESET.to_string(), tiles::TILESET_PAGE.to_string()]);
     // Where the studio's packed sprites and the detailed effects may be; a pack need not have them.
     let ids = doc.get("sprites").and_then(Value::as_object).unwrap_or(&[]).iter();
     files.extend(studio::candidates(
@@ -346,10 +362,27 @@ pub fn art_dir(pack: &classic_data::Pack) -> std::path::PathBuf {
 }
 
 /// The ramp each of `players` players is drawn in: the pack's factions in order, repeating if there are more
-/// players than factions.
+/// players than factions. The same as `faction_ramps` with player 0 on the first faction.
 pub fn player_ramps(pack: &classic_data::Pack, players: usize) -> Vec<String> {
-    let n = pack.factions.len().max(1);
-    (0..players).map(|i| pack.factions.get(i % n).map_or_else(|| "grey".into(), |f| f.ramp.clone())).collect()
+    faction_ramps(pack, players, 0, 0)
+}
+
+/// Which of the pack's factions each player has, in owner order, when the player `local` picked faction `chosen`:
+/// the others take the remaining factions in the pack's order, then every faction again in order when there are more
+/// players than factions.
+pub fn player_factions(factions: usize, players: usize, local: usize, chosen: usize) -> Vec<usize> {
+    let n = factions.max(1);
+    let chosen = chosen % n;
+    let mut others = (0..n).filter(|&f| f != chosen).chain((0..n).cycle());
+    (0..players).map(|p| if p == local { chosen } else { others.next().unwrap_or(0) }).collect()
+}
+
+/// The ramp name of each player, in owner order, when the player `local` picked faction `chosen`.
+pub fn faction_ramps(pack: &classic_data::Pack, players: usize, local: usize, chosen: usize) -> Vec<String> {
+    player_factions(pack.factions.len(), players, local, chosen)
+        .into_iter()
+        .map(|f| pack.factions.get(f).map_or_else(|| "grey".into(), |f| f.ramp.clone()))
+        .collect()
 }
 
 fn hex(v: &Value) -> Result<[u8; 3], String> {

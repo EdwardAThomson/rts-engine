@@ -48,19 +48,23 @@ any generic renders it reuses.
   paint, reference sizes, the footprint inset, the atlas pages and the portrait camera.
 - `studio/rts_studio.py`: scene, lights, materials, part helpers (`block`, `cylinder`, `cone`, `sphere`,
   `wedge`, `beam`, `group`), the frame helpers (`default_damage`, `default_wreck`, `construction`, `rubble`,
-  `scorched`, `burnt`), the infantry rig (`rig`, `pose`) and the portrait camera.
+  `scorched`, `burnt`), the infantry rig (`rig`, `pose`), the ground holdout for creatures (`ground_cut`) and the
+  portrait camera.
 - `studio/render.py`: renders every frame a model asks for (below), with shadow passes, into a render folder with
   `meta.json`, and appends the job's time to `art/timings.jsonl`.
 - `studio/icon.py`: the build icon from the portrait camera (35° up, turned 30°, dark backdrop).
 - `studio/pack.py`: masks team paint and makes it neutral grey, downscales, stretches by 1/sin 60° so footprints
   are square on screen, trims, and packs one 4096 × 4096 page per category (`units-0`, `buildings-0`,
-  `infantry-0`, `air-0`, `effects-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
+  `infantry-0`, `air-0`, `effects-0`, `creatures-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
   a page would overflow.
 - `studio/check.py`: the checks below.
 - `studio/export_gltf.py`: the same models as glTF binaries for a real-time 3D renderer (below).
 - `studio/preview.py`: draws the packed sprites back in three team colours, plus a row of every other frame.
+- `studio/tileset.py`: terrain tiles from a terrain set file (below); no Blender needed.
+- `terrain/<set>.json`: a terrain set's colours, materials and sizes (`desert.json` for the generic pack).
 - `studio/samples/`: the studio's own test models (the facing arrow, a building, a defence turret, a wall) and the
-  infantry prototype `soldier.py` on the rig. None is a game asset.
+  infantry prototype `soldier.py` on the rig, and `test_creature.py`, a post that rises out of the ground. None is a
+  game asset.
 - `jobs.jsonl`: one line per asset in the plan, with its batch, frames and status. `timings.jsonl`: every render's
   real time, so the plan's estimates can be replaced with measurements.
 
@@ -87,6 +91,7 @@ optional: a model that leaves a hook out gets the studio's default.
 | `TEAM = False` | all | No team paint expected (walls, rubble): the coverage check is skipped |
 | `build(root, joints)` | infantry | Parts parented to the rig's joints; idle 1, walk 6, fire 3 at 8 facings, and die-1, die-2 of 8 frames from one side |
 | `rig_pose(joints, anim, frame, frames)` | infantry | Replaces `st.pose` for that model (how it holds its weapon, kneeling or standing fire) |
+| `build(root)`, `ANIMS = {anim: frames}`, `pose(root, anim, frame)` | creature | One facing, one job per anim, each frame with a shadow. The ground is a holdout, so anything below z = 0 is hidden and a creature can rise out of it and sink back; the canvas holds the largest above-ground extent over every pose. A model outside `creatures/` sets `CATEGORY = "creatures"` |
 | An empty named `muzzle` | all | The weapon's barrel tip (`_soldier.muzzle` for infantry): recorded in every frame as the sprite JSON's `muzzle`; a glTF export keeps it as a node |
 
 `rng` is a `random.Random` seeded from the id and the frame, so every render of a hook is the same. A moving part
@@ -139,6 +144,46 @@ layout, so a renderer can offer them as a player option.
 Renders are not committed; the packed atlases and JSON are. Cycles output can differ slightly between machines, so
 re-rendering may change the PNGs' bytes without changing how they look.
 
+## Terrain tiles
+
+```bash
+python3 art/studio/tileset.py art/terrain/desert.json --out settings/generic/art/tiles \
+    --sheet /tmp/tiles-sheet.png --preview maps/skirmish-01.txt /tmp/tiles-map.png
+```
+
+It takes about 15 seconds and needs only numpy and pillow. The ground is drawn in **layers**, bottom first, as the
+set file lists them: the generic set has `open` (sand, under everything), `resource_light`, `resource_thick`,
+`rock` and `cliff`. Each layer's `on` says which map tiles it covers: kinds of ground (`{"ground": ["rock",
+"cliff"]}`) or a resource level (`{"resource": 1}` light, `2` thick). The renderer counts a tile thick when it is
+at least three quarters full and its four neighbours hold some, so fields are thick in the middle, thin at the
+edges and thin out as they are harvested.
+
+The renderer draws every layer on a grid offset by half a tile, so each drawn tile has four map tiles at its
+corners, and draws that layer's tile for which of the four it covers: the **corner case**, bits 1 (north-west),
+2 (north-east), 4 (south-east) and 8 (south-west). Case 15 is the full tile, 1 to 14 are edges blended out through
+a noisy mask, and 0 draws nothing. Because layers stack, any number of ground kinds can meet without a tile for
+each pair. Each material is one swatch that repeats every `period` tiles (4), and a tile is cut from the swatch
+where it lies on the map, so tiles always join and the ground repeats only every few tiles. The renderer picks the
+tile by corner case and by place: `(y mod period) * period + (x mod period)`.
+
+Relief (ripples, rock rims, cliff faces, nodules) is a height field lit from the studio's key light, the same
+direction as the rendered units; raised layers (`relief`) cast a short `shadow` away from the light. A layer with
+`"base": true` covers every tile, so it gets only full tiles. A layer with an `inset` (rock 0.15, cliffs 0.3; the
+corner blend is 0.5 at a tile boundary and 1 at a tile's middle) keeps its edge, slope and shadow inside the map tiles it covers, so a building on the next tile
+never sits on it; the resource has none, so fields stay soft.
+
+Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its edge), and `tileset.json`:
+
+```json
+{"set": "desert", "tile_px": 64, "period": 4, "page": "art/tiles/tileset.png",
+ "layers": [{"id": "rock", "on": {"ground": ["rock", "cliff"]}, "colour": "#7a6e61",
+             "tiles": [null, [[x, y], ... one per place], ... 16 corner cases]}]}
+```
+
+`colour` is the layer's minimap colour. A pack with no `art/tiles/tileset.json` keeps the art index's plain
+`terrain` tiles. Another set (the temperate one, or a private pack's) is a copy of `desert.json` with new colours
+and sizes, written into that pack's `art/tiles/`.
+
 ## Effects
 
 `effects/effects.py` draws the effects the player plays (explosions, smoke and dust puffs, sparks, muzzle flashes,
@@ -190,3 +235,11 @@ parts whose faces lie flush show a dark patch, so check a new model at `--lod lo
 
 A 3D camera sees angles the sprite camera never does, so a model can look right as a sprite and still show a gap
 or a dark patch from low down. Check new models from a few low angles before relying on them in 3D.
+
+## Fonts
+
+The UI fonts are two SIL OFL 1.1 faces kept in `fonts/src/` as WOFF2 (from the Fontsource npm packages) with their
+licences: Inter (body text) and Oxanium (headings and numbers). The player has no font rasteriser, so
+`python3 art/fonts/bake.py` (Pillow with FreeType) bakes each text style (`small`, `body`, `heading`, `title`) at UI
+scales 1, 2 and 3 into white glyph atlases in `settings/generic/theme/fonts/`, indexed by `fonts.json`. Rerun it after
+changing a face or a size; the rest of the UI skin is drawn from code by `cargo run --bin art`.

@@ -6,7 +6,7 @@ someone could name the game a picture comes from, it belongs in a private pack i
 
 ## Art
 
-Everything under `art/` and `theme/` is drawn from code in `crates/classic-tools/src/art` and written by
+Everything under `art/` and `theme/` (but `art/sprites/` and `theme/fonts/`) is drawn from code in `crates/classic-tools/src/art` and written by
 `cargo run --bin art`. Don't edit the PNGs by hand: change the drawing and rerun it. A test fails when the files
 and the drawings disagree. `provenance.jsonl` records each file's source.
 
@@ -14,11 +14,19 @@ and the drawings disagree. `provenance.jsonl` records each file's source.
 - `art/units/` and the turrets in `art/buildings/` are strips of eight 32 px frames, facing north first and then
   turning clockwise.
 - `art/buildings/` is one frame per building, sized to its default footprint in the rules data at 32 px per tile.
-- `art/terrain/` has four 32 px variants of each ground tile. `art/features/` holds things drawn over the ground.
+- `art/tiles/` is the terrain the player draws: desert sand, rock, cliffs and light and thick resource, blended
+  into each other, made by `art/studio/tileset.py` from `art/terrain/desert.json` (see `art/README.md`, "Terrain
+  tiles"). `art/terrain/` has the older four 32 px variants of each ground tile, still used for the minimap's
+  fallback colours and by packs without tiles. `art/features/` holds things drawn over the ground.
 - `art/icons/` holds 64 x 48 sidebar icons for every unit, building and superpower.
 - `art/effects/` holds explosions, smoke, sparks, muzzle flashes, projectiles, craters, scorch marks and rubble.
   The player draws the detailed effects in `art/sprites/effects/` instead where they exist (below).
-- `theme/` has a nine-slice panel frame, a three-state button and `theme.css` colours.
+- `theme/theme.json` indexes the UI skin: nine-slice frames for the rail, panels, wells (`inset`), tooltips and the
+  factory tabs (closed, open), buttons in four states (normal, hover, pressed, disabled), 23 cursors at 32 and 64 px
+  with their hotspots (`theme/cursors/`), and an emblem per faction as SVG and PNG (`theme/emblems/`). `theme.css`
+  holds the colours.
+- `theme/fonts/` holds two open-licence (SIL OFL 1.1) faces baked into glyph atlases by `art/fonts/bake.py`: Inter for
+  body text and Oxanium for headings and numbers, each style at UI scales 1 to 3, with their licences beside them.
 
 Faction colour: pixels in the four `remap` colours in `art.json` (magenta shades) are swapped, by exact value, for
 the four shades of the owning faction's ramp. The generator refuses any drawing that blends over a key colour.
@@ -28,7 +36,7 @@ puffs, sparks, muzzle flashes facing 16 ways, shells, rockets and a looping fire
 `python3 art/effects/effects.py` at the studio's scale; see `art/README.md`, "Effects". Craters, scorch marks and
 rubble are still the placeholders.
 
-Not drawn yet: blends between terrain kinds, wrecks, building animations, cursors and fonts.
+Not drawn yet: wrecks, building animations, a logo and a menu background.
 
 ## Audio
 

@@ -163,3 +163,124 @@ fn defends_its_base_against_a_raider() {
     assert!(sent >= 1);
     assert!(hits >= 1);
 }
+
+/// Player 0's computer opponent with the first wave allowed at once, three tanks at home, and player 1's harvester
+/// gone (so there is nothing to raid), with or without a line of gun turrets in front of player 1's base.
+fn odds(turrets: bool) -> (Game, [Ai; 1]) {
+    let mut g = game(8);
+    let tank = g.kind("battle_tank").unwrap();
+    for x in 6..9 {
+        g.spawn(tank, 0, x, 15);
+    }
+    if turrets {
+        let gun = g.kind("gun_turret").unwrap();
+        for x in 48..56 {
+            g.spawn(gun, 1, x, 27);
+        }
+    }
+    g.state.entities.retain(|e| !(e.owner == 1 && g.rules.kind(e.kind).harvester.is_some()));
+    let settings = Settings { first_wave_tick: 0, first_wave: 3, ..Settings::normal() };
+    (g, [Ai::new(0, settings)])
+}
+
+#[test]
+fn a_wave_waits_until_it_would_beat_the_defenders() {
+    let (mut g, mut ai) = odds(true);
+    play(&mut g, &mut ai, 1500);
+    let tanks = count(&g, 0, "battle_tank");
+    println!("against eight turrets: {} waves in 1500 ticks, {tanks} tanks kept at home", ai[0].waves_sent);
+    assert_eq!(ai[0].waves_sent, 0);
+    assert!(tanks >= 4, "none thrown away");
+
+    let (mut g, mut ai) = odds(false);
+    play(&mut g, &mut ai, 1500);
+    println!("against no turrets: {} waves in 1500 ticks", ai[0].waves_sent);
+    assert!(ai[0].waves_sent >= 1);
+}
+
+#[test]
+fn with_its_income_gone_it_sends_every_unit() {
+    let mut g = game(9);
+    g.state.resource.iter_mut().for_each(|r| *r = 0);
+    g.state.players[0].credits = 0;
+    let tank = g.kind("battle_tank").unwrap();
+    for x in 6..9 {
+        g.spawn(tank, 0, x, 15);
+    }
+    // Ten units would be its first wave; with no income it stops waiting for them.
+    let settings = Settings { first_wave_tick: 0, first_wave: 10, ..Settings::normal() };
+    let broke = settings.broke_ticks;
+    let mut ai = [Ai::new(0, settings)];
+    play(&mut g, &mut ai, broke - 30);
+    assert_eq!(ai[0].waves_sent, 0, "not before its income has stopped for broke_ticks");
+    play(&mut g, &mut ai, 300);
+    let sent = ai[0].wave.as_ref().map_or(0, |w| w.launched_with);
+    println!("no income: a wave of {sent} once broke_ticks passed");
+    assert_eq!(ai[0].waves_sent, 1);
+    assert_eq!(sent, 4, "the starting tank and the three more");
+}
+
+#[test]
+fn with_no_harvester_left_it_cancels_other_work_to_make_one() {
+    let mut g = game(10);
+    let mut ai = [Ai::new(0, Settings::normal())];
+    play(&mut g, &mut ai, 3000);
+    // Lose every harvester while the factories are full of tanks that can't be paid for.
+    g.state.entities.retain(|e| !(e.owner == 0 && g.rules.kind(e.kind).harvester.is_some()));
+    let tank = g.kind("battle_tank").unwrap();
+    let heavy = g.kind("heavy_factory").unwrap();
+    let factories: Vec<u32> =
+        g.state.entities.iter().filter(|e| e.owner == 0 && e.kind == heavy).map(|e| e.id).collect();
+    for &f in &factories {
+        for _ in 0..2 {
+            g.order(0, &[f], CommandOrder::Produce { kind: tank });
+        }
+    }
+    g.step(1);
+    g.state.players[0].credits = 0;
+    play(&mut g, &mut ai, 15 * 60);
+    let cancelled = g.events.iter().filter(|e| matches!(e, Event::ProductionCancelled { .. })).count();
+    println!(
+        "{} heavy factories full of tanks, no credits: {cancelled} cancelled, {} harvesters a minute later",
+        factories.len(),
+        count(&g, 0, "harvester")
+    );
+    assert!(!factories.is_empty() && cancelled >= 1);
+    assert!(count(&g, 0, "harvester") >= 1);
+}
+
+#[test]
+fn two_ais_on_a_mirrored_map_play_mirror_images_of_each_other() {
+    use classic_sim::map::TILE;
+    let mut rules = classic_sim::Rules::default();
+    rules.movement.wait_random = 1;
+    rules.regrowth.every_ticks = u32::MAX;
+    for w in &mut rules.weapons {
+        w.scatter = 0;
+    }
+    let map = include_str!("../../../maps/mirror-01.txt");
+    let mut g = Game::new(GameOptions { map, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let mut ais = [Ai::new(0, Settings::normal()), Ai::new(1, Settings::normal())];
+    let w = g.map.width as i64 * TILE;
+    let side = |g: &Game, p: u32| {
+        let mut v: Vec<(String, i64, i64, i64)> = g
+            .state
+            .entities
+            .iter()
+            .filter(|e| e.owner == p)
+            .map(|e| {
+                let k = g.rules.kind(e.kind);
+                let x = e.x - TILE / 2 + k.width as i64 * TILE / 2;
+                (k.id.clone(), if p == 0 { w - x } else { x }, e.y, e.health)
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    for _ in 0..60 {
+        play(&mut g, &mut ais, 100);
+        assert_eq!(side(&g, 0), side(&g, 1), "tick {}", g.state.tick);
+    }
+    println!("6000 ticks with chance taken out: mirror images throughout, {} entities each", side(&g, 0).len());
+    assert!(side(&g, 0).len() > 10);
+}

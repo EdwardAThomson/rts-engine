@@ -72,7 +72,7 @@ def cells_for(doc, atlas, mask):
         return layers
 
     rows = []
-    for team in RAMPS:
+    for team in RAMPS if "idle" in bp["anims"] else ():  # a creature has only its own animations
         rows.append([view(i, team) for i in range(0, n, max(1, n // 8))])
     extra = []
     for anim, a in bp["anims"].items():

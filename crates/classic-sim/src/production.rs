@@ -181,7 +181,8 @@ fn credit(state: &mut GameState, player: u32, amount: i64) {
 }
 
 /// The free tile a finished unit leaves by: the factory's exit tile (below the middle of its footprint), or else
-/// the first free one of its 8 neighbours in row order. Free means open to ground movement with no unit on it.
+/// the first free one of its 8 neighbours in row order, the side nearer the middle of the map first in each row.
+/// Free means open to ground movement with no unit on it.
 fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, factory: usize) -> Option<Tile> {
     let f = &state.entities[factory];
     let t = f.tile();
@@ -191,9 +192,9 @@ fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, f
         return Some(exit);
     }
     (-1..=1)
-        .flat_map(|dy| (-1..=1).map(move |dx| (exit.x + dx, exit.y + dy)))
-        .find(|&(x, y)| free(x, y))
-        .map(|(x, y)| Tile { x, y })
+        .flat_map(|dy| (-1..=1).map(move |dx| Tile { x: exit.x + dx, y: exit.y + dy }))
+        .filter(|t| free(t.x, t.y))
+        .min_by_key(|t| (t.y, across(t.x, map.width), t.x))
 }
 
 /// Whether a unit stands on this tile or is on its way into it.
@@ -202,14 +203,23 @@ fn held(state: &GameState, rules: &Rules, t: Tile) -> bool {
 }
 
 /// Where a new unit drives to so the next one can come out: the nearest free tile two to four steps from the
-/// exit, ring by ring, then in row order (rules-movement.md section 7, with no rally point yet).
+/// exit, ring by ring, then in row order, the side nearer the middle of the map first in each row (rules-movement.md
+/// section 7, with no rally point yet).
 fn clear_of_exit(pf: &Pathfinder, state: &GameState, rules: &Rules, exit: Tile) -> Option<Tile> {
+    let w = pf.size().0;
     (2..=4).find_map(|r: i32| {
         (exit.y - r..=exit.y + r)
             .flat_map(|y| (exit.x - r..=exit.x + r).map(move |x| Tile { x, y }))
             .filter(|t| (t.x - exit.x).abs().max((t.y - exit.y).abs()) == r)
-            .find(|&t| pf.passable(t.x, t.y) && !held(state, rules, t))
+            .filter(|&t| pf.passable(t.x, t.y) && !held(state, rules, t))
+            .min_by_key(|t| (t.y, across(t.x, w), t.x))
     })
+}
+
+/// How far column `x` lies from the middle of a map `width` wide (in half tiles): row order's tie-break between the
+/// two sides, the same way round on a mirrored map.
+fn across(x: i32, width: i32) -> i32 {
+    (2 * x + 1 - width).abs()
 }
 
 /// One tick of every queue, factories in id order: the head entry builds and pays, pauses, or finishes.

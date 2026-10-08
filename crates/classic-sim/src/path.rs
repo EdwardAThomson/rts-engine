@@ -2,9 +2,16 @@
 //! make it deterministic: the same map and endpoints always give the same path.
 //!
 //! The search keeps g, came-from and closed in arrays reused between searches, with a generation stamp instead
-//! of clearing them, and the open list is a binary heap ordered by (f, then h, then tile index). Every entry is
+//! of clearing them, and the open list is a binary heap ordered by (f, then h, then how far the tile lies off the
+//! straight line from start to goal, then how far it lies from the middle of the map, then tile index). Every entry
+//! is
 //! unique, because a tile is pushed again only with a strictly lower g, so the pop order, and with it the path,
 //! never depends on how the heap is laid out. Nothing iterates these arrays, so they are for speed only.
+//!
+//! The distance off the straight line decides between paths of equal cost by their shape, hugging the line, and
+//! the distance from the middle of the map between tiles the line splits evenly (a detour round a unit in the way):
+//! both come out the same whichever way round the map is turned. The tile index alone would bend every such path
+//! towards the top left, and give the two sides of a mirrored map different paths.
 
 use crate::map::{MapData, Terrain, Tile};
 
@@ -53,7 +60,7 @@ pub struct Pathfinder {
     closed: Vec<u32>,
     gen_: u32,
     /// Open list: `f * h_range + h`, and the tile index as the last tie-break.
-    hk: Vec<i64>,
+    hk: Vec<i128>,
     hi: Vec<u32>,
     /// One more than the largest h on this map.
     h_range: i64,
@@ -196,11 +203,20 @@ impl Pathfinder {
         }
         let gen_ = self.gen_;
         let h_range = self.h_range;
+        // Twice the area of the triangle start, goal, tile: the tile's distance off the line, times the line's length.
+        let off_range = 2 * (w as i64) * (hgt as i64) + 1;
+        let off =
+            |x: i32, y: i32| (((x - sx) as i64) * ((gy - sy) as i64) - ((y - sy) as i64) * ((gx - sx) as i64)).abs();
+        let mid_range = (w as i64).pow(2) + (hgt as i64).pow(2) + 1;
+        let mid = |x: i32, y: i32| ((2 * x + 1 - w) as i64).pow(2) + ((2 * y + 1 - hgt) as i64).pow(2);
+        let key = |f: i64, h: i64, x: i32, y: i32| {
+            (((f * h_range + h) * off_range + off(x, y)) as i128) * mid_range as i128 + mid(x, y) as i128
+        };
         let Self { pass, g, from, seen, closed, hk, hi, stats, .. } = self;
         g[start as usize] = 0;
         seen[start as usize] = gen_;
         let h0 = octile(sx, sy, gx, gy) as i64;
-        hk[0] = h0 * h_range + h0;
+        hk[0] = key(h0, h0, sx, sy);
         hi[0] = start;
         let mut size = 1usize;
         let mut expanded = 0u32;
@@ -278,7 +294,7 @@ impl Pathfinder {
                     from[n] = cur;
                     seen[n] = gen_;
                     let h = octile(nx, ny, gx, gy) as i64;
-                    let k = (ng as i64 + h) * h_range + h;
+                    let k = key(ng as i64 + h, h, nx, ny);
                     let nt = n as u32;
                     let mut i = size;
                     size += 1;

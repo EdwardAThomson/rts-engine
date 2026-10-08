@@ -1,0 +1,41 @@
+{
+  "about": "The generic pack's UI skin, drawn from code by crates/classic-tools/src/art/theme.rs (run: cargo run --bin art); the fonts are baked by art/fonts/bake.py. Paths are relative to the pack. Frames are nine-sliced: the corners keep their size (times the UI scale), the edges stretch along their length and the middle stretches both ways; 'slice' is the corner size in pixels. A strip holds one frame per state, left to right. Cursor hotspots are in pixels of the 32 pixel picture; the 2x picture's are double. Emblems are by faction id.",
+  "frames": {
+    "rail": { "file": "theme/rail.png", "frame": [32, 32], "slice": 12 },
+    "panel": { "file": "theme/panel.png", "frame": [24, 24], "slice": 8 },
+    "inset": { "file": "theme/inset.png", "frame": [12, 12], "slice": 4 },
+    "tooltip": { "file": "theme/tooltip.png", "frame": [12, 12], "slice": 4 },
+    "tab": { "file": "theme/tab.png", "frame": [16, 16], "slice": 5, "states": ["closed", "open"] },
+    "button": { "file": "theme/button.png", "frame": [24, 16], "slice": 5, "states": ["normal", "hover", "pressed", "disabled"] }
+  },
+  "cursors": {
+    "default": { "file": "theme/cursors/default.png", "file_2x": "theme/cursors/default@2x.png", "hotspot": [1, 1] },
+    "select": { "file": "theme/cursors/select.png", "file_2x": "theme/cursors/select@2x.png", "hotspot": [16, 16] },
+    "move": { "file": "theme/cursors/move.png", "file_2x": "theme/cursors/move@2x.png", "hotspot": [16, 16] },
+    "attack": { "file": "theme/cursors/attack.png", "file_2x": "theme/cursors/attack@2x.png", "hotspot": [16, 16] },
+    "no": { "file": "theme/cursors/no.png", "file_2x": "theme/cursors/no@2x.png", "hotspot": [16, 16] },
+    "harvest": { "file": "theme/cursors/harvest.png", "file_2x": "theme/cursors/harvest@2x.png", "hotspot": [16, 16] },
+    "enter": { "file": "theme/cursors/enter.png", "file_2x": "theme/cursors/enter@2x.png", "hotspot": [16, 16] },
+    "repair_pad": { "file": "theme/cursors/repair_pad.png", "file_2x": "theme/cursors/repair_pad@2x.png", "hotspot": [16, 16] },
+    "carry": { "file": "theme/cursors/carry.png", "file_2x": "theme/cursors/carry@2x.png", "hotspot": [16, 16] },
+    "deploy": { "file": "theme/cursors/deploy.png", "file_2x": "theme/cursors/deploy@2x.png", "hotspot": [16, 16] },
+    "place_ok": { "file": "theme/cursors/place_ok.png", "file_2x": "theme/cursors/place_ok@2x.png", "hotspot": [16, 16] },
+    "place_bad": { "file": "theme/cursors/place_bad.png", "file_2x": "theme/cursors/place_bad@2x.png", "hotspot": [16, 16] },
+    "sell": { "file": "theme/cursors/sell.png", "file_2x": "theme/cursors/sell@2x.png", "hotspot": [16, 16] },
+    "repair": { "file": "theme/cursors/repair.png", "file_2x": "theme/cursors/repair@2x.png", "hotspot": [16, 16] },
+    "target": { "file": "theme/cursors/target.png", "file_2x": "theme/cursors/target@2x.png", "hotspot": [16, 16] },
+    "scroll_n": { "file": "theme/cursors/scroll_n.png", "file_2x": "theme/cursors/scroll_n@2x.png", "hotspot": [16, 3] },
+    "scroll_ne": { "file": "theme/cursors/scroll_ne.png", "file_2x": "theme/cursors/scroll_ne@2x.png", "hotspot": [25, 7] },
+    "scroll_e": { "file": "theme/cursors/scroll_e.png", "file_2x": "theme/cursors/scroll_e@2x.png", "hotspot": [29, 16] },
+    "scroll_se": { "file": "theme/cursors/scroll_se.png", "file_2x": "theme/cursors/scroll_se@2x.png", "hotspot": [25, 25] },
+    "scroll_s": { "file": "theme/cursors/scroll_s.png", "file_2x": "theme/cursors/scroll_s@2x.png", "hotspot": [16, 29] },
+    "scroll_sw": { "file": "theme/cursors/scroll_sw.png", "file_2x": "theme/cursors/scroll_sw@2x.png", "hotspot": [7, 25] },
+    "scroll_w": { "file": "theme/cursors/scroll_w.png", "file_2x": "theme/cursors/scroll_w@2x.png", "hotspot": [3, 16] },
+    "scroll_nw": { "file": "theme/cursors/scroll_nw.png", "file_2x": "theme/cursors/scroll_nw@2x.png", "hotspot": [7, 7] }
+  },
+  "emblems": {
+    "faction_a": { "file": "theme/emblems/faction_a.png", "file_2x": "theme/emblems/faction_a@2x.png", "svg": "theme/emblems/faction_a.svg" },
+    "faction_b": { "file": "theme/emblems/faction_b.png", "file_2x": "theme/emblems/faction_b@2x.png", "svg": "theme/emblems/faction_b.svg" }
+  },
+  "fonts": "theme/fonts/fonts.json"
+}
