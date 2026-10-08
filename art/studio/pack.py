@@ -10,7 +10,9 @@ Each RENDER_DIR is one entity rendered by render.py. For every frame this:
   3. trims to content plus a margin and records the pivot: the ground point under a unit's origin, or a
      building footprint's north-west corner.
 Then it shelf-packs every frame of a category into one page, writing <atlas>.png, <atlas>.mask.png and
-<category>/<id>.json with frames as [x, y, w, h, pivotX, pivotY]. Output depends only on the renders.
+<category>/<id>.json with frames as [x, y, w, h, pivotX, pivotY]. A model with a `muzzle` gets, beside each anim's
+frames, `muzzle` as [dx, dy, hidden] per frame: the barrel tip in atlas pixels from the pivot, and 1 when the body hides
+it from the camera. Output depends only on the renders.
 """
 import argparse
 import json
@@ -84,13 +86,27 @@ def resize(arr, size):
     return np.clip(out, 0, 1)
 
 
+def factors(w, h, style, rs):
+    """Atlas pixels per render pixel, across and down, for a w x h render (vertical stretch included)."""
+    px = style["pixel_size"]
+    size = (max(1, round(w / rs / px)), max(1, round(h * STUDIO["vertical_stretch"] / rs / px)))
+    return size, (size[0] * px / w, size[1] * px / h)
+
+
+def muzzle_px(points, meta):
+    """A job's muzzle points, render pixels to [dx, dy, hidden] from the pivot in atlas pixels."""
+    style = STUDIO["styles"][meta.get("style", "detailed")]
+    (w, h), (ox, oy) = meta["render_size"], meta["origin_px"]
+    _, (fx, fy) = factors(w, h, style, meta.get("render_scale", STUDIO["render_scale"]))
+    return [[round((x - ox) * fx), round((y - oy) * fy), hidden] for x, y, hidden in points]
+
+
 def shrink(rgba, mask, origin, style, rs):
     """Downscale to atlas size. A style with pixel_size 2 shrinks to half that and doubles back with nearest
     neighbour, for chunky pixels at the same atlas scale; hard_alpha cuts edges to on or off."""
-    st = STUDIO["vertical_stretch"]
     px = style["pixel_size"]
     h, w = rgba.shape[:2]
-    size = (max(1, round(w / rs / px)), max(1, round(h * st / rs / px)))
+    size, (fx, fy) = factors(w, h, style, rs)
     small = resize(rgba, size)
     m = None
     if mask is not None:
@@ -103,7 +119,7 @@ def shrink(rgba, mask, origin, style, rs):
     if px > 1:
         small = small.repeat(px, 0).repeat(px, 1)
         m = None if m is None else m.repeat(px, 0).repeat(px, 1)
-    return small, m, (origin[0] * size[0] * px / w, origin[1] * size[1] * px / h)
+    return small, m, (origin[0] * fx, origin[1] * fy)
 
 
 def trim(rgba, mask, pivot):
@@ -259,6 +275,8 @@ def main():
                 a = entry["anims"].setdefault(anim, {"length": job["frames"], "frames": []})
                 if job["facings"] != entry["facings"]:
                     a["facings"] = job["facings"]  # e.g. infantry deaths, drawn the same from every side
+                if job.get("muzzle") and "muzzle" not in a:
+                    a["muzzle"] = muzzle_px(job["muzzle"], meta)
                 frame = [x, y, img.shape[1], img.shape[0], piv[0], piv[1]]
                 a.setdefault("shadow", []).append(frame) if kind == "shadow" else a["frames"].append(frame)
             if "turret" in parts:

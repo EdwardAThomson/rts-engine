@@ -119,7 +119,14 @@ def belt(j, mat):
 
 
 # ---------- weapons ----------
-# All held along +y about the weapon joint (the grip), chunky so they read at sprite size.
+# All held along +y about the weapon joint (the grip), chunky so they read at sprite size. Each puts a `muzzle`
+# empty at its barrel tip: the studio records where it lands in every frame (muzzle flashes in 2D) and a glTF
+# export keeps it as a node under the weapon joint (where shots start in 3D).
+
+
+def muzzle(j, y, z=0.0):
+    """The barrel tip, `y` metres ahead of the grip along the weapon: an empty, so it renders as nothing."""
+    return st.group("muzzle", (0, y, z), parent=j["weapon"])
 
 
 def rifle(j, mat, length=0.9):
@@ -128,6 +135,7 @@ def rifle(j, mat, length=0.9):
     st.block((0.08, 0.22, 0.17), (0, -0.28, -0.03), mat=mat, parent=w, bevel=0.02, name="stock")
     st.block((0.07, 0.08, 0.16), (0, 0.12, -0.11), mat=mat, parent=w, bevel=0.015, name="magazine")
     st.block((0.05, 0.12, 0.06), (0, 0.12, 0.09), mat=mat, parent=w, bevel=0.0, name="sight")
+    muzzle(j, 0.15 + length / 2)
 
 
 def heavy_rifle(j, mat):
@@ -137,6 +145,7 @@ def heavy_rifle(j, mat):
     st.block((0.1, 0.24, 0.19), (0, -0.3, -0.03), mat=mat, parent=w, bevel=0.02, name="stock")
     st.cylinder(0.11, 0.1, (0, 0.08, -0.12), rot=(0, math.pi / 2, 0), mat=mat, parent=w, verts=16, name="drum")
     st.block((0.06, 0.16, 0.08), (0, 0.1, 0.11), mat=mat, parent=w, bevel=0.0, name="sight")
+    muzzle(j, 0.68)
 
 
 def compact_gun(j, mat):
@@ -144,6 +153,7 @@ def compact_gun(j, mat):
     w = j["weapon"]
     st.block((0.08, 0.5, 0.12), (0, 0.12, 0), mat=mat, parent=w, bevel=0.02, name="rifle")
     st.block((0.06, 0.08, 0.18), (0, 0.05, -0.12), mat=mat, parent=w, bevel=0.015, name="magazine")
+    muzzle(j, 0.37)
 
 
 def launcher(j, mat, team):
@@ -154,6 +164,7 @@ def launcher(j, mat, team):
     st.cylinder(0.105, 0.12, (0, 0.6, 0), rot=(math.pi / 2, 0, 0), mat=team, parent=w, verts=16, name="tube_band")
     st.block((0.08, 0.16, 0.12), (-0.13, 0.22, 0.04), mat=mat, parent=w, bevel=0.02, name="sight")
     st.block((0.06, 0.08, 0.16), (0, 0.18, -0.13), mat=mat, parent=w, bevel=0.015, name="grip")
+    muzzle(j, 0.745)  # the tube's front end; the rocket starts here
 
 
 # ---------- cycles ----------
