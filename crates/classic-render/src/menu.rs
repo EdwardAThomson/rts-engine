@@ -9,7 +9,8 @@ use classic_ai::{defeated, winner};
 use classic_sim::Game;
 use classic_sim::units::TICKS_PER_SECOND;
 
-use crate::platform::{Font, Rect, SpriteBatch};
+use crate::platform::{Rect, SpriteBatch};
+use crate::skin::{ButtonState, Skin, Style};
 use crate::theme::Theme;
 
 const BUTTON_W: f32 = 280.0;
@@ -178,13 +179,11 @@ impl Menu {
     }
 
     /// Draw the screen showing over whatever is behind it (the map, dimmed), with the mouse at `mouse`.
-    pub fn draw(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, screen: (f32, f32), mouse: (f32, f32)) {
+    pub fn draw(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, screen: (f32, f32), mouse: (f32, f32)) {
         if self.screen == Screen::Playing {
             return;
         }
         let s = self.scale;
-        let big = (4.0 * s).round().max(1.0);
-        let text = (2.0 * s).round().max(1.0);
         batch.fill(Rect::new(0.0, 0.0, screen.0, screen.1), SHADE);
         let items = self.layout(screen);
         let first = items.first().map_or(screen.1 / 2.0, |i| i.rect.y);
@@ -199,25 +198,24 @@ impl Menu {
             Screen::Playing => return,
         };
         // The heading shrinks to fit a narrow window.
-        let size = if Font::width(&heading, big) + 40.0 * s <= screen.0 { big } else { text };
-        let panel_w = (BUTTON_W * s + 60.0 * s).max(Font::width(&heading, size) + 40.0 * s).min(screen.0);
-        let head_h = Font::height(size) + Font::height(text) + 34.0 * s;
+        let size =
+            if skin.width(Style::Title, &heading, s) + 40.0 * s <= screen.0 { Style::Title } else { Style::Heading };
+        let panel_w = (BUTTON_W * s + 60.0 * s).max(skin.width(size, &heading, s) + 40.0 * s).min(screen.0);
+        let head_h = skin.line(size, s) + skin.line(Style::Body, s) + 34.0 * s;
         let panel =
             Rect::new((screen.0 - panel_w) / 2.0, first - head_h - 20.0 * s, panel_w, last - first + head_h + 40.0 * s);
-        batch.fill(panel, self.theme.panel);
-        batch.outline(panel, 1.0, self.theme.edge);
-        let hx = (screen.0 - Font::width(&heading, size)) / 2.0;
-        font.draw(batch, &heading, hx, panel.y + 16.0 * s, size, colour);
-        let sx = (screen.0 - Font::width(&sub, text)) / 2.0;
-        font.draw(batch, &sub, sx, panel.y + 24.0 * s + Font::height(size), text, self.theme.dim);
+        skin.frame(batch, "panel", 0, panel, s, self.theme.panel);
+        let hx = (screen.0 - skin.width(size, &heading, s)) / 2.0;
+        skin.text(batch, size, &heading, hx, panel.y + 16.0 * s, s, colour);
+        let sx = (screen.0 - skin.width(Style::Body, &sub, s)) / 2.0;
+        skin.text(batch, Style::Body, &sub, sx, panel.y + 24.0 * s + skin.line(size, s), s, self.theme.dim);
         for i in &items {
             let over = i.rect.contains(mouse.0, mouse.1);
-            batch.fill(i.rect, if over { self.theme.hover } else { self.theme.button });
-            if over {
-                batch.outline(i.rect, 1.0, self.theme.text);
-            }
-            let lx = i.rect.x + (i.rect.w - Font::width(&i.label, text)) / 2.0;
-            font.draw(batch, &i.label, lx, i.rect.y + (i.rect.h - Font::height(text)) / 2.0, text, self.theme.text);
+            let state = if over { ButtonState::Hover } else { ButtonState::Normal };
+            skin.button(batch, i.rect, state, s);
+            let lx = i.rect.x + (i.rect.w - skin.width(Style::Body, &i.label, s)) / 2.0;
+            let ly = i.rect.y + (i.rect.h - skin.line(Style::Body, s)) / 2.0;
+            skin.text(batch, Style::Body, &i.label, lx, ly, s, self.theme.text);
         }
     }
 }

@@ -16,8 +16,9 @@ use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
 use crate::feed::{Feed, Tone};
-use crate::platform::{Files, Font, Rect, SpriteBatch};
+use crate::platform::{Files, Rect, SpriteBatch};
 use crate::scene::Camera;
+use crate::skin::{Skin, Style};
 use crate::theme::Theme;
 
 /// The rail's width, at UI scale 1.
@@ -29,7 +30,7 @@ const CELL_H: f32 = 72.0;
 const GAP: f32 = 4.0;
 const QUEUE_W: f32 = 36.0;
 const QUEUE_H: f32 = 27.0;
-const READOUT_H: f32 = 62.0;
+const READOUT_H: f32 = 66.0;
 /// The minimap's square, at UI scale 1; the map is fitted inside it.
 const MINIMAP: f32 = 192.0;
 /// The selection card's height, above the queue.
@@ -422,7 +423,7 @@ impl Hud {
         &mut self,
         batch: &mut SpriteBatch,
         art: &Art,
-        font: &Font,
+        skin: &Skin,
         game: &Game,
         view: &View,
         mouse: (f32, f32),
@@ -430,8 +431,6 @@ impl Hud {
     ) {
         self.check_placing(game);
         let s = self.scale;
-        let text = (2.0 * s).round().max(1.0);
-        let small = s.round().max(1.0);
         let tick = game.state.tick;
         let pulse = (tick / 4).is_multiple_of(2);
         let over = self.over(game, view.screen, mouse.0, mouse.1);
@@ -459,11 +458,10 @@ impl Hud {
         }
 
         let l = self.layout(game, view.screen);
-        batch.fill(l.rail, self.theme.panel);
-        batch.fill(Rect::new(l.rail.x, 0.0, 1.0, l.rail.h), self.theme.edge);
+        skin.frame(batch, "rail", 0, l.rail, s, self.theme.panel);
         for t in &l.tabs {
             let open = l.open == Some(t.factory);
-            batch.fill(t.rect, if open { self.theme.hover } else { self.theme.button });
+            skin.frame(batch, "tab", open as usize, t.rect, s, if open { self.theme.hover } else { self.theme.button });
             let id = &game.rules.kind(t.factory).id;
             let inner = Rect::new(t.rect.x + 3.0 * s, t.rect.y + 2.0 * s, t.rect.w - 6.0 * s, t.rect.h - 8.0 * s);
             self.picture(batch, art, id, inner, [255; 4]);
@@ -487,7 +485,7 @@ impl Hud {
                 }
                 None => {}
             }
-            if open {
+            if open && !skin.has("tab") {
                 batch.outline(t.rect, 1.0, self.theme.text);
             }
         }
@@ -495,7 +493,7 @@ impl Hud {
         let mut hovered = None;
         for icon in &l.icons {
             let r = icon.rect;
-            batch.fill(r, self.theme.button);
+            skin.frame(batch, "inset", 0, r, s, self.theme.button);
             let st = icon.status;
             let id = &game.rules.kind(icon.item).id;
             let tint = if st.needs.is_some() { [90, 90, 90, 255] } else { [255; 4] };
@@ -515,23 +513,39 @@ impl Hud {
                 }
                 Some((EntryState::Ready, _)) => {
                     batch.outline(r, 2.0 * s, if pulse { [255, 230, 120, 255] } else { self.theme.warn });
-                    let w = Font::width("READY", small);
-                    font.draw(batch, "READY", r.x + (r.w - w) / 2.0, r.y + r.h - 12.0 * s, small, self.theme.text);
+                    let w = skin.width(Style::Small, "READY", s);
+                    skin.text(
+                        batch,
+                        Style::Small,
+                        "READY",
+                        r.x + (r.w - w) / 2.0,
+                        r.y + r.h - 12.0 * s,
+                        s,
+                        self.theme.text,
+                    );
                 }
                 Some((EntryState::Blocked, _)) => batch.outline(r, 2.0 * s, self.theme.warn),
                 _ => {}
             }
             if st.needs.is_some() {
-                let w = Font::width("LOCKED", small);
-                font.draw(batch, "LOCKED", r.x + (r.w - w) / 2.0, r.y + r.h / 2.0 - 3.0 * s, small, self.theme.dim);
+                let w = skin.width(Style::Small, "LOCKED", s);
+                skin.text(
+                    batch,
+                    Style::Small,
+                    "LOCKED",
+                    r.x + (r.w - w) / 2.0,
+                    r.y + r.h / 2.0 - 3.0 * s,
+                    s,
+                    self.theme.dim,
+                );
             }
             if st.queued > 1 {
                 let n = st.queued.to_string();
-                let w = Font::width(&n, text);
+                let w = skin.width(Style::Body, &n, s);
                 let badge =
-                    Rect::new(r.x + r.w - w - 6.0 * s, r.y + 2.0 * s, w + 4.0 * s, Font::height(text) + 4.0 * s);
+                    Rect::new(r.x + r.w - w - 6.0 * s, r.y + 2.0 * s, w + 4.0 * s, skin.line(Style::Body, s) + 4.0 * s);
                 batch.fill(badge, [0, 0, 0, 200]);
-                font.draw(batch, &n, badge.x + 2.0 * s, badge.y + 2.0 * s, text, self.theme.text);
+                skin.text(batch, Style::Body, &n, badge.x + 2.0 * s, badge.y + 2.0 * s, s, self.theme.text);
             }
             if r.contains(mouse.0, mouse.1) {
                 batch.outline(r, 1.0, self.theme.text);
@@ -541,10 +555,14 @@ impl Hud {
 
         // The open factory's queue along the bottom of the rail.
         if let Some(&(_, first)) = l.queue.first() {
-            font.draw(batch, "QUEUE", first.x, first.y - 9.0 * s, small, self.theme.dim);
+            // Only where the font leaves room under the card.
+            let y = first.y - skin.line(Style::Small, s) - s;
+            if y >= l.card.y + l.card.h {
+                skin.text(batch, Style::Small, "QUEUE", first.x, y, s, self.theme.dim);
+            }
         }
         for (i, &(item, r)) in l.queue.iter().enumerate() {
-            batch.fill(r, self.theme.button);
+            skin.frame(batch, "inset", 0, r, s, self.theme.button);
             self.picture(
                 batch,
                 art,
@@ -557,12 +575,13 @@ impl Hud {
             }
         }
 
-        self.draw_card(batch, art, font, game, selected, l.card);
-        self.draw_minimap(batch, art, game, view, l.minimap);
-        self.draw_readout(batch, font, game, l.readout, text);
-        self.draw_feed(batch, font, game, text);
+        self.draw_card(batch, art, skin, game, selected, l.card);
+        self.draw_minimap(batch, art, skin, game, view, l.minimap);
+        self.draw_readout(batch, skin, game, l.readout);
+        self.draw_clock(batch, skin, game, view.screen);
+        self.draw_feed(batch, skin, game);
         if let Some(icon) = hovered {
-            self.draw_tooltip(batch, font, game, icon, mouse, view.screen, text);
+            self.draw_tooltip(batch, skin, game, icon, mouse, view.screen);
         }
     }
 
@@ -574,15 +593,12 @@ impl Hud {
     /// The selection card. One thing selected: its picture in its owner's colours, its name, a health bar with the
     /// numbers, and what it is doing. A group: how many, and a chip with a health bar for each of the first few.
     #[allow(clippy::too_many_arguments)]
-    fn draw_card(&self, batch: &mut SpriteBatch, art: &Art, font: &Font, game: &Game, selected: &[u32], r: Rect) {
+    fn draw_card(&self, batch: &mut SpriteBatch, art: &Art, skin: &Skin, game: &Game, selected: &[u32], r: Rect) {
         let s = self.scale;
-        let small = s.round().max(1.0);
-        let text = (2.0 * s).round().max(1.0);
         let chosen: Vec<&Entity> = selected.iter().filter_map(|&id| game.state.entity(id)).collect();
         let Some(&first) = chosen.first() else { return };
-        batch.fill(r, self.theme.button);
-        batch.outline(r, 1.0, self.theme.edge);
-        let pad = 4.0 * s;
+        skin.frame(batch, "panel", 0, r, s, self.theme.button);
+        let pad = 6.0 * s;
         if chosen.len() == 1 {
             let e = first;
             let k = game.rules.kind(e.kind);
@@ -593,25 +609,37 @@ impl Hud {
             let w = r.x + r.w - pad - x;
             let name = self.name(game, e.kind);
             // The name in large letters when it fits, else small.
-            let size = if Font::width(&name, text) <= w { text } else { small };
+            let size = if skin.width(Style::Body, &name, s) <= w { Style::Body } else { Style::Small };
             let mut y = r.y + pad;
-            font.draw(batch, &name, x, y, size, if e.owner == self.player { self.theme.text } else { self.theme.bad });
-            y += Font::height(text) + 3.0 * s;
+            skin.text(
+                batch,
+                size,
+                &name,
+                x,
+                y,
+                s,
+                if e.owner == self.player { self.theme.text } else { self.theme.bad },
+            );
+            y += skin.line(Style::Body, s) + 2.0 * s;
             let share = (e.health.max(0) as f32 / k.max_health.max(1) as f32).min(1.0);
             let bar = Rect::new(x, y, w, 5.0 * s);
             batch.fill(bar, [0, 0, 0, 255]);
             batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), health_colour(share));
-            y += bar.h + 3.0 * s;
-            font.draw(batch, &format!("{}/{}", e.health.max(0), k.max_health), x, y, small, self.theme.dim);
-            y += Font::height(small) + 4.0 * s;
+            y += bar.h + 4.0 * s;
+            // What it is doing, and its health in numbers at the right when both fit.
             let (doing, colour) = self.doing(game, e);
-            font.draw(batch, &doing, x, y, small, colour);
+            skin.text(batch, Style::Small, &doing, x, y, s, colour);
+            let health = format!("{}/{}", e.health.max(0), k.max_health);
+            let hw = skin.width(Style::Small, &health, s);
+            if skin.width(Style::Small, &doing, s) + hw + 6.0 * s <= w {
+                skin.text(batch, Style::Small, &health, x + w - hw, y, s, self.theme.dim);
+            }
             return;
         }
         let head = format!("{} SELECTED", chosen.len());
-        font.draw(batch, &head, r.x + pad, r.y + pad, small, self.theme.text);
+        skin.text(batch, Style::Small, &head, r.x + pad, r.y + pad, s, self.theme.text);
         let (cols, gap) = (5, 2.0 * s);
-        let top = r.y + pad + Font::height(small) + 3.0 * s;
+        let top = r.y + pad + skin.line(Style::Small, s) + 3.0 * s;
         let cw = (r.w - 2.0 * pad - gap * (cols - 1) as f32) / cols as f32;
         let ch = (r.y + r.h - pad - top - gap) / 2.0;
         for (i, e) in chosen.iter().take(CHIPS).enumerate() {
@@ -627,8 +655,8 @@ impl Hud {
         }
         if chosen.len() > CHIPS {
             let more = format!("+{}", chosen.len() - CHIPS);
-            let w = Font::width(&more, small);
-            font.draw(batch, &more, r.x + r.w - pad - w, r.y + pad, small, self.theme.dim);
+            let w = skin.width(Style::Small, &more, s);
+            skin.text(batch, Style::Small, &more, r.x + r.w - pad - w, r.y + pad, s, self.theme.dim);
         }
     }
 
@@ -677,9 +705,9 @@ impl Hud {
     }
 
     /// The feed's lines at the top left of the world, newest at the bottom, fading in their last second.
-    fn draw_feed(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, text: f32) {
+    fn draw_feed(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game) {
         let s = self.scale;
-        let line = Font::height(text) + 6.0 * s;
+        let line = skin.line(Style::Body, s) + 6.0 * s;
         let now = game.state.tick;
         for (i, l) in self.feed.lines.iter().enumerate() {
             let left = crate::feed::LIFE.saturating_sub(now.saturating_sub(l.tick));
@@ -692,20 +720,27 @@ impl Hud {
             };
             colour[3] = (255.0 * fade) as u8;
             let (x, y) = (8.0 * s, 8.0 * s + i as f32 * line);
-            let w = Font::width(&l.text, text);
+            let w = skin.width(Style::Body, &l.text, s);
             batch.fill(
                 Rect::new(x - 3.0 * s, y - 3.0 * s, w + 6.0 * s, line - 2.0 * s),
                 [0, 0, 0, (150.0 * fade) as u8],
             );
-            font.draw(batch, &l.text, x, y, text, colour);
+            skin.text(batch, Style::Body, &l.text, x, y, s, colour);
         }
     }
 
     /// The whole map, one block per tile: terrain and resource in the art's own average colours, buildings and
     /// units in their owners' colours, and the part of the map the view shows as a white box.
-    fn draw_minimap(&self, batch: &mut SpriteBatch, art: &Art, game: &Game, view: &View, m: Rect) {
+    fn draw_minimap(&self, batch: &mut SpriteBatch, art: &Art, skin: &Skin, game: &Game, view: &View, m: Rect) {
         let s = self.scale;
-        batch.fill(Rect::new(m.x - 2.0 * s, m.y - 2.0 * s, m.w + 4.0 * s, m.h + 4.0 * s), [0, 0, 0, 255]);
+        skin.frame(
+            batch,
+            "inset",
+            0,
+            Rect::new(m.x - 4.0 * s, m.y - 4.0 * s, m.w + 8.0 * s, m.h + 8.0 * s),
+            s,
+            [0, 0, 0, 255],
+        );
         let (bw, bh) = (m.w / game.map.width as f32, m.h / game.map.height as f32);
         let ground = |id: &str, fallback: [u8; 3]| {
             let [r, g, b] = art.terrain(id).map_or(fallback, |t| t.colour);
@@ -761,30 +796,32 @@ impl Hud {
         batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), self.theme.text);
     }
 
-    /// Credits, power in numbers and the game clock, and a power gauge: supply filled, demand marked.
-    fn draw_readout(&self, batch: &mut SpriteBatch, font: &Font, game: &Game, r: Rect, text: f32) {
+    /// Credits and power in numbers, and a power gauge: supply filled, demand marked.
+    /// The game clock in hours, minutes and seconds, on a small panel at the top middle of the world, where it has
+    /// room for any length of game.
+    fn draw_clock(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, screen: (f32, f32)) {
         let s = self.scale;
-        batch.fill(Rect::new(r.x, r.y + r.h - 1.0, r.w, 1.0), self.theme.edge);
+        let clock = clock_text(game.state.tick / TICKS_PER_SECOND);
+        let (w, h) = (skin.width(Style::Heading, &clock, s) + 20.0 * s, skin.line(Style::Heading, s) + 10.0 * s);
+        let world_w = screen.0 - RAIL_W * s;
+        let r = Rect::new(((world_w - w) / 2.0).round(), 4.0 * s, w, h);
+        skin.frame(batch, "panel", 0, r, s, self.theme.panel);
+        skin.text(batch, Style::Heading, &clock, r.x + 10.0 * s, r.y + 5.0 * s, s, self.theme.text);
+    }
+
+    fn draw_readout(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, r: Rect) {
+        let s = self.scale;
+        skin.frame(batch, "panel", 0, r, s, self.theme.panel);
         let credits = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.credits);
-        let (x, mut y) = (r.x + 6.0 * s, r.y + 6.0 * s);
-        font.draw(batch, &format!("CREDITS {credits}"), x, y, text, self.theme.text);
-        y += Font::height(text) + 4.0 * s;
+        let (x, mut y) = (r.x + 10.0 * s, r.y + 8.0 * s);
+        skin.text(batch, Style::Heading, &format!("CREDITS {credits}"), x, y, s, self.theme.text);
+        y += skin.line(Style::Heading, s) + 2.0 * s;
         let power = game.power(self.player);
         let short = power.is_short();
-        font.draw(
-            batch,
-            &format!("POWER {}/{}", power.supply, power.demand),
-            x,
-            y,
-            text,
-            if short { self.theme.bad } else { self.theme.text },
-        );
-        y += Font::height(text) + 4.0 * s;
-        let secs = game.state.tick / TICKS_PER_SECOND;
-        let clock = format!("{}:{:02}", secs / 60, secs % 60);
-        let clock_w = Font::width(&clock, text);
-        font.draw(batch, &clock, r.x + r.w - 6.0 * s - clock_w, y, text, self.theme.dim);
-        let bar = Rect::new(x, y + (Font::height(text) - 8.0 * s) / 2.0, r.w - 18.0 * s - clock_w, 8.0 * s);
+        let colour = if short { self.theme.bad } else { self.theme.text };
+        skin.text(batch, Style::Heading, &format!("POWER {}/{}", power.supply, power.demand), x, y, s, colour);
+        y += skin.line(Style::Heading, s) + 2.0 * s;
+        let bar = Rect::new(x, y + (skin.line(Style::Heading, s) - 8.0 * s) / 2.0, r.w - 20.0 * s, 8.0 * s);
         batch.fill(bar, [0, 0, 0, 255]);
         let top = power.supply.max(power.demand).max(1) as f32;
         let fill = Rect::new(bar.x, bar.y, bar.w * power.supply as f32 / top, bar.h);
@@ -808,12 +845,11 @@ impl Hud {
     fn draw_tooltip(
         &self,
         batch: &mut SpriteBatch,
-        font: &Font,
+        skin: &Skin,
         game: &Game,
         icon: &Icon,
         mouse: (f32, f32),
         screen: (f32, f32),
-        text: f32,
     ) {
         let s = self.scale;
         let k = game.rules.kind(icon.item);
@@ -831,18 +867,22 @@ impl Hud {
             _ => None,
         };
         lines.extend(state);
-        let line = Font::height(text) + 4.0 * s;
-        let w = lines.iter().map(|(t, _)| Font::width(t, text)).fold(0.0, f32::max) + 12.0 * s;
+        let line = skin.line(Style::Body, s) + 4.0 * s;
+        let w = lines.iter().map(|(t, _)| skin.width(Style::Body, t, s)).fold(0.0, f32::max) + 12.0 * s;
         let h = lines.len() as f32 * line + 8.0 * s;
         // Beside the cursor, on the world's side of the rail.
         let x = (mouse.0 - 16.0 * s - w).max(0.0);
         let y = (mouse.1 + 8.0 * s).min(screen.1 - h);
-        batch.fill(Rect::new(x, y, w, h), [10, 10, 12, 235]);
-        batch.outline(Rect::new(x, y, w, h), 1.0, [90, 90, 100, 255]);
+        skin.frame(batch, "tooltip", 0, Rect::new(x, y, w, h), s, [10, 10, 12, 235]);
         for (i, (t, colour)) in lines.iter().enumerate() {
-            font.draw(batch, t, x + 6.0 * s, y + 6.0 * s + i as f32 * line, text, *colour);
+            skin.text(batch, Style::Body, t, x + 6.0 * s, y + 6.0 * s + i as f32 * line, s, *colour);
         }
     }
+}
+
+/// A game time as hours, minutes and seconds: `0:04:12`.
+pub fn clock_text(secs: u32) -> String {
+    format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
 
 fn health_colour(share: f32) -> [u8; 4] {
