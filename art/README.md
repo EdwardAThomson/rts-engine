@@ -165,8 +165,8 @@ tile by corner case and by place: `(y mod period) * period + (x mod period)`.
 
 Relief (ripples, rock rims, cliff faces, nodules) is a height field lit from the studio's key light, the same
 direction as the rendered units; raised layers (`relief`) cast a short `shadow` away from the light. A layer with
-`"base": true` covers every tile, so it gets only full tiles. A layer with an `inset` (rock 0.15, cliffs 0.3, in
-tenths of the blend) keeps its edge, slope and shadow inside the map tiles it covers, so a building on the next tile
+`"base": true` covers every tile, so it gets only full tiles. A layer with an `inset` (rock 0.15, cliffs 0.3; the
+corner blend is 0.5 at a tile boundary and 1 at a tile's middle) keeps its edge, slope and shadow inside the map tiles it covers, so a building on the next tile
 never sits on it; the resource has none, so fields stay soft.
 
 Output: `tileset.png`, one page (each tile with a 1-pixel border copied from its edge), and `tileset.json`:
