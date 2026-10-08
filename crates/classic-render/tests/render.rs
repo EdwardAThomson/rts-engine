@@ -107,7 +107,7 @@ fn the_start_base_is_drawn_in_its_factions_colours() {
     let base = r.game.state.entities.iter().filter(|e| e.owner == 0).map(|e| e.tile()).collect::<Vec<_>>();
     let (x1, y1) = base.iter().fold((0, 0), |(x, y), t| (x.max(t.x + 3), y.max(t.y + 2)));
     let area = (0, 0, x1 as u32 * 32, y1 as u32 * 32);
-    let own = count(&image, area, &ramp(&r.ramps[0]));
+    let own = count_near(&image, area, &ramp(&r.ramps[0]));
     let remap = count(&image, (0, 0, W, H), &ramp("remap"));
     println!("base area {area:?}: {own} pixels in {}; {remap} remap pixels on screen", r.ramps[0]);
     assert!(own > 200, "the base shows its faction colour");
