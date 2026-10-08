@@ -198,7 +198,9 @@ enum Kit {
     Heavy,
 }
 
-const SQUAD: [(i64, i64); 3] = [(0, -8), (-8, 6), (8, 6)];
+/// Where a squad's three soldiers stand, in pixels from the middle of a unit facing north. The art index lists it
+/// for the renderer, which draws a squad as its single soldier three times.
+pub const SQUAD: [(i64, i64); 3] = [(0, -8), (-8, 6), (8, 6)];
 
 pub fn infantry(p: &mut Pen) {
     soldier(p, 0, 0, R1, Kit::Rifle);
