@@ -1,6 +1,10 @@
 //! The desktop player: a window onto a skirmish.
 //!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
-//!     [--ai 1 | --ai none]
+//!     [--ai 1 | --ai none] [--start]
+//!
+//! It opens on the title screen, with the map waiting behind it: Start plays, and the opponents switch says whether
+//! every other player is a computer opponent (`--ai` lists which ones, or says `none`). `--start` skips the title.
+//! When someone wins, or you lose your last building, the end screen offers another game or the title.
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
 //! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. A click on a
@@ -8,14 +12,14 @@
 //! the number selects them again, and a second press centres the view on them. H centres on your base.
 //!
 //! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
-//! cancel one with a refund; Tab and shift-Tab change tabs. When a building is ready, click it and then a spot on the map; the ghost shows green
-//! where it fits. The minimap at the rail's foot moves the view (click or drag), and a right click on it orders
-//! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses, M
-//! mutes the sound (or start with `--mute`). Every other player is a computer opponent unless `--ai` lists which ones
-//! (or says `none`); the window title says who won. `--frames N` quits after N frames, for smoke tests.
+//! cancel one with a refund; Tab and shift-Tab change tabs. When a building is ready, click it and then a spot on
+//! the map; the ghost shows green where it fits. The minimap at the rail's foot moves the view (click or drag), and
+//! a right click on it orders the selected units there. Escape puts the building back, then clears the selection,
+//! then opens the pause menu (resume, restart, back to the title, quit). Space pauses without the menu, M mutes the
+//! sound (or start with `--mute`). `--frames N` quits after N frames, for smoke tests.
 //!
 //! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
-//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&ai=none&mute`), the
+//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&ai=none&mute&start`), the
 //! files are fetched from the server first, because the browser has no file system and can't wait for the GPU, and
 //! sound starts with the first click or key press.
 
@@ -26,6 +30,7 @@ use std::time::Duration;
 use classic_ai::{Ai, Settings};
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, RAIL_W};
+use classic_render::menu::{Action, Menu, Screen};
 use classic_render::platform::{Files, Font, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::sound::Cue;
 use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View};
@@ -104,6 +109,12 @@ struct Running {
 
 struct App {
     game: Game,
+    /// The title, pause and end screens.
+    menu: Menu,
+    /// The map's text, for starting the game over.
+    map: String,
+    /// The pack's own files, for its wording of the message feed.
+    pack_files: Files,
     scene: Scene,
     hud: Hud,
     pack: classic_data::Pack,
@@ -137,9 +148,11 @@ struct App {
 }
 
 impl App {
-    /// A player for `game`, with the pack's art and sounds from `art_files` and `sound_files` (the generic pack's
-    /// first, then the pack's own over them). The sound card opens separately, in `open_speaker`.
-    fn new(game: Game, pack: classic_data::Pack, art_files: Files, sound_files: &[Files], pack_files: &Files) -> App {
+    /// A player for a game of `pack` on `map`, with the pack's art and sounds from `art_files` and `sound_files` (the
+    /// generic pack's first, then the pack's own over them). The sound card opens separately, in `open_speaker`. It
+    /// opens on the title screen, with the game waiting behind it, unless `start` is given.
+    fn new(pack: classic_data::Pack, map: String, art_files: Files, sound_files: &[Files], pack_files: Files) -> App {
+        let game = new_game(&pack, &map);
         let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
         let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1) as u64;
         let mut mixer = Mixer::new(48_000);
@@ -148,27 +161,22 @@ impl App {
         for w in &sound.warnings {
             say(&format!("sound: {w}"));
         }
-        let hud = Hud::new(&pack, pack_files, &game, player);
+        let hud = Hud::new(&pack, &pack_files, &game, player);
         for w in &hud.feed.warnings {
             say(&format!("messages: {w}"));
         }
-        let ais: Vec<Ai> = match arg("ai").as_deref() {
-            Some("none") => Vec::new(),
-            Some(list) => list
-                .split(',')
-                .map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal()))
-                .collect(),
-            None => game
-                .state
-                .players
-                .iter()
-                .map(|p| p.id)
-                .filter(|&p| p != player)
-                .map(|p| Ai::new(p, Settings::normal()))
-                .collect(),
-        };
+        let mut menu = Menu::new(&pack.title);
+        menu.opponents = arg("ai").as_deref() != Some("none");
+        menu.can_quit = cfg!(not(target_arch = "wasm32"));
+        if flag("start") {
+            menu.screen = Screen::Playing;
+        }
+        let ais = opponents(&game, player, menu.opponents);
         App {
             game,
+            menu,
+            map,
+            pack_files,
             scene: Scene::default(),
             hud,
             pack,
@@ -194,6 +202,32 @@ impl App {
             speaker: None,
             speaker_tried: false,
         }
+    }
+
+    /// Start the game over on the same map, with the opponents the menu shows, and play it.
+    fn restart(&mut self) {
+        self.game = new_game(&self.pack, &self.map);
+        self.ais = opponents(&self.game, self.player, self.menu.opponents);
+        let scale = self.hud.scale;
+        self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player);
+        self.hud.scale = scale;
+        self.scene = Scene::default();
+        self.owed = Duration::ZERO;
+        self.paused = false;
+        self.centre_on_base();
+        self.menu.screen = Screen::Playing;
+    }
+
+    /// Do what a menu button asks.
+    fn menu_action(&mut self, action: Action, event_loop: &ActiveEventLoop) {
+        match action {
+            Action::Start | Action::Restart => self.restart(),
+            Action::Resume => self.menu.screen = Screen::Playing,
+            Action::ToTitle => self.menu.screen = Screen::Title,
+            Action::Quit => event_loop.exit(),
+            Action::Opponents => {}
+        }
+        self.ui_sound("ui_select");
     }
 
     /// Open the sound card, once. No sound card (a server, a CI runner) just means a silent game. Browsers only let
@@ -281,6 +315,13 @@ impl App {
         let t = e.tile();
         let (x, y) = (t.x as f32 + k.width as f32 / 2.0, t.y as f32 + k.height as f32 / 2.0);
         self.centre_on(x, y);
+    }
+
+    fn toggle_mute(&mut self) {
+        if let Ok(mut m) = self.mixer.lock() {
+            m.muted = !m.muted;
+            m.stop_all();
+        }
     }
 
     fn hear(&self, cues: Vec<Cue>) {
@@ -390,7 +431,7 @@ impl App {
         let now = Instant::now();
         let dt = now - self.last;
         self.last = now;
-        if self.paused {
+        if self.paused || !self.menu.playing() {
             return 1.0;
         }
         self.owed = (self.owed + dt).min(TICK * 5);
@@ -407,6 +448,11 @@ impl App {
             self.hud.after_step(&self.game);
             let cues = self.sound.after_step(&self.game, &listener);
             self.hear(cues);
+            self.menu.after_step(&self.game, self.player);
+            if !self.menu.playing() {
+                self.owed = Duration::ZERO;
+                break;
+            }
         }
         // Events have been turned into effects; don't let them pile up.
         if self.game.events.len() > 10_000 {
@@ -450,11 +496,13 @@ impl App {
             p.map_or(0, |p| p.credits),
             power.supply,
             power.demand,
-            match (classic_ai::winner(&self.game), self.paused) {
-                (Some(w), _) if w == self.player => " | you won".to_string(),
-                (Some(w), _) => format!(" | player {w} won"),
-                (None, true) => " | paused".to_string(),
-                (None, false) => String::new(),
+            match (classic_ai::winner(&self.game), self.paused, self.menu.screen) {
+                (Some(w), _, _) if w == self.player => " | you won".to_string(),
+                (Some(w), _, _) => format!(" | player {w} won"),
+                (None, _, Screen::Over { .. }) => " | you lost".to_string(),
+                (None, true, _) | (None, _, Screen::Paused) => " | paused".to_string(),
+                (None, _, Screen::Title) => " | title".to_string(),
+                (None, false, _) => String::new(),
             }
         )
     }
@@ -479,6 +527,7 @@ impl App {
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
         let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
         self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse, &self.scene.selected);
+        self.menu.draw(&mut run.batch, &run.font, &self.game, (w, h), self.mouse);
         if let Some(from) = self.drag {
             let (x0, y0) = (from.0.min(self.mouse.0), from.1.min(self.mouse.1));
             let r = Rect::new(x0, y0, (from.0 - self.mouse.0).abs(), (from.1 - self.mouse.1).abs());
@@ -513,6 +562,7 @@ impl App {
         let art = Art::from_files(&gpu, &mut batch, &self.art_files, &ramps).expect("the pack's art loads");
         let font = Font::new(&gpu, &mut batch);
         self.hud.scale = window.scale_factor().round().max(1.0) as f32;
+        self.menu.scale = self.hud.scale;
         // Start over the player's own base.
         if let Some(e) = self.game.state.entities.iter().find(|e| e.owner == self.player) {
             let t = e.tile();
@@ -593,10 +643,24 @@ impl ApplicationHandler for App {
                 let PhysicalKey::Code(code) = event.physical_key else { return };
                 if event.state == ElementState::Pressed {
                     self.keys.insert(code);
+                    if !self.menu.playing() {
+                        // On a menu only Escape (back to the game, or quit from the title) and mute work.
+                        match code {
+                            KeyCode::Escape if !event.repeat && !self.menu.escape() && self.menu.can_quit => {
+                                if self.menu.screen == Screen::Title {
+                                    event_loop.exit();
+                                }
+                            }
+                            KeyCode::KeyM if !event.repeat => self.toggle_mute(),
+                            _ => {}
+                        }
+                        return;
+                    }
                     match code {
-                        KeyCode::Escape => {
+                        KeyCode::Escape if !event.repeat => {
+                            // Escape puts back a building, then clears the selection, then opens the pause menu.
                             if !self.hud.cancel() && self.scene.selected.is_empty() {
-                                event_loop.exit();
+                                self.menu.escape();
                             }
                             self.scene.selected.clear();
                         }
@@ -604,12 +668,7 @@ impl ApplicationHandler for App {
                         KeyCode::Tab if !event.repeat => self.hud.next_tab(&self.game, self.shift()),
                         KeyCode::KeyH if !event.repeat => self.centre_on_base(),
                         _ if !event.repeat && digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
-                        KeyCode::KeyM if !event.repeat => {
-                            if let Ok(mut m) = self.mixer.lock() {
-                                m.muted = !m.muted;
-                                m.stop_all();
-                            }
-                        }
+                        KeyCode::KeyM if !event.repeat => self.toggle_mute(),
                         _ => {}
                     }
                 } else {
@@ -632,6 +691,13 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorLeft { .. } => self.mouse = (-1.0e4, -1.0e4),
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
+                (MouseButton::Left, ElementState::Pressed) if !self.menu.playing() => {
+                    let screen = self.view().screen;
+                    if let Some(action) = self.menu.click(screen, self.mouse) {
+                        self.menu_action(action, event_loop);
+                    }
+                }
+                (_, _) if !self.menu.playing() => {}
                 (MouseButton::Left, ElementState::Pressed) => {
                     if !self.hud_click(Button::Left) {
                         self.drag = Some(self.mouse);
@@ -651,6 +717,9 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y > 0.0,
                     MouseScrollDelta::PixelDelta(p) => p.y > 0.0,
                 };
+                if !self.menu.playing() {
+                    return;
+                }
                 if self.hud.over(&self.game, self.view().screen, self.mouse.0, self.mouse.1) {
                     self.hud.wheel(up);
                     return;
@@ -704,7 +773,7 @@ fn main() {
         sound_files.push(Files::Dir(pack.dir.clone()));
     }
     let pack_files = Files::Dir(pack.dir.clone());
-    let mut app = App::new(new_game(&pack, &text), pack, art_files, &sound_files, &pack_files);
+    let mut app = App::new(pack, text, art_files, &sound_files, pack_files);
     app.open_speaker();
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
@@ -731,14 +800,31 @@ fn main() {
             Ok(l) => l,
             Err(e) => return web::status(&e),
         };
-        let app =
-            App::new(new_game(&loaded.pack, &loaded.map), loaded.pack, loaded.art, &loaded.sounds, &loaded.messages);
+        let app = App::new(loaded.pack, loaded.map, loaded.art, &loaded.sounds, loaded.messages);
         EventLoop::new().expect("an event loop").spawn_app(app);
     });
 }
 
 /// The map played when none is given, from the repository root.
 const MAP: &str = "maps/skirmish-01.txt";
+
+/// The computer opponents: none when `on` is false, else the players `--ai` lists, else every player but `player`.
+fn opponents(game: &Game, player: u32, on: bool) -> Vec<Ai> {
+    match arg("ai").as_deref() {
+        _ if !on => Vec::new(),
+        Some("none") | None => game
+            .state
+            .players
+            .iter()
+            .map(|p| p.id)
+            .filter(|&p| p != player)
+            .map(|p| Ai::new(p, Settings::normal()))
+            .collect(),
+        Some(list) => {
+            list.split(',').map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal())).collect()
+        }
+    }
+}
 
 fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
     let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
