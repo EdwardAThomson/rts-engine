@@ -141,7 +141,7 @@ for (const run of runs) {
     // The optional pack files (tuning.json) are looked for and may be missing.
     if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text());
   });
-  await page.goto(`${base}/web/play/?seed=1`);
+  await page.goto(`${base}/web/play/?seed=1&start`);
   const titled = (re) => page.waitForFunction((s) => new RegExp(s).test(document.title), re.source, { timeout: 30_000 })
     .then(() => true, () => false);
   const ticking = await titled(/tick ([2-9]|\d\d)/);

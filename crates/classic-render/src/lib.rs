@@ -9,6 +9,7 @@
 pub mod art;
 pub mod feed;
 pub mod hud;
+pub mod menu;
 pub mod platform;
 pub mod scene;
 pub mod sound;
