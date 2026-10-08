@@ -1,1 +1,1 @@
-{"id": "rubble_3x2", "atlas": "buildings-0", "facings": 1, "scale": 2, "parts": {"building": {"facings": 1, "anims": {"idle": {"length": 1, "frames": [[2472, 0, 188, 121, 0, -2]]}}}}, "footprint": [3, 2]}
+{"id": "rubble_3x2", "atlas": "buildings-0", "facings": 1, "scale": 2, "parts": {"building": {"facings": 1, "anims": {"idle": {"length": 1, "frames": [[170, 1165, 188, 121, 0, -2]]}}}}, "footprint": [3, 2]}

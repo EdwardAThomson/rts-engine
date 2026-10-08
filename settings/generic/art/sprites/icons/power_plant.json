@@ -1,0 +1,1 @@
+{"id": "power_plant", "atlas": "icons-0", "facings": 1, "scale": 2, "parts": {"icon": {"facings": 1, "anims": {"1x": {"length": 1, "frames": [[3648, 144, 96, 72, 0, 0]]}, "2x": {"length": 1, "frames": [[2688, 0, 192, 144, 0, 0]]}}}}}

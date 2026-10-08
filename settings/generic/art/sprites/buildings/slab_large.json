@@ -1,0 +1,1 @@
+{"id": "slab_large", "atlas": "buildings-0", "facings": 1, "scale": 2, "parts": {"building": {"facings": 1, "anims": {"idle": {"length": 1, "frames": [[3874, 892, 137, 135, 4, 3]]}}}}, "footprint": [2, 2]}
