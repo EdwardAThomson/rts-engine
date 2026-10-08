@@ -1,5 +1,6 @@
 //! The desktop player: a window onto a skirmish.
 //!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
+//!     [--ai 1 | --ai none]
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
 //! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there.
@@ -8,18 +9,19 @@
 //! cancel one with a refund. When a building is ready, click it and then a spot on the map; the ghost shows green
 //! where it fits. The minimap at the rail's foot moves the view (click or drag), and a right click on it orders
 //! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses, M
-//! mutes the sound (or start with `--mute`). There is no computer opponent yet. `--frames N` quits after N frames,
-//! for smoke tests.
+//! mutes the sound (or start with `--mute`). Every other player is a computer opponent unless `--ai` lists which ones
+//! (or says `none`); the window title says who won. `--frames N` quits after N frames, for smoke tests.
 //!
 //! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
-//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&mute`), the files
-//! are fetched from the server first, because the browser has no file system and can't wait for the GPU, and sound
-//! starts with the first click or key press.
+//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&ai=none&mute`), the
+//! files are fetched from the server first, because the browser has no file system and can't wait for the GPU, and
+//! sound starts with the first click or key press.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use classic_ai::{Ai, Settings};
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, RAIL_W};
 use classic_render::platform::{Files, Font, Gpu, Instant, Mixer, Rect, SpriteBatch};
@@ -92,6 +94,8 @@ struct App {
     #[cfg(target_arch = "wasm32")]
     opened: std::rc::Rc<std::cell::RefCell<Option<Opened>>>,
     player: u32,
+    /// The computer opponents, which order through the same command queue as the player.
+    ais: Vec<Ai>,
     cam: Camera,
     run: Option<Running>,
     last: Instant,
@@ -126,6 +130,21 @@ impl App {
             say(&format!("sound: {w}"));
         }
         let hud = Hud::new(&pack, &game, player);
+        let ais: Vec<Ai> = match arg("ai").as_deref() {
+            Some("none") => Vec::new(),
+            Some(list) => list
+                .split(',')
+                .map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal()))
+                .collect(),
+            None => game
+                .state
+                .players
+                .iter()
+                .map(|p| p.id)
+                .filter(|&p| p != player)
+                .map(|p| Ai::new(p, Settings::normal()))
+                .collect(),
+        };
         App {
             game,
             scene: Scene::default(),
@@ -135,6 +154,7 @@ impl App {
             #[cfg(target_arch = "wasm32")]
             opened: Default::default(),
             player,
+            ais,
             cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
             run: None,
             last: Instant::now(),
@@ -318,6 +338,9 @@ impl App {
         while self.owed >= TICK {
             self.owed -= TICK;
             self.scene.before_step(&self.game);
+            for ai in &mut self.ais {
+                ai.tick(&mut self.game);
+            }
             self.game.step(1);
             self.scene.after_step(&self.game);
             let cues = self.sound.after_step(&self.game, &listener);
@@ -365,7 +388,12 @@ impl App {
             p.map_or(0, |p| p.credits),
             power.supply,
             power.demand,
-            if self.paused { " | paused" } else { "" }
+            match (classic_ai::winner(&self.game), self.paused) {
+                (Some(w), _) if w == self.player => " | you won".to_string(),
+                (Some(w), _) => format!(" | player {w} won"),
+                (None, true) => " | paused".to_string(),
+                (None, false) => String::new(),
+            }
         )
     }
 
@@ -614,7 +642,14 @@ fn main() {
     app.open_speaker();
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
-    println!("quit at tick {} after {} frames, hash {}", app.game.state.tick, app.frames, app.game.hash());
+    let ai_orders =
+        app.game.command_log().iter().filter(|c| app.ais.iter().any(|a| a.player == c.command.player)).count();
+    println!(
+        "quit at tick {} after {} frames, {ai_orders} computer orders, hash {}",
+        app.game.state.tick,
+        app.frames,
+        app.game.hash()
+    );
 }
 
 #[cfg(target_arch = "wasm32")]

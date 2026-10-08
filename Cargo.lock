@@ -284,6 +284,7 @@ dependencies = [
 name = "classic-render"
 version = "0.1.0"
 dependencies = [
+ "classic-ai",
  "classic-data",
  "classic-sim",
  "classic-tools",
