@@ -182,7 +182,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
 - Pack maps and theme: a pack's `setting.json` lists its maps, each checked to be a text file in the pack; a pack's
   `theme/theme.css` recolours the HUD and menus, and colours it can't read keep the engine's, with a warning. The
-  generic pack's theme is the engine's own colours.
+  generic pack's theme is the engine's own colours. In the player under a virtual display, with the private pack: the
+  title offers its three maps and three factions, and a game started on the second map and faction plays there in
+  that faction's colours.
 - Sound (no sound card; the mixer renders into a buffer): every game event plays a sound or is listed as silent on
   purpose; every sound id has a generic file; a tank battle plays cannon, impact and explosion sounds and ends
   with the same state hash as the same game unheard; 40 tanks fighting never exceed the 24-voice and

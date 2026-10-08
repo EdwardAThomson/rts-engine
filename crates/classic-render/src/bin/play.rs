@@ -174,6 +174,9 @@ impl App {
         for w in &hud.feed.warnings {
             say(&format!("messages: {w}"));
         }
+        for w in classic_render::theme::Theme::load(&pack_files).1 {
+            say(&format!("theme: {w}"));
+        }
         let mut menu = Menu::new(&pack.title);
         menu.theme = hud.theme.clone();
         menu.maps = maps.iter().map(|(name, _)| name.clone()).collect();
