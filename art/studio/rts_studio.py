@@ -241,6 +241,22 @@ def cargo():
 # Every helper builds its mesh at the origin and keeps location, rotation and scale on the object, so a part can
 # be parented to a group and turned with it.
 
+# Level of detail. "full" is what the sprites render; "low" is the light real-time version for the 3D engine's
+# crowds (export_gltf --lod low): no bevels, 8-sided round parts and 8 x 4 spheres. Models need no changes.
+LODS = {"full": {"bevel": True, "round": None, "sphere": (24, 12)},
+        "low": {"bevel": False, "round": 8, "sphere": (8, 4)}}
+LOD = LODS["full"]
+
+
+def set_lod(name):
+    """Pick the level of detail for every shape built from now on."""
+    global LOD
+    LOD = LODS[name]
+
+
+def _verts(n):
+    return min(n, LOD["round"]) if LOD["round"] else n
+
 def group(name, loc=(0, 0, 0), parent=None):
     e = bpy.data.objects.new(name, None)
     bpy.context.scene.collection.objects.link(e)
@@ -254,7 +270,7 @@ def _place(o, loc, rot, mat, parent, name, bevel):
     o.name = name
     o.location = loc
     o.rotation_euler = rot
-    if bevel:
+    if bevel and LOD["bevel"]:
         mod = o.modifiers.new("bevel", "BEVEL")
         mod.width = bevel
         mod.segments = 2
@@ -279,7 +295,7 @@ def cylinder(radius, depth, loc, rot=(0, 0, 0), mat=None, parent=None, verts=24,
              caps=True, scale=None):
     """Upright by default; rot=(pi/2, 0, 0) lays it along y. `scale` squashes it into an oval (applied to the
     mesh), and caps=False leaves a thin open tube."""
-    bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth,
+    bpy.ops.mesh.primitive_cylinder_add(vertices=_verts(verts), radius=radius, depth=depth,
                                         end_fill_type="NGON" if caps else "NOTHING")
     o = bpy.context.active_object
     if scale:
@@ -292,14 +308,15 @@ def cylinder(radius, depth, loc, rot=(0, 0, 0), mat=None, parent=None, verts=24,
 
 
 def cone(r1, r2, depth, loc, rot=(0, 0, 0), mat=None, parent=None, verts=24, name="cone"):
-    bpy.ops.mesh.primitive_cone_add(vertices=verts, radius1=r1, radius2=r2, depth=depth)
+    bpy.ops.mesh.primitive_cone_add(vertices=_verts(verts), radius1=r1, radius2=r2, depth=depth)
     o = bpy.context.active_object
     bpy.ops.object.shade_smooth()
     return _place(o, loc, rot, mat, parent, name, 0)
 
 
 def sphere(radius, loc, mat=None, parent=None, scale=(1, 1, 1), name="sphere"):
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=24, ring_count=12)
+    segments, rings = LOD["sphere"]
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=segments, ring_count=rings)
     o = bpy.context.active_object
     o.scale = scale
     bpy.ops.object.transform_apply(scale=True)

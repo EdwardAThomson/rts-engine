@@ -14,6 +14,7 @@ python3 art/studio/check.py /tmp/renders/*                 # house rules; exits 
 python3 art/studio/pack.py /tmp/renders/* --out settings/generic/art/sprites
 python3 art/studio/preview.py settings/generic/art/sprites /tmp/preview.png
 python3 art/studio/check.py --facing-test                  # the pipeline's facing order, with a test arrow
+python3 art/studio/export_gltf.py vehicles/battle_tank --out /tmp/glb   # a real 3D model (.glb); --all for every one
 ```
 
 Quick test of one facing while modelling: `render.py MODEL --out DIR --samples 16 --facings 16 --only 2`, and
@@ -53,6 +54,7 @@ any generic renders it reuses.
   `infantry-0`, `air-0`, `effects-0`, `icons-0`) with a mask page each. It stops, naming the largest entities, if
   a page would overflow.
 - `studio/check.py`: the checks below.
+- `studio/export_gltf.py`: the same models as glTF binaries for a real-time 3D renderer (below).
 - `studio/preview.py`: draws the packed sprites back in three team colours, plus a row of every other frame.
 - `studio/samples/`: the studio's own test models (the facing arrow, a building, a defence turret, a wall) and the
   infantry prototype `soldier.py` on the rig. None is a game asset.
@@ -82,6 +84,7 @@ optional: a model that leaves a hook out gets the studio's default.
 | `TEAM = False` | all | No team paint expected (walls, rubble): the coverage check is skipped |
 | `build(root, joints)` | infantry | Parts parented to the rig's joints; idle 1, walk 6, fire 3 at 8 facings, and die-1, die-2 of 8 frames from one side |
 | `rig_pose(joints, anim, frame, frames)` | infantry | Replaces `st.pose` for that model (how it holds its weapon, kneeling or standing fire) |
+| An empty named `muzzle` | all | The weapon's barrel tip (`_soldier.muzzle` for infantry): recorded in every frame as the sprite JSON's `muzzle`; a glTF export keeps it as a node |
 
 `rng` is a `random.Random` seeded from the id and the frame, so every render of a hook is the same. A moving part
 (idle or door) is left out of the intact frame and drawn every frame as its overlay, so nothing shows twice.
@@ -105,8 +108,10 @@ gives:
 ```
 
 Frame `k` of facing `f` is entry `f * length + k`. An anim with its own `facings` (infantry deaths: 1) says so.
-Parts with `"overlay": true` are drawn over the building's intact frame with the same pivot. Buildings have a
-`building` part with `idle`, `build` (4) and `damaged` anims. Icons live in `icons/<id>.json` with `1x` and `2x`
+A model with a `muzzle` empty adds `"muzzle": [[dx, dy, hidden], ...]` beside an anim's `frames`, one per frame:
+the barrel tip in atlas pixels from the pivot, and `hidden` 1 when the body hides it from the camera (draw the
+flash under the sprite). Parts with `"overlay": true` are drawn over the building's intact frame with the same
+pivot. Buildings have a `building` part with `idle`, `build` (4) and `damaged` anims. Icons live in `icons/<id>.json` with `1x` and `2x`
 frames.
 
 ## Checks
@@ -126,3 +131,30 @@ layout, so a renderer can offer them as a player option.
 
 Renders are not committed; the packed atlases and JSON are. Cycles output can differ slightly between machines, so
 re-rendering may change the PNGs' bytes without changing how they look.
+
+## 3D models
+
+`export_gltf.py` builds each model's intact frame and writes `<id>.glb`, for the 3D engine or any real-time
+renderer. glTF has no procedural shaders, so each part is joined into one mesh, unwrapped and its base colour baked
+into one texture (`--tex`, 1024 px by default). Every part has two materials: `<part>_body`, and `<part>_team`,
+baked neutral grey with `"team_paint": true` in its glTF extras, which the renderer multiplies by the player's
+colour.
+
+glTF is +Y up in metres, and a model's front (north) faces -Z. Vehicles and aircraft have a `hull` node at the
+origin on the ground and a `turret` child at the ring. Buildings have a `building` node at the footprint's centre
+and a `head` child for defence turrets. Idle and door parts are part of the building mesh, and walls export their
+lone post. Infantry export the rig: its joints are nodes (`body`, `pelvis`, `spine`, `head`, the limbs and
+`weapon`), each joint's parts are one mesh under it, the whole soldier shares one texture and one `soldier_body` /
+`soldier_team` pair, and the sprite cycles are animation clips (idle, walk, fire, die-1, die-2, at 6 frames a
+second; walk loops, and the file rests in idle). `--style classic` leaves out bevels and `DETAIL` parts, which
+makes a far level of detail (the battle tank drops from 15,100 triangles to 1,400). `export.json` lists each file's
+size and triangles per part.
+
+`--lod low` keeps the detailed look but builds every shape without bevels, with 8-sided round parts and coarse
+spheres, and leaves out `DETAIL` parts: the light version for crowds, written as `<id>-low.glb` with 256 px
+textures unless `--tex` says otherwise. A soldier drops from about 6,500 triangles to 600 to 700, and the battle
+tank to about 700. The switch is `st.set_lod` in `rts_studio.py`, so models need no changes; without bevels,
+parts whose faces lie flush show a dark patch, so check a new model at `--lod low` too.
+
+A 3D camera sees angles the sprite camera never does, so a model can look right as a sprite and still show a gap
+or a dark patch from low down. Check new models from a few low angles before relying on them in 3D.

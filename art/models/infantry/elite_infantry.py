@@ -21,7 +21,7 @@ def build(root, j):
     s.body(j, cloth, limb=0.155)
     s.helmet(j, plate, team, visor=True)
     s.vest(j, plate, team, plates=True)
-    s.backpack(j, plate, team, size=(0.34, 0.18, 0.28))
+    s.backpack(j, plate, team, size=(0.34, 0.18, 0.27))
     s.belt(j, dark)
     s.heavy_rifle(j, dark)
 

@@ -16,7 +16,8 @@ What a model file defines, by category (art/models/<category>/<id>.py; see art/R
 
 Every frame is written as <part>-<anim>-fFF-NN.png (FF the facing clockwise from north, NN the frame), with
 <...>.shadow.png beside it where the part casts a shadow, and meta.json describes the jobs and where the origin
-landed in render pixels. Each render job's time is appended to art/timings.jsonl.
+landed in render pixels. A model with an empty named `muzzle` (a weapon's barrel tip) also gets that point recorded for
+every frame. Each render job's time is appended to art/timings.jsonl.
 """
 import argparse
 import datetime
@@ -133,6 +134,7 @@ class Job:
         self.select = select  # ctx -> (visible, holdout, casters)
         self.crop = None
         self.frame_of_variant = None  # set when each frame comes from its own variant (construction, wall joins)
+        self.muzzle = None  # [x, y, hidden] per frame in render pixels, facing by facing, when the model has one
 
     def meta(self):
         m = {"part": self.part, "anim": self.anim, "facings": self.facings, "frames": self.frames,
@@ -141,7 +143,32 @@ class Job:
             m["overlay"] = True
         if self.crop:
             m["crop"] = list(self.crop)
+        if self.muzzle:
+            m["muzzle"] = self.muzzle
         return m
+
+
+def muzzle_at(scene, muzzle):
+    """Where the `muzzle` empty lands in render pixels (x, y down), and 1 if the model hides it from the camera
+    (the weapon points away, so a flash there goes under the sprite), else 0. The weapon's own parts don't count."""
+    import bpy
+    from bpy_extras.object_utils import world_to_camera_view
+    from mathutils import Vector
+    w, h = scene.render.resolution_x, scene.render.resolution_y
+    p = muzzle.matrix_world.translation.copy()
+    c = world_to_camera_view(scene, scene.camera, p)
+    weapon = set(muzzle.parent.children_recursive) if muzzle.parent else set()
+    to_cam = scene.camera.matrix_world.to_quaternion() @ Vector((0, 0, 1))
+    deps, hidden, start = bpy.context.evaluated_depsgraph_get(), 0, p
+    for _ in range(16):  # step past the weapon's own faces
+        hit, loc, _n, _i, obj, _m = scene.ray_cast(deps, start + to_cam * 1e-3, to_cam)
+        if not hit:
+            break
+        if obj.original not in weapon:
+            hidden = 1
+            break
+        start = loc
+    return [round(c.x * w, 1), round((1 - c.y) * h, 1), hidden]
 
 
 def setattr_z(o, a):
@@ -223,6 +250,7 @@ def build_scene(mod, kind, eid, style, samples, threads, variant):
         ctx[f"{key}_tops"], ctx["groups"][key] = tops, live(objs)
         ctx[f"{key}_rest"] = [(tuple(o.location), tuple(o.scale)) if key == "doors" else tuple(o.rotation_euler)
                               for o in tops]
+    ctx["muzzle"] = next((o for o in root.children_recursive if o.name.split(".")[0] == "muzzle"), None)
     return ctx
 
 
@@ -482,6 +510,10 @@ def main():
                     ctx["root"].rotation_euler[2] = 0
                     job.turn(ctx, -2 * math.pi * i / job.facings - job.yaw)
                     bpy.context.view_layer.update()
+                    if ctx["muzzle"]:
+                        if seen[key].muzzle is None:
+                            seen[key].muzzle = [None] * (job.facings * job.frames)
+                        seen[key].muzzle[i * job.frames + n] = muzzle_at(scene, ctx["muzzle"])
                     meta["images"] += shoot(ctx, ground, out / f"{job.part}-{job.anim}-f{i:02d}-{n:02d}", visible,
                                             holdout, casters, shadow_samples)
             scene.render.use_border = scene.render.use_crop_to_border = False
