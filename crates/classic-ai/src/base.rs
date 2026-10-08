@@ -104,7 +104,13 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             building_queued |= rules.kind(q.item).building;
         }
     }
-    if !building_queued && let Some(k) = next_building(ai, game, view) {
+    // With its income stopped, nothing more is coming to save up for: what credits are left buy units, but only
+    // ones it can pay for in full, since one half paid would wait for ever.
+    let dry = ai.dry(game);
+    if !building_queued
+        && !dry
+        && let Some(k) = next_building(ai, game, view)
+    {
         owed += rules.kind(k).cost;
     }
     // With no harvester left, income has stopped for good unless one is built: cancel everything else not yet
@@ -143,12 +149,14 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     // Then one combat unit at a time, each from a different factory: of every armed unit those factories make, the
     // one the army has fewest of for its weight (ties to the dearer one), from the factory with the shortest queue.
     // Everything is paid as it builds, so what is queued counts against the reserve until it is paid off.
-    while credits - owed >= ai.settings.unit_reserve {
+    while credits - owed >= if dry { 0 } else { ai.settings.unit_reserve } {
+        let spare = credits - owed;
         let best = factories
             .iter()
             .enumerate()
             .flat_map(|(n, (id, queued, made))| made.iter().map(move |&k| (n, *id, *queued, k)))
             .filter(|&(_, _, _, k)| rules.kind(k).weapon.is_some() && !is_harvester(k))
+            .filter(|&(_, _, _, k)| !dry || rules.kind(k).cost <= spare)
             .filter_map(|(n, id, queued, k)| {
                 let w = weight(ai, game, k);
                 (w > 0).then(|| ((army[k.0 as usize] * 1000 / w, -rules.kind(k).cost, k, queued, id), n))
@@ -239,37 +247,21 @@ pub(crate) fn spot(game: &Game, view: &View, player: u32, kind: Kind) -> Option<
         })
         .collect();
     scored.sort_unstable();
-    scored.into_iter().map(|(_, _, y, x)| Tile { x, y }).find(|&t| keeps_lanes(game, view, kind, t))
+    let free = free_units(game, view);
+    scored.into_iter().map(|(_, _, y, x)| Tile { x, y }).find(|&t| keeps_lanes(game, view, kind, t, &free))
 }
 
 /// Whether, with `kind` placed at `at`, every factory and refinery it owns, the new one included, still has a tile on
 /// one of its sides that can be reached from the edge of the map with every tile round it, the building aside, free
 /// of buildings: units leave and harvesters unload on any side, and the free ring gives a unit leaving room to pass
-/// one arriving.
-fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
+/// one arriving. Its own units out in the open (`free`) must stay so, too: a building closing the last gap round one
+/// would shut it in for good, and a side whose last units are shut in can never finish a game.
+fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile, free: &[Tile]) -> bool {
     let rules = &game.rules;
     let es = &game.state.entities;
     let map = &game.map;
-    let (w, h) = (map.width, map.height);
-    let mut blocked: Vec<bool> = (0..w * h).map(|i| !map.passable(i % w, i / w)).collect();
-    let mut fill = |x0: i32, y0: i32, kw: i32, kh: i32| {
-        for y in y0..y0 + kh {
-            for x in x0..x0 + kw {
-                if map.in_bounds(x, y) {
-                    blocked[map.index(x, y)] = true;
-                }
-            }
-        }
-    };
-    for e in es {
-        let k = rules.kind(e.kind);
-        if k.building {
-            let t = e.tile();
-            fill(t.x, t.y, k.width, k.height);
-        }
-    }
     let new = rules.kind(kind);
-    fill(at.x, at.y, new.width, new.height);
+    let blocked = blocked(game, Some((new.width, new.height, at)));
     let has_exit = |k: Kind| {
         let kr = rules.kind(k);
         kr.refinery || rules.kinds.iter().any(|u| !u.building && u.built_at == Some(k))
@@ -284,7 +276,7 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
     if has_exit(kind) {
         doors.push((at.x, at.y, new.width, new.height));
     }
-    let free = |x: i32, y: i32| !map.in_bounds(x, y) || !blocked[map.index(x, y)];
+    let open = |x: i32, y: i32| !map.in_bounds(x, y) || !blocked[map.index(x, y)];
     let inside = |(bx, by, bw, bh): (i32, i32, i32, i32), x: i32, y: i32| {
         (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y)
     };
@@ -295,7 +287,7 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
             around(b.0, b.1, b.2, b.3)
                 .filter(|t| map.in_bounds(t.x, t.y))
                 .filter(|t| {
-                    (-1..=1).all(|dy| (-1..=1).all(|dx| inside(b, t.x + dx, t.y + dy) || free(t.x + dx, t.y + dy)))
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| inside(b, t.x + dx, t.y + dy) || open(t.x + dx, t.y + dy)))
                 })
                 .collect()
         })
@@ -303,6 +295,65 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
     if exits.iter().any(|e| e.is_empty()) {
         return false;
     }
+    let Some(seen) = from_edge(game, &blocked) else { return true };
+    exits.iter().all(|e| e.iter().any(|t| seen[map.index(t.x, t.y)])) && free.iter().all(|t| seen[map.index(t.x, t.y)])
+}
+
+/// The tiles under its units that can reach the edge of the map now. A unit between two tiles counts both, so the
+/// set turns round with the map (rounding its centre to one tile would favour one side).
+fn free_units(game: &Game, view: &View) -> Vec<Tile> {
+    let es = &game.state.entities;
+    let Some(seen) = from_edge(game, &blocked(game, None)) else { return Vec::new() };
+    // The tiles a body from `a` to `b` (exclusive at both ends) overlaps.
+    let span = |a: i64, b: i64| (a.div_euclid(TILE) as i32)..=((b + TILE - 1).div_euclid(TILE) as i32 - 1);
+    let mut free = BTreeSet::new();
+    for &i in &view.mine {
+        let e = &es[i];
+        if game.rules.kind(e.kind).building {
+            continue;
+        }
+        for y in span(e.y - TILE / 2, e.y + TILE / 2) {
+            for x in span(e.x - TILE / 2, e.x + TILE / 2) {
+                if game.map.in_bounds(x, y) && seen[game.map.index(x, y)] {
+                    free.insert((y, x));
+                }
+            }
+        }
+    }
+    free.into_iter().map(|(y, x)| Tile { x, y }).collect()
+}
+
+/// Every tile that terrain or a building blocks, with a building of the given size at the given tile added.
+fn blocked(game: &Game, extra: Option<(i32, i32, Tile)>) -> Vec<bool> {
+    let map = &game.map;
+    let (w, h) = (map.width, map.height);
+    let mut blocked: Vec<bool> = (0..w * h).map(|i| !map.passable(i % w, i / w)).collect();
+    let mut fill = |x0: i32, y0: i32, kw: i32, kh: i32| {
+        for y in y0..y0 + kh {
+            for x in x0..x0 + kw {
+                if map.in_bounds(x, y) {
+                    blocked[map.index(x, y)] = true;
+                }
+            }
+        }
+    };
+    for e in &game.state.entities {
+        let k = game.rules.kind(e.kind);
+        if k.building {
+            let t = e.tile();
+            fill(t.x, t.y, k.width, k.height);
+        }
+    }
+    if let Some((kw, kh, t)) = extra {
+        fill(t.x, t.y, kw, kh);
+    }
+    blocked
+}
+
+/// Which tiles can be reached from the open edge of the map, or `None` if no edge tile is open.
+fn from_edge(game: &Game, blocked: &[bool]) -> Option<Vec<bool>> {
+    let map = &game.map;
+    let (w, h) = (map.width, map.height);
     let mut seen = vec![false; (w * h) as usize];
     let mut queue = VecDeque::new();
     for i in 0..w * h {
@@ -313,7 +364,7 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
         }
     }
     if queue.is_empty() {
-        return true;
+        return None;
     }
     while let Some(t) = queue.pop_front() {
         for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
@@ -327,7 +378,7 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
             }
         }
     }
-    exits.iter().all(|e| e.iter().any(|t| seen[map.index(t.x, t.y)]))
+    Some(seen)
 }
 
 /// Every tile with resource on it now.

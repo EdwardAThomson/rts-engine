@@ -182,12 +182,15 @@ fn credit(state: &mut GameState, player: u32, amount: i64) {
 
 /// The free tile a finished unit leaves by: of the tiles round the factory's footprint, sides and corners alike,
 /// the one nearest the middle of the map, so units come out on the side facing the field whichever way the door is
-/// drawn and wherever the base starts. Ties go to the upper row, then the left column. Free means open to ground
-/// movement with no unit on it.
+/// drawn and wherever the base starts. A tile that opens onto more of the map comes first, so a unit never comes
+/// out into a pocket the base's buildings have closed off while a way out is free. Ties go to the upper row, then
+/// the left column. Free means open to ground movement with no unit on it.
 fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, factory: usize) -> Option<Tile> {
     let free = |t: &Tile| map.in_bounds(t.x, t.y) && pf.passable(t.x, t.y) && !held(state, rules, *t);
     let (x, y, w, h) = factory_rect(state, rules, factory);
-    world::around(x, y, w, h).filter(free).min_by_key(|t| (t.off_middle(map.width, map.height), t.y, t.x))
+    world::around(x, y, w, h)
+        .filter(free)
+        .min_by_key(|t| (std::cmp::Reverse(pf.reach(t.x, t.y)), t.off_middle(map.width, map.height), t.y, t.x))
 }
 
 /// A footprint as (left, top, width, height) in tiles.

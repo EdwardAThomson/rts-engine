@@ -93,8 +93,16 @@ impl Holders {
         self.index(t).and_then(|i| self.by[i])
     }
 
+    /// The tile a unit stands on, or between two centres the tile it is stepping into and, until its centre
+    /// reaches the edge between them, the tile it is leaving. A centre exactly on the edge holds only the new tile,
+    /// whichever way it is going, so a unit crossing to the left lets go on the same tick as its mirror image
+    /// crossing to the right.
     fn tiles(e: &Entity) -> impl Iterator<Item = Tile> {
-        std::iter::once(e.tile()).chain(step_tile(e))
+        let here = e.tile();
+        let to = heading(e);
+        let edge = e.x.rem_euclid(TILE) == 0 || e.y.rem_euclid(TILE) == 0;
+        let leaving = (to.is_none() || (to != Some(here) && !edge)).then_some(here);
+        leaving.into_iter().chain(to)
     }
 
     /// Mark the unit's tiles. A tile already held (units spawned on top of each other) stays with the first.

@@ -173,27 +173,29 @@ fn scan(state: &GameState, rules: &Rules, i: usize) -> Option<u32> {
 }
 
 /// Where an attacker heads to reach `target`: its tile, or for a building the open tile beside it nearest the
-/// attacker, then nearest the middle of the map. When no tile beside a building can be reached from where the
-/// attacker stands (the building is boxed in by others), the nearest reachable tile it could fire from instead, so a
-/// short-ranged unit doesn't stand still out of range.
+/// attacker, then nearest the middle of the map. When the target can't be reached from where the attacker stands (a
+/// building boxed in by others, or a unit walled in behind them), the nearest reachable tile it could fire from
+/// instead, so a unit doesn't stand still out of range.
 fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> Option<Tile> {
     let k = rules.kind(target.kind);
     let t = target.tile();
-    if !k.building {
-        return Some(t);
-    }
     let here = from.tile();
     let (w, h) = pf.size();
     let key =
         |r: &Tile| ((r.x - here.x) * (r.x - here.x) + (r.y - here.y) * (r.y - here.y), r.off_middle(w, h), r.y, r.x);
-    let ring = (t.y - 1..=t.y + k.height).flat_map(|y| (t.x - 1..=t.x + k.width).map(move |x| Tile { x, y }));
-    let ring: Vec<Tile> = ring.filter(|r| pf.passable(r.x, r.y)).collect();
-    // A unit off the passable grid (still stepping out of a factory) can't be judged; it takes the ring as before.
-    if !pf.passable(here.x, here.y) || ring.iter().any(|r| pf.connected((here.x, here.y), (r.x, r.y))) {
-        return ring
-            .into_iter()
-            .filter(|r| !pf.passable(here.x, here.y) || pf.connected((here.x, here.y), (r.x, r.y)))
-            .min_by_key(key);
+    // A unit off the passable grid (still stepping out of a factory) can't be judged; it heads for the target as
+    // before.
+    let off_grid = !pf.passable(here.x, here.y);
+    if !k.building {
+        if off_grid || pf.connected((here.x, here.y), (t.x, t.y)) {
+            return Some(t);
+        }
+    } else {
+        let ring = (t.y - 1..=t.y + k.height).flat_map(|y| (t.x - 1..=t.x + k.width).map(move |x| Tile { x, y }));
+        let ring: Vec<Tile> = ring.filter(|r| pf.passable(r.x, r.y)).collect();
+        if off_grid || ring.iter().any(|r| pf.connected((here.x, here.y), (r.x, r.y))) {
+            return ring.into_iter().filter(|r| off_grid || pf.connected((here.x, here.y), (r.x, r.y))).min_by_key(key);
+        }
     }
     let w_rules = rules.weapon(rules.kind(from.kind).weapon?);
     let reach = (w_rules.range / TILE) as i32 + 1;

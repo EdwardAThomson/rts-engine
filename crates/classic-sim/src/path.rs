@@ -52,6 +52,8 @@ pub struct Pathfinder {
     blocked: Vec<u16>,
     /// Connected-region id per passable tile (0 for cliffs and buildings).
     region: Vec<u32>,
+    /// Tiles in each region, by region id (index 0 unused).
+    sizes: Vec<u32>,
     g: Vec<i32>,
     from: Vec<u32>,
     /// Generation in which `g` and `from` were last written.
@@ -78,6 +80,7 @@ impl Pathfinder {
             ground: pass.clone(),
             blocked: vec![0; n],
             region: vec![0; n],
+            sizes: Vec::new(),
             pass,
             g: vec![0; n],
             from: vec![0; n],
@@ -123,6 +126,11 @@ impl Pathfinder {
             && self.region[(a.1 * self.w + a.0) as usize] == self.region[(b.1 * self.w + b.0) as usize]
     }
 
+    /// How many tiles a ground unit on this one could reach (0 if it is blocked or off the map).
+    pub fn reach(&self, x: i32, y: i32) -> u32 {
+        if self.passable(x, y) { self.sizes[self.region[(y * self.w + x) as usize] as usize] } else { 0 }
+    }
+
     fn label_regions(&mut self) {
         let n = self.pass.len();
         let w = self.w as usize;
@@ -131,7 +139,10 @@ impl Pathfinder {
         // enough, because the corner rule only allows a diagonal step when both orthogonal neighbours are
         // passable. Two tiles in different regions have no path, so the search can refuse at once.
         let region = &mut self.region;
+        let sizes = &mut self.sizes;
         region.fill(0);
+        sizes.clear();
+        sizes.push(0);
         let mut queue = vec![0usize; n];
         let mut next = 0;
         for i in 0..n {
@@ -161,6 +172,7 @@ impl Pathfinder {
                     }
                 }
             }
+            sizes.push(tail as u32);
         }
     }
 

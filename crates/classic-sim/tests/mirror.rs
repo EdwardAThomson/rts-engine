@@ -4,7 +4,7 @@
 
 use classic_sim::map::TILE;
 use classic_sim::path::Pathfinder;
-use classic_sim::{Game, GameOptions, Rules, parse_map};
+use classic_sim::{CommandOrder, Game, GameOptions, Rules, parse_map};
 
 const MAP: &str = include_str!("../../../maps/mirror-01.txt");
 
@@ -91,4 +91,32 @@ fn both_sides_harvest_as_mirror_images() {
     }
     println!("9000 ticks, mirror images throughout, each side delivered {}", g.state.players[0].delivered);
     assert!(g.state.players[0].delivered > 0);
+}
+
+#[test]
+fn units_crossing_tile_edges_stay_mirror_images() {
+    // A scout bike (speed 32) lands exactly on a tile edge every fourth tick. Two in a row on each half drive
+    // outwards, the second close behind the first. A unit crossing to the left used to hold the tile it was leaving
+    // for one tick longer than its mirror image crossing to the right, so the followers fell out of step.
+    let rules = no_chance();
+    let mut g = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let w = g.map.width;
+    let bike = g.kind("scout_bike").unwrap();
+    let (y, x) = (20, 14);
+    let left = [g.spawn(bike, 0, x, y), g.spawn(bike, 0, x + 1, y)];
+    let right = [g.spawn(bike, 1, w - 1 - x, y), g.spawn(bike, 1, w - 2 - x, y)];
+    g.order(0, &left, CommandOrder::Move { x: 4, y });
+    g.order(1, &right, CommandOrder::Move { x: w - 5, y });
+    let mut first_apart = None;
+    for _ in 0..120 {
+        g.step(1);
+        let [a, b] = sides(&g);
+        if a != b && first_apart.is_none() {
+            first_apart = Some(g.state.tick);
+        }
+    }
+    let at = |id: u32| g.state.entity(id).unwrap().tile();
+    println!("left pair ended at {:?}, right pair at {:?}", left.map(at), right.map(at));
+    assert_eq!(first_apart, None, "mirror images every tick");
+    assert_eq!(at(left[0]).x, w - 1 - at(right[0]).x);
 }
