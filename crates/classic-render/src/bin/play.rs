@@ -125,7 +125,7 @@ struct App {
     hud: Hud,
     pack: classic_data::Pack,
     /// The art's files: the pack folder on the desktop, fetched copies in the browser.
-    art_files: Files,
+    art_files: Vec<Files>,
     /// The UI skin's files: the pack's own, then the generic pack's.
     skin_files: Vec<Files>,
     /// In the browser the GPU opens in the background and lands here; see `resumed`.
@@ -157,13 +157,13 @@ struct App {
 
 impl App {
     /// A player for a game of `pack` on one of `maps` (name and text, the first unless the title screen picks
-    /// another), with the pack's art and sounds from `art_files` and `sound_files` (the generic pack's first, then the
-    /// pack's own over them). The sound card opens separately, in `open_speaker`. It opens on the title screen, with
+    /// another), with the pack's art from `art_files` (the pack's own first, over the generic pack's) and its sounds
+    /// from `sound_files` (the generic pack's first, then the pack's own over them). The sound card opens separately, in `open_speaker`. It opens on the title screen, with
     /// the game waiting behind it, unless `start` is given.
     fn new(
         pack: classic_data::Pack,
         maps: Vec<(String, String)>,
-        art_files: Files,
+        art_files: Vec<Files>,
         sound_files: &[Files],
         pack_files: Files,
         skin_files: Vec<Files>,
@@ -873,7 +873,7 @@ fn main() {
             (classic_render::menu::map_name(&p.display().to_string(), &text), text)
         })
         .collect();
-    let art_files = Files::Dir(art::art_dir(&pack));
+    let art_files = art::art_dirs(&pack).into_iter().map(Files::Dir).collect();
     let generic = setting::root().join("settings/generic");
     let mut sound_files = vec![Files::Dir(generic.clone())];
     if pack.dir.canonicalize().ok() != generic.canonicalize().ok() {
