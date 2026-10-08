@@ -41,6 +41,22 @@ struct Effect {
 /// Ticks each frame of an effect stays on screen.
 const EFFECT_TICKS: u32 = 2;
 
+/// A squad member lost to damage, fading where it fell.
+struct Fallen {
+    member: String,
+    owner: u32,
+    /// World pixels of the middle of its sprite.
+    x: f32,
+    y: f32,
+    facing: i64,
+    start: u32,
+}
+
+/// Ticks each frame of a walk cycle stays on screen.
+const WALK_TICKS: u32 = 3;
+/// Ticks a fallen squad member takes to fade.
+const FALL_TICKS: u32 = 24;
+
 #[derive(Default)]
 pub struct Scene {
     /// Body facing per unit, 0 to 255 clockwise from north.
@@ -48,6 +64,9 @@ pub struct Scene {
     /// Positions before the latest tick, for drawing between ticks.
     prev: BTreeMap<u32, (i64, i64)>,
     effects: Vec<Effect>,
+    /// Members each squad showed when last drawn, so the ones it loses can fall.
+    shown: BTreeMap<u32, usize>,
+    fallen: Vec<Fallen>,
     /// How many of the game's events have been read.
     seen: usize,
     pub selected: Vec<u32>,
@@ -109,6 +128,7 @@ impl Scene {
             self.facing.insert(e.id, f);
         }
         self.facing.retain(|id, _| game.state.entity(*id).is_some());
+        self.shown.retain(|id, _| game.state.entity(*id).is_some());
         self.selected.retain(|id| game.state.entity(*id).is_some());
         for g in &mut self.groups {
             g.retain(|id| game.state.entity(*id).is_some());
@@ -198,13 +218,64 @@ impl Scene {
             draw_sprite(batch, art.sprite(&k.id, e.owner), frame, dst, e.owner);
         }
         units.sort_by_key(|e| (e.y, e.id));
+        // Squad members lost since the last frame fall where they stood, fading under the units still standing.
+        for e in &units {
+            let k = game.rules.kind(e.kind);
+            let Some(squad) = art.squad(&k.id) else { continue };
+            let shown = squad.shown(e.health, k.max_health);
+            let before = self.shown.insert(e.id, shown).unwrap_or(shown);
+            let (wx, wy) = at(e);
+            let facing = *self.facing.get(&e.id).unwrap_or(&e.facing);
+            for i in shown..before {
+                let (dx, dy) = squad.place(i, facing);
+                let (x, y) = (wx + dx * tile, wy + dy * tile);
+                self.fallen.push(Fallen { member: squad.member.clone(), owner: e.owner, x, y, facing, start: tick });
+            }
+        }
+        self.fallen.retain(|f| {
+            let age = tick.saturating_sub(f.start);
+            let Some(s) = art.sprite(&f.member, f.owner).filter(|_| age < FALL_TICKS) else { return false };
+            let (sx, sy) = cam.to_screen(f.x - tile / 2.0, f.y - tile / 2.0);
+            let a = (255 * (FALL_TICKS - age) / FALL_TICKS) as u8;
+            batch.sprite(
+                s.tex,
+                s.facing_frame(f.facing, 0),
+                Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom),
+                [255, 255, 255, a],
+            );
+            true
+        });
         for e in units {
             let k = game.rules.kind(e.kind);
             let (wx, wy) = at(e);
+            let facing = *self.facing.get(&e.id).unwrap_or(&e.facing);
+            let moving = self.prev.get(&e.id).is_some_and(|&p| p != (e.x, e.y));
+            let walk = if moving { tick / WALK_TICKS } else { 0 };
+            if let Some(squad) = art.squad(&k.id) {
+                let member = art.sprite(&squad.member, e.owner).expect("art.squad checks the member");
+                let shown = squad.shown(e.health, k.max_health);
+                let place = |i: usize| {
+                    let (dx, dy) = squad.place(i, facing);
+                    (wx + dx * tile, wy + dy * tile)
+                };
+                // Members further down the screen go on top; each starts its walk at its own point in the cycle.
+                let mut order: Vec<usize> = (0..shown).collect();
+                order.sort_by(|&a, &b| place(a).1.total_cmp(&place(b).1));
+                for i in order {
+                    let (x, y) = place(i);
+                    let (sx, sy) = cam.to_screen(x - tile / 2.0, y - tile / 2.0);
+                    let step = if moving { squad.step(i, walk, member.cycle()) } else { 0 };
+                    let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
+                    batch.sprite(member.tex, member.facing_frame(facing, step), dst, [255; 4]);
+                }
+                continue;
+            }
             let (sx, sy) = cam.to_screen(wx - tile / 2.0, wy - tile / 2.0);
             let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
-            let facing = *self.facing.get(&e.id).unwrap_or(&e.facing);
-            draw_sprite(batch, art.sprite(&k.id, e.owner), facing_frame(facing), dst, e.owner);
+            match art.sprite(&k.id, e.owner) {
+                Some(s) => batch.sprite(s.tex, s.facing_frame(facing, walk), dst, [255; 4]),
+                None => draw_sprite(batch, None, 0, dst, e.owner),
+            }
         }
         for p in &game.state.projectiles {
             let name = game.state.weapon_ids.get(p.weapon.0 as usize).map_or("", |s| s.as_str());

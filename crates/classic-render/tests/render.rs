@@ -180,3 +180,39 @@ fn art_fetched_into_memory_draws_the_same_as_art_read_from_its_folder() {
     r.art = Art::from_files(&r.gpu, &mut r.batch, &memory, &r.ramps).unwrap();
     assert_eq!(frame(&mut r, &mut scene, &cam), from_folder);
 }
+
+#[test]
+fn a_squad_is_drawn_as_soldiers_who_fall_as_it_is_hurt() {
+    // Squads are still planned in the rules data, so this game gives the generic squad a body borrowed from the tank.
+    let mut r = rig();
+    let pack = setting::load("generic").unwrap();
+    let mut table = pack.rules.clone();
+    let mut squad = table.entities["battle_tank"].clone();
+    squad.weapon = None;
+    table.entities.insert("infantry_squad".into(), squad);
+    let rules = Rules::from_table(&table).unwrap();
+    r.game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let kind = r.game.rules.kind_id("infantry_squad").unwrap();
+    let id = r.game.spawn(kind, 0, 12, 8);
+    assert!(r.art.squad("infantry_squad").is_some(), "the generic pack lists the squad");
+
+    let mut scene = Scene::default();
+    let cam = Camera { x: 12.0 * 32.0 - W as f32 / 2.0, y: 8.0 * 32.0 - H as f32 / 2.0, zoom: 1.0 };
+    let area = (W / 2 - 24, H / 2 - 24, 80, 80);
+    let colours = ramp(&r.ramps[0]);
+    let soldiers = |r: &mut Rig, scene: &mut Scene| count(&frame(r, scene, &cam), area, &colours);
+    let full = soldiers(&mut r, &mut scene);
+    let max = r.game.rules.kind(kind).max_health;
+    r.game.state.entities.iter_mut().find(|e| e.id == id).unwrap().health = max / 3;
+    let falling = soldiers(&mut r, &mut scene);
+    for _ in 0..30 {
+        scene.before_step(&r.game);
+        r.game.step(1);
+        scene.after_step(&r.game);
+    }
+    let one = soldiers(&mut r, &mut scene);
+    println!("team-colour pixels: {full} at full health, {falling} as two fall, {one} once they have gone");
+    assert!(full > 30, "the squad shows its faction colour");
+    assert_eq!(falling, full, "the two lost soldiers are still on screen as they start to fall");
+    assert!(one * 2 < full && one * 4 > full, "one soldier of three is left");
+}

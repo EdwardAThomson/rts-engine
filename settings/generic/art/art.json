@@ -1,5 +1,5 @@
 {
-  "about": "Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data.",
+  "about": "Placeholder art for the generic pack, drawn from code by crates/classic-tools/src/art (run: cargo run --bin art). Paths are relative to the pack. Strips run left to right; facings start at north and turn clockwise in eighths. Pixels in the remap colours are swapped, by exact value, for the owning faction's ramp, darkest first. Building sizes are in tiles and match the default footprints in the rules data. A squad is drawn as copies of its member's sprite, one per offset, with one fewer for each equal share of health lost (the last listed goes first); offsets are in 256ths of a tile from the unit's middle, x right and y down, for a squad facing north, and turn with it. A unit strip with more frames than facings holds a walk cycle per facing, facing by facing.",
   "tile": 32,
   "remap": ["#400040", "#800080", "#c000c0", "#ff40ff"],
   "ramps": {
@@ -104,6 +104,10 @@
     "power_missile": "art/icons/power_missile.png",
     "power_guerrillas": "art/icons/power_guerrillas.png",
     "power_saboteur": "art/icons/power_saboteur.png"
+  },
+  "squads": {
+    "infantry_squad": { "member": "infantry", "offsets": [[0, -64], [-64, 48], [64, 48]] },
+    "rocket_squad": { "member": "rocket_infantry", "offsets": [[0, -64], [-64, 48], [64, 48]] }
   },
   "effects": {
     "explosion_small": { "file": "art/effects/explosion_small.png", "frame": [32, 32], "frames": 6 },

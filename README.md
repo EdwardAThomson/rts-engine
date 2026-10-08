@@ -159,7 +159,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,
   the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and the
-  art is the generic pack's placeholders. The player was checked under a virtual display
+  art is the generic pack's placeholders. Squads are drawn as three soldiers, but squads are still planned in the
+  rules data, so none appear in a game yet; a lost soldier fades rather than playing a death, and the walk cycle
+  waits for the studio's packed infantry, since the placeholder strips have one frame per facing. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
   volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and
