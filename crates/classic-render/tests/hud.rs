@@ -5,7 +5,7 @@
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, Hud, Icon, RAIL_W, View};
 use classic_render::platform::{Files, Font, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
-use classic_render::{Camera, Scene};
+use classic_render::{Camera, Scene, Skin};
 use classic_sim::world::Event;
 use classic_sim::{EntryState, Game, GameOptions, Kind, Rules};
 use classic_tools::setting;
@@ -187,6 +187,7 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     let mut batch = SpriteBatch::new(&gpu, OFFSCREEN_FORMAT);
     let art = Art::load(&gpu, &mut batch, &art::art_dir(&pack), &ramps).unwrap();
     let font = Font::new(&gpu, &mut batch);
+    let skin = Skin::load(&gpu, &mut batch, &[&Files::Dir(pack.dir.clone())]).unwrap();
     let v = view();
     let at = centre(icon(&game, &hud, "power_plant").rect);
     hud.click(&mut game, &v, at, Button::Left, true);
@@ -201,7 +202,7 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     let harvester = game.kind("harvester").unwrap();
     let picked = game.state.entities.iter().find(|e| e.owner == 0 && e.kind == harvester).unwrap().id;
     hud.feed.say(&game, "low_power", None, classic_render::feed::Tone::Bad);
-    hud.draw(&mut batch, &art, &font, &game, &v, at, &[picked]);
+    hud.draw(&mut batch, &art, &skin, &game, &v, at, &[picked]);
     let image = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
     let out = setting::root().join("target/hud-test.png");
     std::fs::write(&out, classic_tools::art::png::encode(w as usize, h as usize, &image)).unwrap();
@@ -280,4 +281,13 @@ fn the_minimap_moves_the_view_and_sends_orders_but_never_orders_itself() {
     assert_eq!(right, Click::Order { x: cx.floor() as i32, y: cy.floor() as i32 });
     assert!(left.taken() && right.taken());
     assert!(game.command_log().is_empty(), "the minimap itself orders nothing");
+}
+
+#[test]
+fn the_clock_shows_hours_minutes_and_seconds() {
+    use classic_render::hud::clock_text;
+    assert_eq!(clock_text(0), "0:00:00");
+    assert_eq!(clock_text(252), "0:04:12");
+    assert_eq!(clock_text(4500), "1:15:00");
+    assert_eq!(clock_text(36_000 + 59), "10:00:59");
 }

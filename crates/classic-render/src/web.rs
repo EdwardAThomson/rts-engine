@@ -12,6 +12,7 @@ use crate::art::{self, ART_INDEX};
 use crate::feed::MESSAGES_FILE;
 use crate::menu::map_name;
 use crate::platform::{Files, web};
+use crate::skin;
 use crate::sound::{self, SOUND_INDEX};
 use crate::theme::THEME_FILE;
 
@@ -33,6 +34,8 @@ pub struct Loaded {
     pub pack_files: Files,
     /// The maps on offer, as (name, text).
     pub maps: Vec<(String, String)>,
+    /// The UI skin's files: the pack's own first, then the generic pack's.
+    pub skin: Vec<Files>,
 }
 
 /// Fetch and check a game's files. `setting` is a pack under `settings/` by name, or any pack folder by its path
@@ -98,5 +101,20 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
     } else {
         pack.maps.iter().map(|m| text(&format!("{dir}/{m}"), data.get(m))).collect::<Result<_, _>>()?
     };
-    Ok(Loaded { pack, art: Files::Memory { label: art_dir, files }, sounds, pack_files, maps })
+    // The UI skin: the pack's own, then the generic pack's under it, as on the desktop.
+    let mut skin = Vec::new();
+    for d in if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![dir.clone(), GENERIC.to_string()] } {
+        let base = format!("{ROOT}{d}/");
+        let mut files = web::fetch_files(&base, &[skin::THEME_INDEX.to_string()]).await?;
+        let Some(index) = files.get(skin::THEME_INDEX) else { continue };
+        let names = skin::theme_files(&String::from_utf8_lossy(index));
+        files.extend(web::fetch_files(&base, &names).await?);
+        let fonts: Vec<String> = names.iter().filter(|n| n.ends_with(".json")).cloned().collect();
+        for f in fonts {
+            let atlases = files.get(&f).map(|b| skin::font_files(&String::from_utf8_lossy(b))).unwrap_or_default();
+            files.extend(web::fetch_files(&base, &atlases).await?);
+        }
+        skin.push(Files::Memory { label: d, files });
+    }
+    Ok(Loaded { pack, art: Files::Memory { label: art_dir, files }, sounds, pack_files, maps, skin })
 }

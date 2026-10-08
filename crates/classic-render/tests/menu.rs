@@ -1,8 +1,9 @@
 //! The title, pause and end screens: which screen shows, what each button asks for, and that the menus never
 //! touch the game. The last test draws one (it needs a GPU adapter, a software one will do).
 
+use classic_render::Skin;
 use classic_render::menu::{Action, Menu, Screen};
-use classic_render::platform::{Font, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
+use classic_render::platform::{Files, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
 use classic_sim::{Game, GameOptions, Rules};
 use classic_tools::setting;
 
@@ -95,18 +96,26 @@ fn the_end_screen_comes_when_someone_wins_or_the_player_loses() {
 fn a_menu_draws_over_the_game_and_nothing_while_playing() {
     let gpu = Gpu::headless().expect("a GPU adapter (a software one will do)");
     let mut batch = SpriteBatch::new(&gpu, OFFSCREEN_FORMAT);
-    let font = Font::new(&gpu, &mut batch);
+    let generic = Files::Dir(setting::root().join("settings/generic"));
+    let skin = Skin::load(&gpu, &mut batch, &[&generic]).unwrap();
     let game = game();
     let (w, h) = (SCREEN.0 as u32, SCREEN.1 as u32);
     let grey = [90, 90, 90, 255];
     let lit = |batch: &mut SpriteBatch, menu: &Menu| {
         batch.fill(Rect::new(0.0, 0.0, SCREEN.0, SCREEN.1), grey);
-        menu.draw(batch, &font, &game, SCREEN, (0.0, 0.0));
+        menu.draw(batch, &skin, &game, SCREEN, (0.0, 0.0));
         let img = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
         img.chunks_exact(4).filter(|p| p[..3] != grey[..3]).count()
     };
     let mut menu = Menu::new("Generic");
     let title = lit(&mut batch, &menu);
+    // The title screen in the generic skin, for a person to look at.
+    batch.fill(Rect::new(0.0, 0.0, SCREEN.0, SCREEN.1), grey);
+    menu.draw(&mut batch, &skin, &game, SCREEN, centre(menu.layout(SCREEN)[0].rect));
+    let image = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
+    let out = setting::root().join("target/menu-test.png");
+    std::fs::write(&out, classic_tools::art::png::encode(w as usize, h as usize, &image)).unwrap();
+    println!("wrote {}", out.display());
     menu.screen = Screen::Playing;
     let playing = lit(&mut batch, &menu);
     menu.screen = Screen::Over { won: true };
