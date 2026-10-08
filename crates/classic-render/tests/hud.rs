@@ -4,7 +4,7 @@
 
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, Hud, Icon, RAIL_W, View};
-use classic_render::platform::{Font, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
+use classic_render::platform::{Files, Font, Gpu, Rect, SpriteBatch, gpu::OFFSCREEN_FORMAT};
 use classic_render::{Camera, Scene};
 use classic_sim::world::Event;
 use classic_sim::{EntryState, Game, GameOptions, Kind, Rules};
@@ -18,7 +18,7 @@ fn game() -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
-    let hud = Hud::new(&pack, &game, 0);
+    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0);
     (game, hud)
 }
 

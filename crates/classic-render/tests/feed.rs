@@ -4,6 +4,7 @@
 use classic_render::Hud;
 use classic_render::Scene;
 use classic_render::feed::{self, Feed, LIFE, Tone};
+use classic_render::platform::Files;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use classic_tools::setting;
 
@@ -13,7 +14,7 @@ fn game() -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
-    let hud = Hud::new(&pack, &game, 0);
+    let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0);
     (game, hud)
 }
 
@@ -45,7 +46,7 @@ fn every_message_has_words_and_a_pack_can_reword_them() {
         r#"{ "messages": { "low_power": "The lights are dimming", "no_such_message": "x" } }"#,
     )
     .unwrap();
-    let f = Feed::new(&dir, Default::default(), 0);
+    let f = Feed::new(&Files::Dir(dir.clone()), Default::default(), 0);
     println!("warnings: {:?}", f.warnings);
     assert_eq!(f.words()["low_power"], "The lights are dimming");
     assert_eq!(f.words()["power_restored"], words["power_restored"]);

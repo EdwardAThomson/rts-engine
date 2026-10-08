@@ -116,3 +116,20 @@ fn a_pack_with_problems_reports_every_one() {
     assert_eq!(errors.len(), expect.len(), "{errors:#?}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_pack_given_as_files_loads_as_it_does_from_its_folder() {
+    // The browser build has no folders: it fetches the pack's files and checks them this way.
+    let dir = setting::root().join("settings/generic");
+    let files: Vec<String> = ["setting.json", "names.json"].map(String::from).to_vec();
+    let read = |f: &str| Ok(std::fs::read_to_string(dir.join(f)).ok());
+    let rules = RulesTable::builtin();
+    let fetched = Pack::from_files(&dir, &files, &read, &rules).unwrap();
+    let loaded = Pack::load(&dir, &rules).unwrap();
+    assert_eq!((&fetched.id, &fetched.factions, &fetched.names), (&loaded.id, &loaded.factions, &loaded.names));
+    assert_eq!(play(&fetched), play(&loaded));
+
+    let with_script = [files.clone(), vec!["art/units/run.js".into()]].concat();
+    let errors = Pack::from_files(&dir, &with_script, &read, &rules).unwrap_err();
+    assert_eq!(errors, ["art/units/run.js: not a data or asset file; packs hold no code"]);
+}

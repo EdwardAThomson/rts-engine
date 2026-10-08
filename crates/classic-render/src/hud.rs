@@ -16,7 +16,7 @@ use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
 use crate::feed::{Feed, Tone};
-use crate::platform::{Font, Rect, SpriteBatch};
+use crate::platform::{Files, Font, Rect, SpriteBatch};
 use crate::scene::Camera;
 
 /// The rail's width, at UI scale 1.
@@ -157,8 +157,9 @@ pub struct Hud {
 }
 
 impl Hud {
-    /// A HUD for `player`, naming things as `pack` does and leaving out the entities it doesn't use.
-    pub fn new(pack: &classic_data::Pack, game: &Game, player: u32) -> Hud {
+    /// A HUD for `player`, naming things as `pack` does and leaving out the entities it doesn't use. `pack_files` is
+    /// where the pack's own files are, for its wording of the message feed.
+    pub fn new(pack: &classic_data::Pack, pack_files: &Files, game: &Game, player: u32) -> Hud {
         let ids = game.rules.kinds.iter().map(|k| k.id.clone());
         let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
         Hud {
@@ -167,7 +168,7 @@ impl Hud {
             tab: None,
             placing: None,
             scroll: 0,
-            feed: Feed::new(&pack.dir, names.clone(), player),
+            feed: Feed::new(pack_files, names.clone(), player),
             names,
             unused: ids.filter(|id| !pack.uses(id)).collect(),
         }

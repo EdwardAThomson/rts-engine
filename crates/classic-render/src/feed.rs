@@ -12,7 +12,11 @@ use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{Event, IdleReason};
 use classic_sim::{Game, Kind, ProduceError};
 
+use crate::platform::Files;
+
 const MESSAGES: &str = include_str!("../../../data/ui/messages.json");
+/// Where a pack rewords messages, in its folder.
+pub const MESSAGES_FILE: &str = "ui/messages.json";
 
 /// How long a line stays, in ticks.
 pub const LIFE: u32 = 8 * TICKS_PER_SECOND;
@@ -67,23 +71,23 @@ fn words(v: &Value) -> Option<BTreeMap<String, String>> {
 }
 
 impl Feed {
-    /// A feed for `local`, in the words of the pack at `pack_dir` where it gives any, naming things as `names` does
-    /// (generic id to the pack's name).
-    pub fn new(pack_dir: &std::path::Path, names: BTreeMap<String, String>, local: u32) -> Feed {
+    /// A feed for `local`, in the words of the pack's `ui/messages.json` in `pack` where it has one, naming things as
+    /// `names` does (generic id to the pack's name).
+    pub fn new(pack: &Files, names: BTreeMap<String, String>, local: u32) -> Feed {
         let mut table = default_words();
         let mut warnings = Vec::new();
-        if let Ok(text) = std::fs::read_to_string(pack_dir.join("ui/messages.json")) {
+        if let Ok(text) = pack.read_text(MESSAGES_FILE) {
             match json::parse(&text).ok().as_ref().and_then(words) {
                 Some(own) => {
                     for (id, t) in own {
                         if let Some(w) = table.get_mut(&id) {
                             *w = t;
                         } else {
-                            warnings.push(format!("ui/messages.json: no message `{id}`"));
+                            warnings.push(format!("{}: no message `{id}`", pack.name(MESSAGES_FILE)));
                         }
                     }
                 }
-                None => warnings.push("ui/messages.json: needs a `messages` object of strings".to_string()),
+                None => warnings.push(format!("{}: needs a `messages` object of strings", pack.name(MESSAGES_FILE))),
             }
         }
         Feed {

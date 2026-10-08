@@ -13,22 +13,26 @@
 //! the selected units there. Escape puts the building back, then clears the selection, then quits. Space pauses, M
 //! mutes the sound (or start with `--mute`). Every other player is a computer opponent unless `--ai` lists which ones
 //! (or says `none`); the window title says who won. `--frames N` quits after N frames, for smoke tests.
+//!
+//! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
+//! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&ai=none&mute`), the
+//! files are fetched from the server first, because the browser has no file system and can't wait for the GPU, and
+//! sound starts with the first click or key press.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use classic_ai::{Ai, Settings};
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, RAIL_W};
-use classic_render::platform::{Font, Gpu, Mixer, Rect, SpriteBatch};
+use classic_render::platform::{Files, Font, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::sound::Cue;
 use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
-use classic_tools::setting;
 use winit::application::ApplicationHandler;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -58,10 +62,35 @@ fn digit(code: KeyCode) -> Option<usize> {
     KEYS.iter().position(|&k| k == code)
 }
 
+/// An option: `--name value` on the command line, or `?name=value` in the browser.
 fn arg(name: &str) -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == &format!("--{name}")).and_then(|i| args.get(i + 1).cloned())
+    #[cfg(target_arch = "wasm32")]
+    return classic_render::platform::web::query(name);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        args.iter().position(|a| a == &format!("--{name}")).and_then(|i| args.get(i + 1).cloned())
+    }
 }
+
+/// A switch: `--name` on the command line, or `?name` in the browser.
+fn flag(name: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    return classic_render::platform::web::query(name).is_some();
+    #[cfg(not(target_arch = "wasm32"))]
+    std::env::args().any(|a| a == format!("--{name}"))
+}
+
+/// A line for the person playing: the terminal on the desktop, the console in the browser.
+fn say(msg: &str) {
+    #[cfg(target_arch = "wasm32")]
+    classic_render::platform::web::log(msg);
+    #[cfg(not(target_arch = "wasm32"))]
+    println!("{msg}");
+}
+
+/// A window, its surface and the GPU that draws to it, once the GPU has opened.
+type Opened = (Arc<Window>, wgpu::Surface<'static>, Gpu);
 
 struct Running {
     window: Arc<Window>,
@@ -78,6 +107,11 @@ struct App {
     scene: Scene,
     hud: Hud,
     pack: classic_data::Pack,
+    /// The art's files: the pack folder on the desktop, fetched copies in the browser.
+    art_files: Files,
+    /// In the browser the GPU opens in the background and lands here; see `resumed`.
+    #[cfg(target_arch = "wasm32")]
+    opened: std::rc::Rc<std::cell::RefCell<Option<Opened>>>,
     player: u32,
     /// The computer opponents, which order through the same command queue as the player.
     ais: Vec<Ai>,
@@ -98,10 +132,86 @@ struct App {
     /// Shared with the sound card's thread, which pulls the mix from it.
     mixer: Arc<Mutex<Mixer>>,
     #[cfg(feature = "device")]
-    _speaker: Option<classic_render::platform::Speaker>,
+    speaker: Option<classic_render::platform::Speaker>,
+    speaker_tried: bool,
 }
 
 impl App {
+    /// A player for `game`, with the pack's art and sounds from `art_files` and `sound_files` (the generic pack's
+    /// first, then the pack's own over them). The sound card opens separately, in `open_speaker`.
+    fn new(game: Game, pack: classic_data::Pack, art_files: Files, sound_files: &[Files], pack_files: &Files) -> App {
+        let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
+        let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1) as u64;
+        let mut mixer = Mixer::new(48_000);
+        mixer.muted = flag("mute");
+        let sound = SoundBoard::from_files(sound_files, player, seed, &mut mixer);
+        for w in &sound.warnings {
+            say(&format!("sound: {w}"));
+        }
+        let hud = Hud::new(&pack, pack_files, &game, player);
+        for w in &hud.feed.warnings {
+            say(&format!("messages: {w}"));
+        }
+        let ais: Vec<Ai> = match arg("ai").as_deref() {
+            Some("none") => Vec::new(),
+            Some(list) => list
+                .split(',')
+                .map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal()))
+                .collect(),
+            None => game
+                .state
+                .players
+                .iter()
+                .map(|p| p.id)
+                .filter(|&p| p != player)
+                .map(|p| Ai::new(p, Settings::normal()))
+                .collect(),
+        };
+        App {
+            game,
+            scene: Scene::default(),
+            hud,
+            pack,
+            art_files,
+            #[cfg(target_arch = "wasm32")]
+            opened: Default::default(),
+            player,
+            ais,
+            cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
+            run: None,
+            last: Instant::now(),
+            owed: Duration::ZERO,
+            paused: false,
+            keys: BTreeSet::new(),
+            mouse: (-1.0e4, -1.0e4),
+            drag: None,
+            minimap_drag: false,
+            frames: 0,
+            max_frames: arg("frames").and_then(|s| s.parse().ok()),
+            sound,
+            mixer: Arc::new(Mutex::new(mixer)),
+            #[cfg(feature = "device")]
+            speaker: None,
+            speaker_tried: false,
+        }
+    }
+
+    /// Open the sound card, once. No sound card (a server, a CI runner) just means a silent game. Browsers only let
+    /// a page make sound after the player has clicked or pressed a key, so there it opens on the first one.
+    fn open_speaker(&mut self) {
+        if std::mem::replace(&mut self.speaker_tried, true) {
+            return;
+        }
+        #[cfg(feature = "device")]
+        match classic_render::platform::Speaker::open(self.mixer.clone()) {
+            Ok(s) => {
+                say(&format!("sound on {}", s.describe));
+                self.speaker = Some(s);
+            }
+            Err(e) => say(&format!("playing without sound: {e}")),
+        }
+    }
+
     fn view(&self) -> View {
         let screen = self.run.as_ref().map_or((1280.0, 800.0), |r| (r.config.width as f32, r.config.height as f32));
         View { cam: self.cam, screen, tile: TILE as f32 * self.world_px() }
@@ -377,23 +487,17 @@ impl App {
         run.batch.draw(&run.gpu, &view, run.config.width, run.config.height, [0, 0, 0, 255]);
         run.gpu.queue.present(texture);
         run.window.set_title(&title);
+        #[cfg(target_arch = "wasm32")]
+        classic_render::platform::web::set_title(&title);
         self.frames += 1;
     }
-}
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.run.is_some() {
-            return;
-        }
-        let attrs = Window::default_attributes().with_title(self.title()).with_inner_size(PhysicalSize::new(1280, 800));
-        let window = Arc::new(event_loop.create_window(attrs).expect("a window"));
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
-            event_loop.owned_display_handle(),
-        )));
-        let surface = instance.create_surface(window.clone()).expect("a surface for the window");
-        let gpu = Gpu::open(instance, Some(&surface)).expect("a GPU that can draw to the window");
-        println!("drawing with {}", gpu.describe());
+    /// Finish setting up once the GPU is open: the surface, the sprite batcher and the art.
+    fn start(&mut self, (window, surface, gpu): Opened) {
+        say(&format!("drawing with {}", gpu.describe()));
+        // In the browser the page's loading message goes away.
+        #[cfg(target_arch = "wasm32")]
+        classic_render::platform::web::status("");
         let size = window.inner_size();
         let mut config = surface
             .get_default_config(&gpu.adapter, size.width.max(1), size.height.max(1))
@@ -406,7 +510,7 @@ impl ApplicationHandler for App {
         surface.configure(&gpu.device, &config);
         let mut batch = SpriteBatch::new(&gpu, config.format);
         let ramps = art::player_ramps(&self.pack, self.game.state.players.len());
-        let art = Art::load(&gpu, &mut batch, &art::art_dir(&self.pack), &ramps).expect("the pack's art loads");
+        let art = Art::from_files(&gpu, &mut batch, &self.art_files, &ramps).expect("the pack's art loads");
         let font = Font::new(&gpu, &mut batch);
         self.hud.scale = window.scale_factor().round().max(1.0) as f32;
         // Start over the player's own base.
@@ -418,8 +522,61 @@ impl ApplicationHandler for App {
         self.run = Some(Running { window, surface, config, gpu, batch, art, font });
         self.last = Instant::now();
     }
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.run.is_some() {
+            return;
+        }
+        let attrs = Window::default_attributes().with_title(self.title());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let window = Arc::new(
+                event_loop
+                    .create_window(attrs.with_inner_size(winit::dpi::PhysicalSize::new(1280, 800)))
+                    .expect("a window"),
+            );
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
+                event_loop.owned_display_handle(),
+            )));
+            let surface = instance.create_surface(window.clone()).expect("a surface for the window");
+            let gpu =
+                pollster::block_on(Gpu::open(instance, Some(&surface))).expect("a GPU that can draw to the window");
+            self.start((window, surface, gpu));
+        }
+        // The browser can't wait for the GPU, so it opens in the background and the first redraw after it lands
+        // finishes the set-up. The canvas is the page's `#game`, sized by the page's style.
+        #[cfg(target_arch = "wasm32")]
+        {
+            use classic_render::platform::web;
+            use winit::platform::web::WindowAttributesExtWebSys;
+            let canvas = web::canvas("game");
+            let window = Arc::new(event_loop.create_window(attrs.with_canvas(canvas)).expect("a canvas"));
+            let opened = self.opened.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let instance = Gpu::browser_instance().await;
+                let surface = instance.create_surface(window.clone()).expect("a surface for the canvas");
+                match Gpu::open(instance, Some(&surface)).await {
+                    Ok(gpu) => {
+                        window.request_redraw();
+                        *opened.borrow_mut() = Some((window, surface, gpu));
+                    }
+                    Err(e) => web::status(&format!("this browser can't draw the game: {e}")),
+                }
+            });
+        }
+    }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Browsers let a page make sound only after a click or key press, so the sound card opens on the first one.
+        #[cfg(target_arch = "wasm32")]
+        if matches!(
+            event,
+            WindowEvent::KeyboardInput { .. } | WindowEvent::MouseInput { state: ElementState::Pressed, .. }
+        ) {
+            self.open_speaker();
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -506,6 +663,14 @@ impl ApplicationHandler for App {
                 self.cam.y = wy - self.mouse.1 / zoom;
             }
             WindowEvent::RedrawRequested => {
+                #[cfg(target_arch = "wasm32")]
+                if self.run.is_none() {
+                    let opened = self.opened.borrow_mut().take();
+                    match opened {
+                        Some(o) => self.start(o),
+                        None => return,
+                    }
+                }
                 self.redraw();
                 if self.max_frames.is_some_and(|m| self.frames >= m) {
                     event_loop.exit();
@@ -522,79 +687,25 @@ impl ApplicationHandler for App {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    use classic_tools::setting;
     let setting_name = arg("setting").or_else(|| std::env::var("SETTING").ok()).unwrap_or_else(|| "generic".into());
     let pack = setting::load(&setting_name).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(2);
     });
-    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
-    let map_path = arg("map").unwrap_or_else(|| setting::root().join("maps/skirmish-01.txt").display().to_string());
+    let map_path = arg("map").unwrap_or_else(|| setting::root().join(MAP).display().to_string());
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
-    let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
-    let game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
-    let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
-    let hud = Hud::new(&pack, &game, player);
-    for w in &hud.feed.warnings {
-        eprintln!("messages: {w}");
-    }
-    let ais: Vec<Ai> = match arg("ai").as_deref() {
-        Some("none") => Vec::new(),
-        Some(list) => {
-            list.split(',').map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal())).collect()
-        }
-        None => game
-            .state
-            .players
-            .iter()
-            .map(|p| p.id)
-            .filter(|&p| p != player)
-            .map(|p| Ai::new(p, Settings::normal()))
-            .collect(),
-    };
-    let mut mixer = Mixer::new(48_000);
-    mixer.muted = std::env::args().any(|a| a == "--mute");
+    let art_files = Files::Dir(art::art_dir(&pack));
     let generic = setting::root().join("settings/generic");
-    let sound = SoundBoard::load(&pack.dir, &generic, player, seed as u64, &mut mixer);
-    for w in &sound.warnings {
-        eprintln!("sound: {w}");
+    let mut sound_files = vec![Files::Dir(generic.clone())];
+    if pack.dir.canonicalize().ok() != generic.canonicalize().ok() {
+        sound_files.push(Files::Dir(pack.dir.clone()));
     }
-    let mixer = Arc::new(Mutex::new(mixer));
-    // No sound card (a server, a CI runner) just means a silent game.
-    #[cfg(feature = "device")]
-    let speaker = match classic_render::platform::Speaker::open(mixer.clone()) {
-        Ok(s) => {
-            println!("sound on {}", s.describe);
-            Some(s)
-        }
-        Err(e) => {
-            eprintln!("playing without sound: {e}");
-            None
-        }
-    };
-    let mut app = App {
-        game,
-        scene: Scene::default(),
-        hud,
-        pack,
-        player,
-        ais,
-        cam: Camera { x: 0.0, y: 0.0, zoom: 2.0 },
-        run: None,
-        last: Instant::now(),
-        owed: Duration::ZERO,
-        paused: false,
-        keys: BTreeSet::new(),
-        mouse: (-1.0e4, -1.0e4),
-        drag: None,
-        minimap_drag: false,
-        frames: 0,
-        max_frames: arg("frames").and_then(|s| s.parse().ok()),
-        sound,
-        mixer,
-        #[cfg(feature = "device")]
-        _speaker: speaker,
-    };
+    let pack_files = Files::Dir(pack.dir.clone());
+    let mut app = App::new(new_game(&pack, &text), pack, art_files, &sound_files, &pack_files);
+    app.open_speaker();
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
     let ai_orders =
@@ -605,4 +716,32 @@ fn main() {
         app.frames,
         app.game.hash()
     );
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use classic_render::platform::web;
+    use winit::platform::web::EventLoopExtWebSys;
+    web::report_panics();
+    web::status("loading");
+    wasm_bindgen_futures::spawn_local(async {
+        let setting_name = arg("setting").unwrap_or_else(|| "generic".into());
+        let map = arg("map").unwrap_or_else(|| MAP.into());
+        let loaded = match classic_render::web::load(&setting_name, &map).await {
+            Ok(l) => l,
+            Err(e) => return web::status(&e),
+        };
+        let app =
+            App::new(new_game(&loaded.pack, &loaded.map), loaded.pack, loaded.art, &loaded.sounds, &loaded.messages);
+        EventLoop::new().expect("an event loop").spawn_app(app);
+    });
+}
+
+/// The map played when none is given, from the repository root.
+const MAP: &str = "maps/skirmish-01.txt";
+
+fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
+    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
+    let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
+    Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map")
 }

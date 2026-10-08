@@ -23,7 +23,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libxkbcommon-x11-0 xvfb libasound2-dev
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo clippy --target wasm32-unknown-unknown -p classic-wasm -- -D warnings
+      - run: cargo clippy --target wasm32-unknown-unknown -p classic-wasm -p classic-render -- -D warnings
       - run: cargo test
       - name: WebAssembly build plays the same games as the native build
         run: |
@@ -32,3 +32,15 @@ jobs:
       - run: cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500
       - name: The desktop player opens a window and draws
         run: xvfb-run -a cargo run --bin play -- --frames 60
+      # The same player in headless Chromium, drawing with WebGPU and then WebGL2 on its software GPU. wasm-bindgen's
+      # command-line tool must match the library version in Cargo.lock.
+      - name: The player runs in the browser on WebGPU and WebGL2
+        run: |
+          cargo build --release --target wasm32-unknown-unknown -p classic-render --bin play
+          v=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')
+          curl -sSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$v/wasm-bindgen-$v-x86_64-unknown-linux-musl.tar.gz" | tar xz -C /tmp
+          /tmp/wasm-bindgen-$v-x86_64-unknown-linux-musl/wasm-bindgen --target web --no-typescript --out-dir web/play/pkg target/wasm32-unknown-unknown/release/play.wasm
+          npm install --no-save playwright && npx playwright install --with-deps chromium
+          python3 -m http.server 8000 &
+          sleep 1
+          node web/play/check.mjs http://localhost:8000

@@ -13,8 +13,30 @@ use classic_data::json::{self, Value};
 use classic_sim::map::TILE;
 use classic_sim::{Event, Game};
 
+use crate::platform::Files;
 use crate::platform::audio::{Bus, ClipId, Mixer, Sound, db};
 use crate::platform::wav;
+
+/// A pack's sound index, from the pack's folder: which files each sound id plays.
+pub const SOUND_INDEX: &str = "audio/sounds.json";
+
+/// Every file the sound index `index` names, so the browser build knows what to fetch.
+pub fn files_named(index: &str) -> Vec<String> {
+    let Ok(v) = json::parse(index) else { return Vec::new() };
+    let mut files = Vec::new();
+    for (_, entry) in v.get("sounds").and_then(Value::as_object).unwrap_or(&[]) {
+        files.extend(
+            entry
+                .get("files")
+                .and_then(Value::as_array)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(Value::as_str)
+                .map(String::from),
+        );
+    }
+    files
+}
 
 const SOUNDS: &str = include_str!("../../../data/audio/sounds.json");
 const EVENTS: &str = include_str!("../../../data/audio/events.json");
@@ -299,30 +321,34 @@ impl SoundBoard {
     /// Load the sounds for `pack`: the generic pack's files first, then the pack's own over them. Files that
     /// can't be read become warnings, and their ids play silence.
     pub fn load(pack_dir: &Path, generic_dir: &Path, local: u32, seed: u64, mixer: &mut Mixer) -> SoundBoard {
+        let mut packs = vec![Files::Dir(generic_dir.to_path_buf())];
+        if pack_dir.canonicalize().ok() != generic_dir.canonicalize().ok() {
+            packs.push(Files::Dir(pack_dir.to_path_buf()));
+        }
+        SoundBoard::from_files(&packs, local, seed, mixer)
+    }
+
+    /// Load the sounds from each pack's files in turn, later packs over earlier ones (the browser build fetches
+    /// them first; see [`files_named`]).
+    pub fn from_files(packs: &[Files], local: u32, seed: u64, mixer: &mut Mixer) -> SoundBoard {
         let mut tables = Tables::builtin();
         let mut warnings = Vec::new();
-        let mut dirs = vec![generic_dir];
-        if pack_dir.canonicalize().ok() != generic_dir.canonicalize().ok() {
-            dirs.push(pack_dir);
-        }
-        for dir in dirs {
-            let index = dir.join("audio/sounds.json");
-            let Ok(text) = std::fs::read_to_string(&index) else { continue };
+        for files in packs {
+            let Ok(text) = files.read_text(SOUND_INDEX) else { continue };
             let Ok(v) = json::parse(&text) else {
-                warnings.push(format!("{}: not valid JSON", index.display()));
+                warnings.push(format!("{}: not valid JSON", files.name(SOUND_INDEX)));
                 continue;
             };
             for (id, entry) in v.get("sounds").and_then(Value::as_object).unwrap_or(&[]) {
                 let Some(def) = tables.defs.iter_mut().find(|d| &d.id == id) else {
-                    warnings.push(format!("{}: {id} is not a sound id the engine plays", index.display()));
+                    warnings.push(format!("{}: {id} is not a sound id the engine plays", files.name(SOUND_INDEX)));
                     continue;
                 };
                 let mut clips = Vec::new();
                 for f in entry.get("files").and_then(Value::as_array).unwrap_or(&[]).iter().filter_map(Value::as_str) {
-                    let path = dir.join(f);
-                    match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| wav::decode(&b)) {
+                    match files.read(f).and_then(|b| wav::decode(&b).map_err(|e| format!("{}: {e}", files.name(f)))) {
                         Ok(clip) => clips.push(mixer.add_clip(clip)),
-                        Err(e) => warnings.push(format!("{}: {e}", path.display())),
+                        Err(e) => warnings.push(e),
                     }
                 }
                 if !clips.is_empty() {
