@@ -5,6 +5,9 @@ models written in Python, rendered with Blender's Python module, then packed int
 Every model here is our own and generic. A model anyone could recognise from a particular game goes in a private
 pack's own `art/models/`, never here.
 
+`bpy` (Blender 5 as a Python module) needs Python 3.11. Where `python3` is another version, run every command
+below with `python3.11` instead.
+
 ```bash
 python3 -m pip install bpy numpy pillow                    # Blender as a Python module; Cycles on the CPU
 python3 art/studio/render.py vehicles/battle_tank --out /tmp/renders/battle_tank
