@@ -344,14 +344,16 @@ fn queued(e: &Entity) -> bool {
     e.order == Order::Harvest && e.task == Some(Task::ToRefinery) && e.path.len() == 1
 }
 
-/// The nearest free tile within `rings` of `goal`, ring by ring, then nearest the unit, then in row order.
+/// The nearest free tile within `rings` of `goal`, ring by ring, then nearest the unit, then nearest the middle of
+/// the map, then in row order.
 fn nearest_free(pf: &Pathfinder, hs: &Holders, e: &Entity, goal: Tile, rings: i32) -> Option<Tile> {
     let here = e.tile();
+    let (w, h) = pf.size();
     (1..=rings).find_map(|r| {
         (goal.y - r..=goal.y + r)
             .flat_map(|y| (goal.x - r..=goal.x + r).map(move |x| Tile { x, y }))
             .filter(|t| (t.x - goal.x).abs().max((t.y - goal.y).abs()) == r && hs.free(pf, *t, e.id))
-            .min_by_key(|t| ((t.x - here.x).pow(2) + (t.y - here.y).pow(2), t.y, t.x))
+            .min_by_key(|t| ((t.x - here.x).pow(2) + (t.y - here.y).pow(2), t.off_middle(w, h), t.y, t.x))
     })
 }
 
@@ -378,9 +380,12 @@ fn answer_yield(
     let r = &state.entities[r.expect("checked")];
     let ahead: Vec<Tile> = std::iter::once(r.tile()).chain(r.path.iter().take(3).copied()).collect();
     let here = e.tile();
-    // North, east, south, west, then the diagonals.
-    let around = [(0, -1), (1, 0), (0, 1), (-1, 0), (1, -1), (1, 1), (-1, 1), (-1, -1)]
+    // The four sides, then the diagonals; of two equally good, the one nearer the middle of the map, so the two
+    // sides of a mirrored map step aside the same way round.
+    let mut around = [(0, -1), (1, 0), (0, 1), (-1, 0), (1, -1), (1, 1), (-1, 1), (-1, -1)]
         .map(|(dx, dy)| Tile { x: here.x + dx, y: here.y + dy });
+    let (w, h) = pf.size();
+    around.sort_by_key(|t| ((t.x != here.x && t.y != here.y), t.off_middle(w, h)));
     let open = |t: &Tile| can_enter(pf, hs, e, *t).is_ok();
     let aside = around.iter().find(|t| open(t) && !ahead.contains(t));
     let back = || around.iter().find(|t| open(t) && **t != ahead[0] && ahead.get(1) != Some(*t));

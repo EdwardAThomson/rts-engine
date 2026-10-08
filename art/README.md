@@ -207,3 +207,11 @@ parts whose faces lie flush show a dark patch, so check a new model at `--lod lo
 
 A 3D camera sees angles the sprite camera never does, so a model can look right as a sprite and still show a gap
 or a dark patch from low down. Check new models from a few low angles before relying on them in 3D.
+
+## Fonts
+
+The UI fonts are two SIL OFL 1.1 faces kept in `fonts/src/` as WOFF2 (from the Fontsource npm packages) with their
+licences: Inter (body text) and Oxanium (headings and numbers). The player has no font rasteriser, so
+`python3 art/fonts/bake.py` (Pillow with FreeType) bakes each text style (`small`, `body`, `heading`, `title`) at UI
+scales 1, 2 and 3 into white glyph atlases in `settings/generic/theme/fonts/`, indexed by `fonts.json`. Rerun it after
+changing a face or a size; the rest of the UI skin is drawn from code by `cargo run --bin art`.

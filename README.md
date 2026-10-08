@@ -44,11 +44,12 @@ cargo run --release --bin bench                               # performance on a
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 ```
 
-The desktop player opens on the title screen, then you play the computer on `maps/skirmish-01.txt`: build from the
-rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause.
+The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
+`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause.
 
 ```bash
-cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3
+cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
+                                                              # --map plays one map, --faction 1 starts on the second faction
 xvfb-run -a cargo run --bin play -- --frames 60               # smoke run on a machine with no display
 ```
 
@@ -99,14 +100,15 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
-| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point, defends its base and harvesters, and sends attack waves that grow each time. One "normal" opponent so far. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes tanks, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in, turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
+| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, shells and explosions, selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/play/` | The page for the browser build of the player: a full-window canvas. `check.mjs` opens it in headless Chromium on WebGPU and on WebGL2. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. The tests' map. |
 | `maps/skirmish-01.txt` | 64 x 40, two large rock plateaus with room to build, near, far and contested resource fields, outcrops and cliff ridges. The desktop player's map. |
+| `maps/mirror-01.txt` | The left half of `skirmish-01` and its mirror image, starts included: the map the fairness tests play, where neither side should be favoured. |
 | `settings/generic/` | The public setting pack: plain names for every id, two factions. Generic placeholder art will live here too. |
 
 How the engine works, and how setting packs keep the code generic, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -121,6 +123,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   phases with a 3x2 refinery, and when players began with a yard, a power plant and 1,200 credits (the replay hash
   is now `f3cc6748`); each time standalone paths and path checksums
   were checked unchanged; the credit totals that moved as harvesters use the new dock were recorded on purpose.
+  When ties between equally good tiles began to turn round with the map (and a start in the right half to be laid
+  out mirrored), every hash was re-recorded on purpose: the standalone path is the same tile for tile with one more
+  node expanded, and the bench scenes' path checksums changed (`crates/classic-tools/tests/golden.rs` says what).
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
   different game; replaying seed, map and command log reproduces the live game.
@@ -174,10 +179,16 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   by name, and drops each line after 8 seconds; a pack's `ui/messages.json` rewords a message and an unknown id is
   warned about. Control groups keep only the player's own units, a second press asks to centre, and a destroyed
   unit leaves its group; Tab steps through the factory tabs and wraps.
-- The menus: the title screen starts a game and switches the computer opponents on or off; Escape pauses and
+- The menus: the title screen starts a game and switches the computer opponents on or off, and offers the map and
+  the player's faction when there is a choice (the other players take the remaining factions in order); Escape pauses and
   resumes; the end screen comes when someone wins (victory) or the player loses their last building (defeat) and
   offers another game; the menus shade the whole screen and draw nothing while playing, and never change the
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
+- Pack maps and theme: a pack's `setting.json` lists its maps, each checked to be a text file in the pack; a pack's
+  `theme/theme.css` recolours the HUD and menus, and colours it can't read keep the engine's, with a warning. The
+  generic pack's theme is the engine's own colours. In the player under a virtual display, with the private pack: the
+  title offers its three maps and three factions, and a game started on the second map and faction plays there in
+  that faction's colours.
 - Sound (no sound card; the mixer renders into a buffer): every game event plays a sound or is listed as silent on
   purpose; every sound id has a generic file; a tank battle plays cannon, impact and explosion sounds and ends
   with the same state hash as the same game unheard; 40 tanks fighting never exceed the 24-voice and
@@ -191,12 +202,20 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   canonical text; clippy bans floating point, the clock and unordered collections in the simulation crates.
 
 - Computer opponent (`crates/classic-ai/tests/skirmish.rs`, on `skirmish-01`): within 7,000 ticks it has a power
-  plant, two refineries, both factories, a radar, turrets, four harvesters and tanks, with no command refused; it
+  plant, two refineries, both factories, a radar, turrets, harvesters and tanks, with no command refused; it
   destroys every building of a player who does nothing, from either start, and never before its first-wave time;
   two AIs play the same 20,000-tick game twice to the same hash and command log; a game between two AIs replays
   from its command log with the AI switched off to the same hash; thinking never changes the game's hash; a power
   plant removed at tick 3,000 is rebuilt within 90 seconds; an enemy tank beside its base draws an attack order
-  and takes hits within 20 seconds.
+  and takes hits within 20 seconds. Three tanks don't attack eight gun turrets and are all kept, but do attack the
+  same base without them; with its income gone for `broke_ticks` it sends every unit at once; with its last
+  harvester lost while its factories wait on tanks it can't pay for, it cancels them and builds a harvester.
+- Fairness (`crates/classic-sim/tests/mirror.rs`, `crates/classic-ai/tests/skirmish.rs`, on `mirror-01`): the two
+  starting bases are mirror images; paths, including the way round a unit in the way, are mirror images; with
+  chance taken out (no random waits, regrowth or scatter) the two sides harvest as mirror images for 9,000 ticks,
+  and two computer opponents play mirror images of each other for 6,000 ticks. In batch runs (computer against
+  computer, 90 game minutes, 200 seeds each way round), left-right mirrored maps split evenly: `mirror-01` 169 to
+  143 wins for the left side, and three more mirrored maps 99 to 101, 102 to 97 and 101 to 98.
 
 ## Not verified / not built yet
 
@@ -207,9 +226,13 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
   in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
-  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` often play to a
-  stalemate behind their turrets. In the desktop player it was checked only in a short smoke run, not played by a
-  person.
+  value, not the hashed game state, so a save would not carry it yet. Two AIs on `skirmish-01` still end in a
+  stalemate in about one game in eleven (18 of 200 by 90 minutes), when the resource runs out with neither side
+  able to build an army; on the smaller `mirror-01` about one in five. In the desktop player it was checked only
+  in a short smoke run, not played by a person.
+- Maps that are symmetric top to bottom (turned half round) are not fair: factory doors and refinery docks all face
+  south, so the bottom player's harvesters and units leave towards the map edge and travel further. A batch run on
+  such a map gave the top start 167 of 200 wins, and on another 199 of 200. Maps mirrored left to right are fair.
 - No storage cap, tech levels, factory upgrades or starport.
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has

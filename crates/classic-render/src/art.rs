@@ -309,10 +309,27 @@ pub fn art_dir(pack: &classic_data::Pack) -> std::path::PathBuf {
 }
 
 /// The ramp each of `players` players is drawn in: the pack's factions in order, repeating if there are more
-/// players than factions.
+/// players than factions. The same as `faction_ramps` with player 0 on the first faction.
 pub fn player_ramps(pack: &classic_data::Pack, players: usize) -> Vec<String> {
-    let n = pack.factions.len().max(1);
-    (0..players).map(|i| pack.factions.get(i % n).map_or_else(|| "grey".into(), |f| f.ramp.clone())).collect()
+    faction_ramps(pack, players, 0, 0)
+}
+
+/// Which of the pack's factions each player has, in owner order, when the player `local` picked faction `chosen`:
+/// the others take the remaining factions in the pack's order, then every faction again in order when there are more
+/// players than factions.
+pub fn player_factions(factions: usize, players: usize, local: usize, chosen: usize) -> Vec<usize> {
+    let n = factions.max(1);
+    let chosen = chosen % n;
+    let mut others = (0..n).filter(|&f| f != chosen).chain((0..n).cycle());
+    (0..players).map(|p| if p == local { chosen } else { others.next().unwrap_or(0) }).collect()
+}
+
+/// The ramp name of each player, in owner order, when the player `local` picked faction `chosen`.
+pub fn faction_ramps(pack: &classic_data::Pack, players: usize, local: usize, chosen: usize) -> Vec<String> {
+    player_factions(pack.factions.len(), players, local, chosen)
+        .into_iter()
+        .map(|f| pack.factions.get(f).map_or_else(|| "grey".into(), |f| f.ramp.clone()))
+        .collect()
 }
 
 fn hex(v: &Value) -> Result<[u8; 3], String> {

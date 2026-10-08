@@ -173,7 +173,7 @@ fn scan(state: &GameState, rules: &Rules, i: usize) -> Option<u32> {
 }
 
 /// Where an attacker heads to reach `target`: its tile, or for a building the open tile beside it nearest the
-/// attacker.
+/// attacker, then nearest the middle of the map.
 fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> Option<Tile> {
     let k = rules.kind(target.kind);
     let t = target.tile();
@@ -182,8 +182,10 @@ fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> O
     }
     let ring = (t.y - 1..=t.y + k.height).flat_map(|y| (t.x - 1..=t.x + k.width).map(move |x| Tile { x, y }));
     let here = from.tile();
-    ring.filter(|r| pf.passable(r.x, r.y))
-        .min_by_key(|r| ((r.x - here.x) * (r.x - here.x) + (r.y - here.y) * (r.y - here.y), r.y, r.x))
+    let (w, h) = pf.size();
+    ring.filter(|r| pf.passable(r.x, r.y)).min_by_key(|r| {
+        ((r.x - here.x) * (r.x - here.x) + (r.y - here.y) * (r.y - here.y), r.off_middle(w, h), r.y, r.x)
+    })
 }
 
 /// The combat phase of one tick.

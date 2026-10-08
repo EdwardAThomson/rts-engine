@@ -23,7 +23,7 @@
 //! files are fetched from the server first, because the browser has no file system and can't wait for the GPU, and
 //! sound starts with the first click or key press.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -31,7 +31,8 @@ use classic_ai::{Ai, Settings};
 use classic_render::art::{self, Art};
 use classic_render::hud::{Button, Click, RAIL_W};
 use classic_render::menu::{Action, Menu, Screen};
-use classic_render::platform::{Files, Font, Gpu, Instant, Mixer, Rect, SpriteBatch};
+use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
+use classic_render::skin::{self, Pointer, Skin, SkinFiles};
 use classic_render::sound::Cue;
 use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View};
 use classic_sim::map::TILE;
@@ -104,22 +105,29 @@ struct Running {
     gpu: Gpu,
     batch: SpriteBatch,
     art: Art,
-    font: Font,
+    /// The faction ramp of each player the art was coloured for, in owner order.
+    ramps: Vec<String>,
+    skin: Skin,
+    /// The mouse cursors made so far, by id, and the one showing.
+    cursors: BTreeMap<&'static str, winit::window::CustomCursor>,
+    cursor: &'static str,
 }
 
 struct App {
     game: Game,
     /// The title, pause and end screens.
     menu: Menu,
-    /// The map's text, for starting the game over.
-    map: String,
-    /// The pack's own files, for its wording of the message feed.
+    /// The maps on offer, as (name, text); the menu picks one.
+    maps: Vec<(String, String)>,
+    /// The pack's own files, for its wording of the message feed and its theme.
     pack_files: Files,
     scene: Scene,
     hud: Hud,
     pack: classic_data::Pack,
     /// The art's files: the pack folder on the desktop, fetched copies in the browser.
     art_files: Files,
+    /// The UI skin's files: the pack's own, then the generic pack's.
+    skin_files: Vec<Files>,
     /// In the browser the GPU opens in the background and lands here; see `resumed`.
     #[cfg(target_arch = "wasm32")]
     opened: std::rc::Rc<std::cell::RefCell<Option<Opened>>>,
@@ -148,11 +156,19 @@ struct App {
 }
 
 impl App {
-    /// A player for a game of `pack` on `map`, with the pack's art and sounds from `art_files` and `sound_files` (the
-    /// generic pack's first, then the pack's own over them). The sound card opens separately, in `open_speaker`. It
-    /// opens on the title screen, with the game waiting behind it, unless `start` is given.
-    fn new(pack: classic_data::Pack, map: String, art_files: Files, sound_files: &[Files], pack_files: Files) -> App {
-        let game = new_game(&pack, &map);
+    /// A player for a game of `pack` on one of `maps` (name and text, the first unless the title screen picks
+    /// another), with the pack's art and sounds from `art_files` and `sound_files` (the generic pack's first, then the
+    /// pack's own over them). The sound card opens separately, in `open_speaker`. It opens on the title screen, with
+    /// the game waiting behind it, unless `start` is given.
+    fn new(
+        pack: classic_data::Pack,
+        maps: Vec<(String, String)>,
+        art_files: Files,
+        sound_files: &[Files],
+        pack_files: Files,
+        skin_files: Vec<Files>,
+    ) -> App {
+        let game = new_game(&pack, &maps[0].1);
         let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
         let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1) as u64;
         let mut mixer = Mixer::new(48_000);
@@ -165,7 +181,14 @@ impl App {
         for w in &hud.feed.warnings {
             say(&format!("messages: {w}"));
         }
+        for w in classic_render::theme::Theme::load(&pack_files).1 {
+            say(&format!("theme: {w}"));
+        }
         let mut menu = Menu::new(&pack.title);
+        menu.theme = hud.theme.clone();
+        menu.maps = maps.iter().map(|(name, _)| name.clone()).collect();
+        menu.factions = pack.factions.iter().map(|f| f.name.clone()).collect();
+        menu.faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % menu.factions.len().max(1);
         menu.opponents = arg("ai").as_deref() != Some("none");
         menu.can_quit = cfg!(not(target_arch = "wasm32"));
         if flag("start") {
@@ -175,12 +198,13 @@ impl App {
         App {
             game,
             menu,
-            map,
+            maps,
             pack_files,
             scene: Scene::default(),
             hud,
             pack,
             art_files,
+            skin_files,
             #[cfg(target_arch = "wasm32")]
             opened: Default::default(),
             player,
@@ -204,9 +228,15 @@ impl App {
         }
     }
 
-    /// Start the game over on the same map, with the opponents the menu shows, and play it.
+    /// Start a game on the map, faction and opponents the menu shows, and play it.
     fn restart(&mut self) {
-        self.game = new_game(&self.pack, &self.map);
+        self.game = new_game(&self.pack, &self.maps[self.menu.map].1);
+        // A new faction or map can change who is drawn in which colours.
+        let ramps = self.ramps();
+        if let Some(run) = self.run.as_mut().filter(|r| r.ramps != ramps) {
+            run.art = Art::from_files(&run.gpu, &mut run.batch, &self.art_files, &ramps).expect("the pack's art loads");
+            run.ramps = ramps;
+        }
         self.ais = opponents(&self.game, self.player, self.menu.opponents);
         let scale = self.hud.scale;
         self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player);
@@ -225,7 +255,7 @@ impl App {
             Action::Resume => self.menu.screen = Screen::Playing,
             Action::ToTitle => self.menu.screen = Screen::Title,
             Action::Quit => event_loop.exit(),
-            Action::Opponents => {}
+            Action::Opponents | Action::Map | Action::Faction => {}
         }
         self.ui_sound("ui_select");
     }
@@ -526,8 +556,8 @@ impl App {
         let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
         let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
-        self.hud.draw(&mut run.batch, &run.art, &run.font, &self.game, &world, self.mouse, &self.scene.selected);
-        self.menu.draw(&mut run.batch, &run.font, &self.game, (w, h), self.mouse);
+        self.hud.draw(&mut run.batch, &run.art, &run.skin, &self.game, &world, self.mouse, &self.scene.selected);
+        self.menu.draw(&mut run.batch, &run.skin, &self.game, (w, h), self.mouse);
         if let Some(from) = self.drag {
             let (x0, y0) = (from.0.min(self.mouse.0), from.1.min(self.mouse.1));
             let r = Rect::new(x0, y0, (from.0 - self.mouse.0).abs(), (from.1 - self.mouse.1).abs());
@@ -539,6 +569,65 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         classic_render::platform::web::set_title(&title);
         self.frames += 1;
+    }
+
+    /// Show the cursor for what a click would do here (`plans/rts/ui.md` section 9), as the window's own cursor so
+    /// it moves at the speed of the mouse. Each cursor is made once, the first time it is wanted.
+    fn show_cursor(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(run) = &self.run else { return };
+        let (w, h) = (run.config.width as f32, run.config.height as f32);
+        let id = if self.menu.playing() {
+            let view = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
+            let (mx, my) = self.mouse;
+            let axis = |v: f32, max: f32| {
+                if v < EDGE {
+                    -1
+                } else if v > max - EDGE {
+                    1
+                } else {
+                    0
+                }
+            };
+            let p = Pointer {
+                over_hud: self.hud.over(&self.game, (w, h), mx, my),
+                placing: self.hud.ghost(&self.game, &view, mx, my).map(|g| g.ok),
+                edge: (axis(mx, w), axis(my, h)),
+                hovered: self.pick(mx, my),
+                tile: view.tile_at(mx, my),
+            };
+            skin::choose_cursor(&self.game, self.player, &self.scene.selected, &p)
+        } else {
+            "default"
+        };
+        let Some(run) = &mut self.run else { return };
+        if run.cursor == id {
+            return;
+        }
+        if !run.cursors.contains_key(id) {
+            let Some((img, (hx, hy))) = run.skin.cursor(id, self.hud.scale) else { return };
+            match winit::window::CustomCursor::from_rgba(
+                img.rgba.clone(),
+                img.w as u16,
+                img.h as u16,
+                hx as u16,
+                hy as u16,
+            ) {
+                Ok(source) => {
+                    run.cursors.insert(id, event_loop.create_custom_cursor(source));
+                }
+                Err(e) => {
+                    say(&format!("cursor {id}: {e}"));
+                    return;
+                }
+            }
+        }
+        run.window.set_cursor(run.cursors[id].clone());
+        run.cursor = id;
+    }
+
+    /// The faction ramp of each player in this game, with the local player on the faction the menu shows.
+    fn ramps(&self) -> Vec<String> {
+        art::faction_ramps(&self.pack, self.game.state.players.len(), self.player as usize, self.menu.faction)
     }
 
     /// Finish setting up once the GPU is open: the surface, the sprite batcher and the art.
@@ -558,9 +647,13 @@ impl App {
         }
         surface.configure(&gpu.device, &config);
         let mut batch = SpriteBatch::new(&gpu, config.format);
-        let ramps = art::player_ramps(&self.pack, self.game.state.players.len());
+        let ramps = self.ramps();
         let art = Art::from_files(&gpu, &mut batch, &self.art_files, &ramps).expect("the pack's art loads");
-        let font = Font::new(&gpu, &mut batch);
+        let packs: Vec<&Files> = self.skin_files.iter().collect();
+        let skin = Skin::load(&gpu, &mut batch, &packs).unwrap_or_else(|e| {
+            say(&format!("skin: {e}"));
+            Skin::new(&gpu, &mut batch, SkinFiles::default())
+        });
         self.hud.scale = window.scale_factor().round().max(1.0) as f32;
         self.menu.scale = self.hud.scale;
         // Start over the player's own base.
@@ -569,7 +662,8 @@ impl App {
             self.cam.x = (t.x as f32 * art.tile - 320.0).max(0.0);
             self.cam.y = (t.y as f32 * art.tile - 240.0).max(0.0);
         }
-        self.run = Some(Running { window, surface, config, gpu, batch, art, font });
+        let cursors = BTreeMap::new();
+        self.run = Some(Running { window, surface, config, gpu, batch, art, ramps, skin, cursors, cursor: "" });
         self.last = Instant::now();
     }
 }
@@ -741,6 +835,8 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.redraw();
+                // Every frame, as the selection and what is under the mouse change without the mouse moving.
+                self.show_cursor(event_loop);
                 if self.max_frames.is_some_and(|m| self.frames >= m) {
                     event_loop.exit();
                 }
@@ -764,8 +860,19 @@ fn main() {
         eprintln!("{e}");
         std::process::exit(2);
     });
-    let map_path = arg("map").unwrap_or_else(|| setting::root().join(MAP).display().to_string());
-    let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
+    // `--map` plays that one map; else the pack's own maps, else the engine's.
+    let paths: Vec<std::path::PathBuf> = match arg("map") {
+        Some(m) => vec![m.into()],
+        None if !pack.maps.is_empty() => pack.maps.iter().map(|m| pack.dir.join(m)).collect(),
+        None => vec![setting::root().join(MAP)],
+    };
+    let maps = paths
+        .iter()
+        .map(|p| {
+            let text = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+            (classic_render::menu::map_name(&p.display().to_string(), &text), text)
+        })
+        .collect();
     let art_files = Files::Dir(art::art_dir(&pack));
     let generic = setting::root().join("settings/generic");
     let mut sound_files = vec![Files::Dir(generic.clone())];
@@ -773,7 +880,8 @@ fn main() {
         sound_files.push(Files::Dir(pack.dir.clone()));
     }
     let pack_files = Files::Dir(pack.dir.clone());
-    let mut app = App::new(pack, text, art_files, &sound_files, pack_files);
+    let skin_files = vec![Files::Dir(pack.dir.clone()), Files::Dir(generic)];
+    let mut app = App::new(pack, maps, art_files, &sound_files, pack_files, skin_files);
     app.open_speaker();
     let event_loop = EventLoop::new().expect("an event loop (is there a display?)");
     event_loop.run_app(&mut app).expect("the event loop runs");
@@ -795,12 +903,13 @@ fn main() {
     web::status("loading");
     wasm_bindgen_futures::spawn_local(async {
         let setting_name = arg("setting").unwrap_or_else(|| "generic".into());
-        let map = arg("map").unwrap_or_else(|| MAP.into());
-        let loaded = match classic_render::web::load(&setting_name, &map).await {
+        let map = arg("map");
+        let loaded = match classic_render::web::load(&setting_name, map.as_deref().unwrap_or(MAP), map.is_some()).await
+        {
             Ok(l) => l,
             Err(e) => return web::status(&e),
         };
-        let app = App::new(loaded.pack, loaded.map, loaded.art, &loaded.sounds, loaded.messages);
+        let app = App::new(loaded.pack, loaded.maps, loaded.art, &loaded.sounds, loaded.pack_files, loaded.skin);
         EventLoop::new().expect("an event loop").spawn_app(app);
     });
 }

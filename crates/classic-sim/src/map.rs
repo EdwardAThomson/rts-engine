@@ -17,6 +17,15 @@ pub struct Tile {
     pub y: i32,
 }
 
+impl Tile {
+    /// How far the tile lies from the middle of a `width` by `height` map, squared (in half tiles). Choices between
+    /// equally good tiles go to the one nearer the middle: a tie-break that turns round with the map, so the two
+    /// sides of a mirrored map choose alike, where row order would favour the top left.
+    pub fn off_middle(self, width: i32, height: i32) -> i64 {
+        ((2 * self.x + 1 - width) as i64).pow(2) + ((2 * self.y + 1 - height) as i64).pow(2)
+    }
+}
+
 impl Canon for Tile {
     fn canon(&self, w: &mut CanonHasher) {
         w.object().field("x", &self.x).field("y", &self.y).end();

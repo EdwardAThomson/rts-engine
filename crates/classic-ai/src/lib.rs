@@ -19,17 +19,18 @@
 
 mod army;
 mod base;
+mod geo;
 
-use classic_sim::map::TILE;
-use classic_sim::{Command, CommandOrder, Entity, Game, Kind, Tile};
+use classic_sim::{Command, CommandOrder, Game, Kind, Tile};
+use geo::Point;
 
 pub use army::Wave;
 
 /// The numbers that set how the opponent plays. Our own starting values, to tune by AI-versus-AI runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
-    /// Ticks between thinks. Player `p` thinks on ticks where `(tick + 5 * p) % think_every == 0`, so two AIs
-    /// rarely think on the same tick.
+    /// Ticks between thinks. Every computer player thinks on the same ticks, so none is always a few ticks ahead
+    /// of another: staggering them gave the first player an edge on a mirrored map.
     pub think_every: u32,
     /// What the base aims for, in order: a generic building id and how many to have. Ids the rules don't have are
     /// skipped, so a pack that leaves a building out still gets an opponent.
@@ -45,10 +46,17 @@ pub struct Settings {
     pub unit_reserve: i64,
     /// No attack wave before this tick.
     pub first_wave_tick: u32,
-    /// Units in the first wave; each later wave adds `wave_growth`, up to `wave_cap`.
+    /// Units a wave waits for: `first_wave`, then `wave_growth` more after each wave that comes home.
     pub first_wave: usize,
     pub wave_growth: usize,
+    /// A wave goes only where it would beat the defenders by this percent of their strength, unless `wave_cap`
+    /// units are waiting, when it goes for the least defended target anyway.
+    pub attack_margin: i64,
     pub wave_cap: usize,
+    /// Most ticks a wave spends gathering at its staging point before it attacks.
+    pub stage_ticks: u32,
+    /// With nothing delivered for this many ticks and too few credits for a combat unit, every unit attacks.
+    pub broke_ticks: u32,
     /// A wave that falls below this percent of the units it set out with comes home.
     pub retreat_percent: usize,
     /// Enemy armed units this many tiles from one of its buildings draw out the defenders.
@@ -75,14 +83,17 @@ impl Settings {
             think_every: 30,
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
             power_margin: 20,
-            harvesters_per_refinery: 2,
-            max_harvesters: 6,
+            harvesters_per_refinery: 3,
+            max_harvesters: 9,
             factory_queue: 2,
             unit_reserve: 300,
             first_wave_tick: 15 * 60 * 6,
             first_wave: 4,
             wave_growth: 2,
-            wave_cap: 10,
+            attack_margin: 150,
+            wave_cap: 20,
+            stage_ticks: 15 * 30,
+            broke_ticks: 15 * 120,
             retreat_percent: 30,
             defend_radius: 10,
             rally_distance: 6,
@@ -109,17 +120,20 @@ pub struct Ai {
     pub waves_sent: u32,
     /// Thinks so far, for the managers that think less often.
     thinks: u32,
+    /// Credits delivered by its harvesters so far, and the tick that total last grew.
+    delivered: i64,
+    delivered_at: u32,
 }
 
 impl Ai {
     pub fn new(player: u32, settings: Settings) -> Ai {
         let wave_size = settings.first_wave;
-        Ai { player, settings, wave: None, wave_size, waves_sent: 0, thinks: 0 }
+        Ai { player, settings, wave: None, wave_size, waves_sent: 0, thinks: 0, delivered: 0, delivered_at: 0 }
     }
 
     /// Whether this AI thinks on the game's current tick.
     pub fn due(&self, game: &Game) -> bool {
-        (game.state.tick + 5 * self.player).is_multiple_of(self.settings.think_every.max(1))
+        game.state.tick.is_multiple_of(self.settings.think_every.max(1))
     }
 
     /// Think if it is due, and queue the orders for the next tick. Call once before each `Game::step(1)`.
@@ -137,6 +151,10 @@ impl Ai {
         let mut out = Orders { player: self.player, list: Vec::new() };
         if defeated(game, self.player) {
             return out.list;
+        }
+        let delivered = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.delivered);
+        if delivered != self.delivered {
+            (self.delivered, self.delivered_at) = (delivered, game.state.tick);
         }
         let view = View::new(game, self.player);
         base::think(self, game, &view, &mut out);
@@ -165,10 +183,10 @@ impl Orders {
 pub(crate) struct View {
     pub mine: Vec<usize>,
     pub enemies: Vec<usize>,
-    /// Its first construction yard, or failing that its first building.
-    pub home: Option<Tile>,
-    /// The enemy building nearest home.
-    pub enemy_home: Option<Tile>,
+    /// The centre of its first construction yard, or failing that of its first building.
+    pub home: Option<Point>,
+    /// The centre of the enemy building nearest home.
+    pub enemy_home: Option<Point>,
 }
 
 impl View {
@@ -182,11 +200,11 @@ impl View {
             .iter()
             .find(|&&i| Some(es[i].kind) == yard)
             .or_else(|| mine.iter().find(building))
-            .map(|&i| centre_tile(game, &es[i]));
+            .map(|&i| geo::at(game, &es[i]));
         let enemy_home = home.and_then(|h| {
-            enemies.iter().filter(building).min_by_key(|&&i| (dist2(centre_tile(game, &es[i]), h), es[i].id))
+            enemies.iter().filter(building).min_by_key(|&&i| (geo::d2(geo::at(game, &es[i]), h), es[i].id))
         });
-        let enemy_home = enemy_home.map(|&i| centre_tile(game, &es[i]));
+        let enemy_home = enemy_home.map(|&i| geo::at(game, &es[i]));
         View { mine, enemies, home, enemy_home }
     }
 
@@ -209,20 +227,7 @@ pub fn winner(game: &Game) -> Option<u32> {
     }
 }
 
-/// The tile at the middle of an entity's footprint (its own tile for a unit).
-pub(crate) fn centre_tile(game: &Game, e: &Entity) -> Tile {
-    let k = game.rules.kind(e.kind);
-    let t = e.tile();
-    Tile { x: t.x + (k.width - 1) / 2, y: t.y + (k.height - 1) / 2 }
-}
-
 pub(crate) fn dist2(a: Tile, b: Tile) -> i64 {
     let (dx, dy) = ((a.x - b.x) as i64, (a.y - b.y) as i64);
     dx * dx + dy * dy
-}
-
-/// Distance squared, in tiles, from a tile to an entity's centre.
-pub(crate) fn tiles2(e: &Entity, t: Tile) -> i64 {
-    let (dx, dy) = (e.x - (t.x as i64 * TILE + TILE / 2), e.y - (t.y as i64 * TILE + TILE / 2));
-    (dx * dx + dy * dy) / (TILE * TILE)
 }

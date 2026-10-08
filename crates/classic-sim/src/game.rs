@@ -80,23 +80,27 @@ impl Game {
             weapon_ids: rules.weapons.iter().map(|w| w.id.clone()).collect::<Vec<_>>().into(),
             projectiles: Vec::new(),
         };
-        // Each player starts with a construction yard on its start tile, a power plant to its right, a refinery
+        // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // below them both with a harvester at its dock, and a battle tank beside the dock, all laid out from the
         // footprints in the rules (rules-base-building-power.md: "a starting base of yard, one power plant and a
-        // refinery"). Maps leave room for it.
+        // refinery"). The plant and the tank go on the side towards the middle of the map, so a start in the
+        // right half is laid out as the mirror image of one in the left half and mirrored maps start even. Maps
+        // leave room for it.
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
             let owner = p as u32;
             state.players.push(Player { id: owner, credits: rules.production.starting_credits, delivered: 0 });
-            let (y, r) = (rules.kind(yard), rules.kind(refinery));
+            let (y, r, pk) = (rules.kind(yard), rules.kind(refinery), rules.kind(plant));
+            let left = 2 * s.x + y.width > map.width;
             world::spawn(&mut state, &rules, yard, owner, s.x, s.y);
-            world::spawn(&mut state, &rules, plant, owner, s.x + y.width, s.y);
-            let below = s.y + y.height.max(rules.kind(plant).height);
-            let home = world::spawn(&mut state, &rules, refinery, owner, s.x, below);
-            let dock = world::dock_at(r, s.x, below);
+            world::spawn(&mut state, &rules, plant, owner, if left { s.x - pk.width } else { s.x + y.width }, s.y);
+            let below = s.y + y.height.max(pk.height);
+            let rx = if left { s.x + y.width - r.width } else { s.x };
+            let home = world::spawn(&mut state, &rules, refinery, owner, rx, below);
+            let dock = world::dock_at(r, rx, below);
             world::spawn(&mut state, &rules, harvester, owner, dock.x, dock.y);
             state.entities.last_mut().expect("just spawned").home_id = Some(home);
-            world::spawn(&mut state, &rules, tank, owner, dock.x + 2, dock.y);
+            world::spawn(&mut state, &rules, tank, owner, if left { dock.x - 2 } else { dock.x + 2 }, dock.y);
         }
         let mut pathfinder = Pathfinder::new(&map);
         for e in &state.entities {
