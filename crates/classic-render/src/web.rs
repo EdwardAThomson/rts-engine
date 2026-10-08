@@ -63,27 +63,26 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
 
     // The pack's own art over the generic pack's placeholders, as on the desktop: the first art index found names
     // the files, and each layer fetches those an earlier layer doesn't have, with the atlas pages its own sprites use.
-    let index = [ART_INDEX.to_string()];
-    let mut art = Vec::new();
-    let mut names: Option<Vec<String>> = None;
-    let mut have = std::collections::BTreeSet::new();
-    for d in if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![dir.clone(), GENERIC.to_string()] } {
-        let base = format!("{ROOT}{d}/");
-        let mut files = web::fetch_files(&base, &index).await?;
-        if names.is_none()
-            && let Some(text) = files.get(ART_INDEX)
-        {
-            names = Some(art::art_files(&String::from_utf8_lossy(text))?);
+    let layers = if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![dir.clone(), GENERIC.to_string()] };
+    let mut names = None;
+    for d in &layers {
+        let index = web::fetch_files(&format!("{ROOT}{d}/"), &[ART_INDEX.to_string()]).await?;
+        if let Some(text) = index.get(ART_INDEX) {
+            names = Some([vec![ART_INDEX.to_string()], art::art_files(&String::from_utf8_lossy(text))?].concat());
+            break;
         }
-        let wanted: Vec<String> = names.iter().flatten().filter(|n| !have.contains(*n)).cloned().collect();
-        files.extend(web::fetch_files(&base, &wanted).await?);
+    }
+    let names = names.ok_or_else(|| format!("{dir}/{ART_INDEX}: not found, nor in {GENERIC}"))?;
+    let mut art = Vec::new();
+    let mut have = std::collections::BTreeSet::new();
+    for d in layers {
+        let base = format!("{ROOT}{d}/");
+        let wanted: Vec<String> = names.iter().filter(|n| !have.contains(*n)).cloned().collect();
+        let mut files = web::fetch_files(&base, &wanted).await?;
         let pages = art::atlas_files(&files);
         files.extend(web::fetch_files(&base, &pages).await?);
         have.extend(files.keys().cloned());
         art.push(Files::Memory { label: d, files });
-    }
-    if names.is_none() {
-        return Err(format!("{dir}/{ART_INDEX}: not found, nor in {GENERIC}"));
     }
 
     // The generic pack's sounds, then the pack's own over them, as on the desktop.
