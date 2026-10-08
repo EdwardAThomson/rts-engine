@@ -70,6 +70,13 @@ fn every_generic_id_has_art() {
             assert!(icons.contains(id), "{id} has no icon");
         }
     }
+    // Squads are drawn as copies of a single unit's sprite.
+    for (id, squad) in index.get("squads").and_then(Value::as_object).unwrap() {
+        assert_eq!(rules.entities.get(id).map(|e| e.kind.as_str()), Some("unit"), "squad {id} is a unit id");
+        let member = squad.get("member").and_then(Value::as_str).unwrap();
+        assert!(sprites.contains(member), "squad {id}: its member {member} has no sprite");
+        assert!(!squad.get("offsets").and_then(Value::as_array).unwrap().is_empty(), "squad {id} has no offsets");
+    }
     for section in ["terrain", "sprites", "effects"] {
         for (id, v) in index.get(section).and_then(Value::as_object).unwrap() {
             let file = v.get("file").and_then(Value::as_str).unwrap();

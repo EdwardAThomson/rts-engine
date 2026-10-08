@@ -15,6 +15,12 @@
     "infantry": 8
   },
   "margin_px": 2,
+  "outline": {
+    "about": "A dark edge pack.py draws round every body frame of these categories (not shadows, icons or building overlays), px atlas pixels wide (2 is one pixel at game size), so units stand out on sand and grass alike.",
+    "px": 2,
+    "rgba": [20, 16, 12, 235],
+    "categories": ["vehicles", "aircraft", "infantry", "buildings"]
+  },
   "team_paint": {
     "rgb": [
       0.012,

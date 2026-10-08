@@ -5,29 +5,85 @@ and testable; it builds natively for desktop and to WebAssembly for the browser,
 the same games. Every world it plays (names, factions, art, audio, campaign, UI theme) comes from a data-only
 **setting pack**; today packs supply names, factions and tuning.
 
+## Install
+
+You need [rustup](https://rustup.rs). The first `cargo` command in the repository installs the pinned toolchain
+from `rust-toolchain.toml` (Rust 1.97 with clippy, rustfmt and the WebAssembly target) by itself. The simulation,
+data and tools crates have no other requirements.
+
+The player (`classic-render`) draws with wgpu and plays sound through cpal, so it needs a GPU driver (Vulkan, Metal
+or DirectX 12) and, on Linux, a C compiler, `pkg-config` and ALSA's headers:
+
 ```bash
-cargo test                                                    # 127 checks, about 1 s after the first build
-cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in about 2 ms
-cargo run --release --bin cli -- --setting private                       # the same, with the first pack in settings-private/
-cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
-cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
-cargo run --release --bin play                                # title screen, then play the computer (--start skips it): build from the rail, drag to select, right-click to order, ctrl+number groups, H home, M mutes (--ai none: alone)
-cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
-cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
-python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/ to watch a game in the browser
+sudo apt-get install build-essential pkg-config libasound2-dev     # Debian and Ubuntu
+sudo apt-get install mesa-vulkan-drivers xvfb                      # only for a machine without a GPU (CI, cloud): Mesa's software GPU and a virtual display
 ```
 
-The same player runs in the browser, drawing with WebGPU, or WebGL2 where the browser has no WebGPU. Build it with
-[wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen)'s command-line tool, at the version `Cargo.lock` gives
-the `wasm-bindgen` library (`cargo install wasm-bindgen-cli --version <that version>`), then serve the repository
-root:
+For the browser builds: Node (tested with 22) for the checks, Python 3 (or any static file server) to serve the pages,
+and [wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen)'s command-line tool at exactly the version
+`Cargo.lock` gives the `wasm-bindgen` library:
+
+```bash
+v=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')
+cargo install wasm-bindgen-cli --version "$v"
+npm install --no-save playwright && npx playwright install --with-deps chromium   # only for web/play/check.mjs
+```
+
+The art studio (`art/`) needs Python 3.11 with Blender as a module: `python3.11 -m pip install bpy numpy pillow`
+(see [art/README.md](art/README.md)). Nothing else needs it; the packed sprites are committed.
+
+## Run
+
+Headless, with no window:
+
+```bash
+cargo test                                                    # every check, about 1 s after the first build
+cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in a few ms
+cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
+cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
+cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
+```
+
+The desktop player opens on the title screen, then you play the computer on `maps/skirmish-01.txt`: build from the
+rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause.
+
+```bash
+cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3
+xvfb-run -a cargo run --bin play -- --frames 60               # smoke run on a machine with no display
+```
+
+The same player runs in the browser, drawing with WebGPU, or WebGL2 where the browser has no WebGPU. Build it,
+then serve the repository root:
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown -p classic-render --bin play
 wasm-bindgen --target web --no-typescript --out-dir web/play/pkg target/wasm32-unknown-unknown/release/play.wasm
-python3 -m http.server 8000      # then open http://localhost:8000/web/play/ (options: ?setting=generic&seed=3&start)
-node web/play/check.mjs          # checks it in headless Chromium, on WebGPU and WebGL2 (needs Playwright)
+python3 -m http.server 8000      # then open http://localhost:8000/web/play/ (options: ?setting=generic&seed=3&ai=none&mute&start)
+node web/play/check.mjs          # checks it in headless Chromium, on WebGPU and WebGL2
 ```
+
+The debug viewer draws a game from the simulation's WebAssembly build with plain shapes, with no bindings step:
+
+```bash
+cargo build --release --target wasm32-unknown-unknown -p classic-wasm && node web/check.mjs
+python3 -m http.server 8000      # then open http://localhost:8000/web/viewer/
+```
+
+### Setting packs
+
+Every command above plays the public `generic` pack in `settings/generic/`. `--setting` (or the `SETTING`
+environment variable) picks another: a name under `settings/`, a folder holding `setting.json`, or a private pack.
+The private packs live in their own private repository; clone it into the git-ignored `settings-private/` folder
+(a clone, not a symlink, which git would not ignore):
+
+```bash
+git clone https://github.com/EdwardAThomson/rts-setting-private settings-private
+cargo run --release --bin cli -- --setting private            # the first pack in settings-private/packs/
+cargo run --release --bin play -- --setting <pack>            # a pack by its folder name or its id
+```
+
+In the browser, `?setting=` takes a name under `settings/` or a pack folder's path from the repository root, such
+as `?setting=settings-private/packs/<pack>`.
 
 ## What's in it
 
@@ -158,8 +214,11 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,
-  the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and the
-  art is the generic pack's placeholders. The player was checked under a virtual display
+  the card's unit chips can't be clicked, and the feed has no advisor voice; cliffs are plain dark tiles, and an
+  entity is drawn from the Blender studio's packed sprites (`art/sprites/`) where the pack has them, else from the
+  generic pack's placeholders. Icons in the rail are still the placeholders, and wrecks and the build-up frames
+  aren't drawn. Squads are drawn as three soldiers, but squads are still planned in the rules data, so none appear
+  in a game yet; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
 - Sound is effects and interface sounds only: no music, unit replies, advisor announcements, looping sounds or
   volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and

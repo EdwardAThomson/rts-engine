@@ -38,12 +38,12 @@ def _block(root, spec, conc, armour, paint, steel, glass, name, windows_south):
         size = (r, span / 2 + 0.5, 0.35) if along_x else (span / 2 + 0.5, r, 0.35)
         st.block(size, loc, rot=rot, mat=armour, parent=root, bevel=0.04, name=f"{name}_roof")
     if along_x:
-        st.block((run + 0.7, 0.7, 0.45), (x, y - l / 2 - 0.15, BLOCK_H + 0.45), mat=paint, parent=root,
+        st.block((run + 0.7, 1.0, 0.45), (x, y - l / 2 - 0.3, BLOCK_H + 0.45), mat=paint, parent=root,
                  name="roof_band")
     else:
-        st.block((w + 0.9, 0.7, 0.45), (x, y - l / 2 - 0.15, BLOCK_H + 0.45), mat=paint, parent=root,
+        st.block((w + 0.9, 1.0, 0.45), (x, y - l / 2 - 0.3, BLOCK_H + 0.45), mat=paint, parent=root,
                  name="roof_band")
-        st.block((0.7, l + 0.6, 0.41), (x - w / 2 - 0.15, y, BLOCK_H + 0.45), mat=paint, parent=root,
+        st.block((1.0, l + 0.6, 0.41), (x - w / 2 - 0.3, y, BLOCK_H + 0.45), mat=paint, parent=root,
                  name="roof_band")
     for k, wx in enumerate(windows_south):
         st.block((1.4, 0.12, 1.0), (wx, y - l / 2 - 0.04, 2.8), mat=glass, parent=root, name="window")

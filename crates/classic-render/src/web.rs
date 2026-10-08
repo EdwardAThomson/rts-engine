@@ -53,6 +53,8 @@ pub async fn load(setting: &str, map: &str) -> Result<Loaded, String> {
     let text = files.get(ART_INDEX).ok_or_else(|| format!("{art_dir}/{ART_INDEX}: not found"))?;
     let names = art::art_files(&String::from_utf8_lossy(text))?;
     files.extend(web::fetch_files(&format!("{ROOT}{art_dir}/"), &names).await?);
+    let pages = art::atlas_files(&files);
+    files.extend(web::fetch_files(&format!("{ROOT}{art_dir}/"), &pages).await?);
 
     // The generic pack's sounds, then the pack's own over them, as on the desktop.
     let mut sounds = Vec::new();
