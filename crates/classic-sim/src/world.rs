@@ -503,13 +503,53 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
     id
 }
 
-/// The tile a harvester parks on to unload: just below the middle column of the refinery's footprint.
-pub fn dock_of(rules: &Rules, refinery: &Entity) -> Tile {
-    let t = refinery.tile();
-    dock_at(rules.kind(refinery.kind), t.x, t.y)
+/// The tiles touching a footprint whose top-left tile is (x, y): the ring one tile out, corners included, in row
+/// order.
+pub fn around(x: i32, y: i32, w: i32, h: i32) -> impl Iterator<Item = Tile> {
+    (y - 1..=y + h)
+        .flat_map(move |ty| (x - 1..=x + w).map(move |tx| Tile { x: tx, y: ty }))
+        .filter(move |t| !(x..x + w).contains(&t.x) || !(y..y + h).contains(&t.y))
 }
 
-/// The dock of a refinery kind whose top-left tile is at (x, y).
+/// Where harvester `me` parks to unload at a refinery, and its way there: any tile touching the footprint that it can
+/// reach, the one nearest the harvester that no other unit stands on, is stepping into or is heading for to unload,
+/// then nearest the middle of the map, then in row order. If every one is taken it queues for the nearest. A
+/// refinery has no one side to dock on, so a base on any edge of the map unloads on the side facing its fields. If
+/// no side can be reached, the nearest side with no way there, as a refinery with one unreachable dock always gave.
+fn dock_for(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &GameState,
+    rules: &Rules,
+    refinery: &Entity,
+    me: usize,
+) -> (Tile, VecDeque<Tile>) {
+    let (t, k) = (refinery.tile(), rules.kind(refinery.kind));
+    let here = state.entities[me].tile();
+    let taken = |d: Tile| {
+        state.entities.iter().enumerate().any(|(j, e)| {
+            j != me
+                && !rules.kind(e.kind).building
+                && (e.tile() == d
+                    || movement::step_tile(e) == Some(d)
+                    || (e.task == Some(Task::ToRefinery) && e.path.back() == Some(&d)))
+        })
+    };
+    let d2 = |d: &Tile| ((d.x - here.x) as i64).pow(2) + ((d.y - here.y) as i64).pow(2);
+    let mut docks: Vec<Tile> = around(t.x, t.y, k.width, k.height).filter(|d| pf.passable(d.x, d.y)).collect();
+    docks.sort_by_key(|d| (taken(*d), d2(d), d.off_middle(map.width, map.height), d.y, d.x));
+    let nearest = docks.first().copied().unwrap_or_else(|| dock_at(k, t.x, t.y));
+    docks
+        .into_iter()
+        .find_map(|d| {
+            let path = path_or_empty(pf, here, d);
+            (d == here || !path.is_empty()).then_some((d, path))
+        })
+        .unwrap_or((nearest, VecDeque::new()))
+}
+
+/// The tile below the middle column of a refinery kind whose top-left tile is at (x, y): where the art draws its pad,
+/// and where a starting harvester is put.
 pub fn dock_at(k: &crate::units::KindRules, x: i32, y: i32) -> Tile {
     Tile { x: x + k.width / 2, y: y + k.height }
 }
@@ -687,14 +727,14 @@ fn harvest(
             let cargo = cargo + take;
             state.entities[i].cargo = Some(cargo);
             if cargo >= h.capacity {
-                let Some(home) = home_refinery(state, rules, i) else {
+                let Some((_, path)) = home_refinery(map, pf, state, rules, i) else {
                     state.entities[i].task = Some(Task::Stuck);
                     let unit = state.entities[i].id;
                     events.push(Event::HarvesterIdle { tick, unit, reason: IdleReason::NoRefinery });
                     return;
                 };
                 let e = &mut state.entities[i];
-                e.path = path_or_empty(pf, here, home);
+                e.path = path;
                 e.task = Some(Task::ToRefinery);
             } else if take == 0 {
                 // The tile ran dry before we were full.
@@ -725,14 +765,20 @@ fn harvest(
     }
 }
 
-/// The harvester's refinery: its remembered one if that still stands, else its owner's first. Returns the dock
-/// tile, and remembers the choice.
-fn home_refinery(state: &mut GameState, rules: &Rules, i: usize) -> Option<Tile> {
+/// The harvester's refinery: its remembered one if that still stands, else its owner's first. Returns the dock tile
+/// and the way there, and remembers the choice.
+fn home_refinery(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &mut GameState,
+    rules: &Rules,
+    i: usize,
+) -> Option<(Tile, VecDeque<Tile>)> {
     let (owner, home_id) = (state.entities[i].owner, state.entities[i].home_id);
     let mut own = state.entities.iter().filter(|r| rules.kind(r.kind).refinery && r.owner == owner);
     let first = own.clone().next();
     let chosen = own.find(|r| Some(r.id) == home_id).or(first)?;
-    let (id, dock) = (chosen.id, dock_of(rules, chosen));
+    let (id, dock) = (chosen.id, dock_for(map, pf, state, rules, chosen, i));
     state.entities[i].home_id = Some(id);
     Some(dock)
 }

@@ -16,7 +16,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use classic_sim::map::TILE;
-use classic_sim::world::dock_at;
+use classic_sim::world::around;
 use classic_sim::{CommandOrder, EntryState, Game, Kind, Order, Task, Tile};
 
 use crate::geo::{d2, footprint, off_middle, toward};
@@ -225,8 +225,12 @@ pub(crate) fn spot(game: &Game, view: &View, player: u32, kind: Kind) -> Option<
             let mid = footprint(k, x, y);
             let mut score = if k.weapon.is_some() { d2(mid, front) * 4 } else { d2(mid, home) * 4 };
             if k.refinery {
-                let dock = dock_at(k, x, y);
-                score += field.iter().map(|&f| dist2(dock, f)).min().unwrap_or(0) * 8 * TILE * TILE;
+                // Harvesters unload on any side, so the side nearest a field counts.
+                let near = around(x, y, k.width, k.height)
+                    .flat_map(|d| field.iter().map(move |&f| dist2(d, f)))
+                    .min()
+                    .unwrap_or(0);
+                score += near * 8 * TILE * TILE;
             }
             if x == 0 || y == 0 || x + k.width >= game.map.width || y + k.height >= game.map.height {
                 score += 50 * TILE * TILE;
@@ -238,9 +242,10 @@ pub(crate) fn spot(game: &Game, view: &View, player: u32, kind: Kind) -> Option<
     scored.into_iter().map(|(_, _, y, x)| Tile { x, y }).find(|&t| keeps_lanes(game, view, kind, t))
 }
 
-/// Whether, with `kind` placed at `at`, every factory exit and refinery dock it owns, the new building's included,
-/// keeps the tiles beside and below it free of buildings and can still be reached from the edge of the map. The free
-/// ring gives a unit leaving room to pass one arriving.
+/// Whether, with `kind` placed at `at`, every factory and refinery it owns, the new one included, still has a tile on
+/// one of its sides that can be reached from the edge of the map with every tile round it, the building aside, free
+/// of buildings: units leave and harvesters unload on any side, and the free ring gives a unit leaving room to pass
+/// one arriving.
 fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
     let rules = &game.rules;
     let es = &game.state.entities;
@@ -269,20 +274,33 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
         let kr = rules.kind(k);
         kr.refinery || rules.kinds.iter().any(|u| !u.building && u.built_at == Some(k))
     };
-    let mut exits: Vec<Tile> = view
+    // Each building with an exit, as (left, top, width, height).
+    let mut doors: Vec<(i32, i32, i32, i32)> = view
         .mine
         .iter()
         .filter(|&&i| has_exit(es[i].kind))
-        .map(|&i| dock_at(rules.kind(es[i].kind), es[i].tile().x, es[i].tile().y))
+        .map(|&i| (es[i].tile().x, es[i].tile().y, rules.kind(es[i].kind).width, rules.kind(es[i].kind).height))
         .collect();
     if has_exit(kind) {
-        exits.push(dock_at(new, at.x, at.y));
+        doors.push((at.x, at.y, new.width, new.height));
     }
-    let ring_free = |t: &Tile| {
-        (0..=1)
-            .all(|dy| (-1..=1).all(|dx| !map.in_bounds(t.x + dx, t.y + dy) || !blocked[map.index(t.x + dx, t.y + dy)]))
+    let free = |x: i32, y: i32| !map.in_bounds(x, y) || !blocked[map.index(x, y)];
+    let inside = |(bx, by, bw, bh): (i32, i32, i32, i32), x: i32, y: i32| {
+        (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y)
     };
-    if !exits.iter().all(ring_free) {
+    // The tiles round each one that could serve as its exit, before asking whether they can be reached.
+    let exits: Vec<Vec<Tile>> = doors
+        .iter()
+        .map(|&b| {
+            around(b.0, b.1, b.2, b.3)
+                .filter(|t| map.in_bounds(t.x, t.y))
+                .filter(|t| {
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| inside(b, t.x + dx, t.y + dy) || free(t.x + dx, t.y + dy)))
+                })
+                .collect()
+        })
+        .collect();
+    if exits.iter().any(|e| e.is_empty()) {
         return false;
     }
     let mut seen = vec![false; (w * h) as usize];
@@ -309,7 +327,7 @@ fn keeps_lanes(game: &Game, view: &View, kind: Kind, at: Tile) -> bool {
             }
         }
     }
-    exits.iter().all(|t| map.in_bounds(t.x, t.y) && seen[map.index(t.x, t.y)])
+    exits.iter().all(|e| e.iter().any(|t| seen[map.index(t.x, t.y)]))
 }
 
 /// Every tile with resource on it now.
