@@ -10,8 +10,9 @@ use classic_sim::world::Event;
 use classic_sim::{Entity, Game, Terrain};
 
 use crate::art::{Art, Strip};
-use crate::platform::{Rect, SpriteBatch};
+use crate::platform::{Rect, SpriteBatch, TexId};
 use crate::studio::{Frame, SHADOW_ALPHA};
+use crate::tiles;
 
 /// What part of the world the screen shows: the world pixel at the screen's top left, and the scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -178,7 +179,12 @@ impl Scene {
         let y0 = ((wy0 / tile).floor() as i32).max(0);
         let x1 = ((wx1 / tile).ceil() as i32).min(game.map.width);
         let y1 = ((wy1 / tile).ceil() as i32).min(game.map.height);
-        for ty in y0..y1 {
+        if let Some((set, tex)) = &art.tileset {
+            draw_tiles(batch, set, *tex, game, cam, tile, (x0, y0, x1, y1));
+        }
+        // Without a tile set, the art index's plain tiles, one per map tile, and the resource faded over them.
+        let plain = if art.tileset.is_some() { 0..0 } else { y0..y1 };
+        for ty in plain {
             for tx in x0..x1 {
                 let i = (ty * game.map.width + tx) as usize;
                 let (sx, sy) = cam.to_screen(tx as f32 * tile, ty as f32 * tile);
@@ -451,6 +457,41 @@ fn draw_sprite(batch: &mut SpriteBatch, strip: Option<&Strip>, frame: u32, dst: 
             const COLOURS: [[u8; 4]; 4] =
                 [[60, 120, 208, 255], [208, 64, 48, 255], [60, 160, 72, 255], [208, 170, 32, 255]];
             batch.fill(dst, COLOURS[owner as usize % COLOURS.len()]);
+        }
+    }
+}
+
+/// The ground from a tile set, layer by layer, for the map tiles from (x0, y0) up to (x1, y1): each drawn tile sits
+/// half a tile up and left of its map tile, so the four map tiles round it are its corners (`tiles`). Drawn tiles
+/// that hang over the map's edge are cut to it.
+fn draw_tiles(
+    batch: &mut SpriteBatch,
+    set: &tiles::Tileset,
+    tex: TexId,
+    game: &Game,
+    cam: &Camera,
+    tile: f32,
+    (x0, y0, x1, y1): (i32, i32, i32, i32),
+) {
+    let (map_w, map_h) = (game.map.width as f32 * tile, game.map.height as f32 * tile);
+    for layer in &set.layers {
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let case = tiles::corner_case(layer, game, x, y);
+                let Some(src) = set.source(layer, case, x, y) else { continue };
+                // The drawn tile in world pixels, cut to the map.
+                let (wx, wy) = ((x as f32 - 0.5) * tile, (y as f32 - 0.5) * tile);
+                let (cx0, cy0) = (wx.max(0.0), wy.max(0.0));
+                let (cx1, cy1) = ((wx + tile).min(map_w), (wy + tile).min(map_h));
+                if cx1 <= cx0 || cy1 <= cy0 {
+                    continue;
+                }
+                let k = src.w / tile;
+                let src = Rect::new(src.x + (cx0 - wx) * k, src.y + (cy0 - wy) * k, (cx1 - cx0) * k, (cy1 - cy0) * k);
+                let (sx, sy) = cam.to_screen(cx0, cy0);
+                let dst = Rect::new(sx, sy, (cx1 - cx0) * cam.zoom, (cy1 - cy0) * cam.zoom);
+                batch.sprite(tex, src, dst, [255; 4]);
+            }
         }
     }
 }
