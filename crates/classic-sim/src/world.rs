@@ -137,6 +137,12 @@ pub struct Entity {
     pub repair_due: i64,
     /// Buildings only: ticks left until a building being sold goes; 0 when not being sold.
     pub selling: u32,
+    /// Taken over by a converting weapon: the owner it goes back to, and the tick it does.
+    pub converted: Option<(u32, u32)>,
+    /// Ordered to destroy itself: the tick it blows up. Until then it neither moves nor fires.
+    pub fuse: Option<u32>,
+    /// The tick it disappears on its own, for kinds with a lifetime.
+    pub expires: Option<u32>,
 }
 
 impl Entity {
@@ -166,6 +172,7 @@ impl Canon for EntityCanon<'_> {
         let queue: Vec<EntryCanon> = e.queue.iter().map(|q| EntryCanon(q, self.1)).collect();
         let attacker = e.last_attacker.map(|(id, _)| id);
         let attacked = e.last_attacker.map(|(_, tick)| tick);
+        let (converted_from, reverts_at) = (e.converted.map(|(owner, _)| owner), e.converted.map(|(_, at)| at));
         // Combat fields are written only when set, so an entity that never fought hashes as it did before combat.
         // Air fields are written only when set too, so a game with no aircraft hashes as it did before them.
         w.object()
@@ -173,8 +180,13 @@ impl Canon for EntityCanon<'_> {
             .opt("attackedAt", attacked.as_ref())
             .opt("cargo", e.cargo.as_ref())
             .opt("carriedBy", e.carried_by.as_ref())
+            // Written only when set, as are `expires`, `fuse` and `revertsAt`, so a game without the faction specials
+            // hashes as it did before them.
+            .opt("convertedFrom", converted_from.as_ref())
+            .opt("expires", e.expires.as_ref())
             .opt("facing", (e.facing != 0).then_some(&e.facing))
             .opt("ferry", e.ferry.as_ref())
+            .opt("fuse", e.fuse.as_ref())
             // Repair, sell and capture fields are written only when set, so a game without them hashes as before.
             .opt("goal", e.goal.as_ref())
             .field("health", &e.health)
@@ -191,6 +203,7 @@ impl Canon for EntityCanon<'_> {
             .opt("repairDue", (e.repair_due != 0).then_some(&e.repair_due))
             .opt("repairing", e.repairing.then_some(&true))
             .opt("repathFails", (e.repath_fails != 0).then_some(&e.repath_fails))
+            .opt("revertsAt", reverts_at.as_ref())
             .opt("selling", (e.selling != 0).then_some(&e.selling))
             .opt("target", e.target.as_ref())
             .opt("task", e.task.as_ref())
@@ -214,15 +227,21 @@ pub struct Player {
     pub lost: i64,
     /// When the last `credits_lost` event went out, so they come at most once per `storage.warn_every` ticks.
     pub lost_warned: Option<u32>,
+    /// The generic id of the setting pack's faction this player plays, which decides the faction-only kinds it may
+    /// build; `None` builds none of them.
+    pub faction: Option<String>,
 }
 
 impl Canon for Player {
     fn canon(&self, w: &mut CanonHasher) {
         // Written only once something is lost, so a game that never fills its storage hashes as it did before.
-        w.object()
-            .field("credits", &self.credits)
-            .field("delivered", &self.delivered)
-            .field("id", &self.id)
+        let mut o = w.object();
+        o.field("credits", &self.credits).field("delivered", &self.delivered);
+        // Written only when set, so a game with no factions hashes as it did before them.
+        if let Some(f) = &self.faction {
+            o.field("faction", f.as_str());
+        }
+        o.field("id", &self.id)
             .opt("lost", (self.lost != 0).then_some(&self.lost))
             .opt("lostWarned", self.lost_warned.as_ref())
             .end();
@@ -319,6 +338,8 @@ pub enum CommandOrder {
     RepairAt {
         pad: u32,
     },
+    /// Start the countdown to blowing up: units whose kind has a self-destruct blast only. It can't be called off.
+    SelfDestruct,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -646,6 +667,52 @@ pub enum Event {
         target: u32,
         reason: CaptureError,
     },
+    /// A beam weapon fired along the line from (x1, y1) to (x2, y2), hitting everything on it at once.
+    BeamFired {
+        tick: u32,
+        unit: u32,
+        weapon: WeaponId,
+        x1: i64,
+        y1: i64,
+        x2: i64,
+        y2: i64,
+    },
+    /// A converting weapon took a unit from `from` to `to` until tick `until`.
+    Converted {
+        tick: u32,
+        unit: u32,
+        from: u32,
+        to: u32,
+        until: u32,
+    },
+    /// A converted unit went back from `from` to its own side, `to`.
+    Reverted {
+        tick: u32,
+        unit: u32,
+        from: u32,
+        to: u32,
+    },
+    /// A unit's self-destruct countdown began; it blows up on tick `at`.
+    SelfDestructStarted {
+        tick: u32,
+        unit: u32,
+        at: u32,
+    },
+    /// A sapper reached a building and spent itself on it.
+    SapperDetonated {
+        tick: u32,
+        unit: u32,
+        target: u32,
+    },
+    /// A unit's lifetime ran out and it disappeared.
+    Expired {
+        tick: u32,
+        unit: u32,
+        kind: Kind,
+        owner: u32,
+        x: i64,
+        y: i64,
+    },
 }
 
 impl Event {
@@ -688,6 +755,12 @@ impl Event {
             Event::BuildingSold { .. } => "building_sold",
             Event::Captured { .. } => "captured",
             Event::CaptureRefused { .. } => "capture_refused",
+            Event::BeamFired { .. } => "beam_fired",
+            Event::Converted { .. } => "converted",
+            Event::Reverted { .. } => "reverted",
+            Event::SelfDestructStarted { .. } => "self_destruct_started",
+            Event::SapperDetonated { .. } => "sapper_detonated",
+            Event::Expired { .. } => "expired",
         }
     }
 
@@ -722,7 +795,13 @@ impl Event {
             | Event::HazardLeft { tick, .. }
             | Event::CarrierPickup { tick, .. }
             | Event::CarrierDropoff { tick, .. }
-            | Event::CarrierLostCargo { tick, .. } => tick,
+            | Event::CarrierLostCargo { tick, .. }
+            | Event::BeamFired { tick, .. }
+            | Event::Converted { tick, .. }
+            | Event::Reverted { tick, .. }
+            | Event::SelfDestructStarted { tick, .. }
+            | Event::SapperDetonated { tick, .. }
+            | Event::Expired { tick, .. } => tick,
             Event::RepairStarted { tick, .. }
             | Event::RepairStopped { tick, .. }
             | Event::UnitRepaired { tick, .. }
@@ -742,6 +821,9 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
     let id = state.next_id;
     state.next_id += 1;
     let harvester = rules.kind(kind).harvester.is_some();
+    // Only units run out; a building would leave its tiles blocked.
+    let lifetime = rules.kind(kind).lifetime;
+    let expires = (lifetime > 0 && !rules.kind(kind).building).then_some(state.tick + lifetime);
     state.entities.push(Entity {
         id,
         kind,
@@ -771,6 +853,9 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         repairing: false,
         repair_due: 0,
         selling: 0,
+        converted: None,
+        fuse: None,
+        expires,
     });
     id
 }
@@ -895,8 +980,8 @@ pub fn apply_command(
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
         let e = &mut state.entities[i];
-        // A unit being carried takes no orders until it is set down.
-        if e.owner != cmd.player || rules.kind(e.kind).building || e.carried_by.is_some() {
+        // A unit being carried takes no orders until it is set down, and one counting down to its blast none at all.
+        if e.owner != cmd.player || rules.kind(e.kind).building || e.carried_by.is_some() || e.fuse.is_some() {
             continue;
         }
         let k = rules.kind(e.kind);
@@ -929,7 +1014,17 @@ pub fn apply_command(
                 movement::stop(rules, e);
             }
             CommandOrder::Attack { .. } => {}
-            CommandOrder::Harvest
+            CommandOrder::SelfDestruct if k.self_destruct.is_some() => {
+                let at = state.tick + rules.combat.self_destruct_ticks;
+                e.fuse = Some(at);
+                e.order = Order::Idle;
+                e.target = None;
+                e.goal = None;
+                movement::stop(rules, e);
+                events.push(Event::SelfDestructStarted { tick: state.tick, unit: id, at });
+            }
+            CommandOrder::SelfDestruct
+            | CommandOrder::Harvest
             | CommandOrder::Place { .. }
             | CommandOrder::Produce { .. }
             | CommandOrder::Cancel { .. }

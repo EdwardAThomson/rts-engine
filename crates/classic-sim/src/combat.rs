@@ -12,6 +12,8 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::imath::isqrt;
 use rts_core::rng::random_int;
 
+use classic_data::ARMOURS;
+
 use crate::map::{TILE, Tile};
 use crate::movement;
 use crate::path::Pathfinder;
@@ -139,10 +141,24 @@ fn aims_at(rules: &Rules, w: WeaponId, t: &Entity) -> bool {
     rules.kind(t.kind).targetable && t.carried_by.is_none() && if t.airborne() { wr.hits_air } else { wr.hits_ground }
 }
 
+/// Whether a converting weapon may take `t` over: a ground vehicle (light or heavy armour) whose kind isn't
+/// `unconvertible`. Infantry, buildings and aircraft never change sides.
+pub fn convertible(rules: &Rules, t: &Entity) -> bool {
+    let k = rules.kind(t.kind);
+    !k.building && !k.air && k.convertible && matches!(ARMOURS[k.armour], "light" | "heavy")
+}
+
 /// Whether `e`'s weapon could hurt `t` now: an enemy its weapon can aim at and its warhead affects. Walls are never
-/// fair game unless ordered.
+/// fair game unless ordered. A converting weapon looks only for what it can take over, and a sapper only for
+/// buildings.
 fn can_hit(rules: &Rules, e: &Entity, t: &Entity) -> bool {
     let Some(w) = rules.kind(e.kind).weapon else { return false };
+    if rules.weapon(w).converts > 0 && !convertible(rules, t) {
+        return false;
+    }
+    if rules.kind(e.kind).sapper && (!rules.kind(t.kind).building || rules.kind(t.kind).wall) {
+        return false;
+    }
     t.owner != e.owner && aims_at(rules, w, t) && table(rules, w, t) > 0
 }
 
@@ -233,14 +249,16 @@ fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> O
 /// The combat phase of one tick.
 pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     let tick = state.tick;
+    timers(state, rules, events);
     let short: Vec<bool> = Power::all(state, rules).iter().map(|p| p.is_short()).collect();
     let mut damage = Vec::new();
+    let mut converts = Vec::new();
 
     for i in 0..state.entities.len() {
         let k = rules.kind(state.entities[i].kind);
         let Some(wid) = k.weapon else { continue };
-        // A building being sold no longer fires.
-        if state.entities[i].selling > 0 {
+        // A building being sold no longer fires, nor a unit counting down to its own blast.
+        if state.entities[i].selling > 0 || state.entities[i].fuse.is_some() {
             continue;
         }
         let w = rules.weapon(wid);
@@ -310,6 +328,15 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         if let (Some(v), Some(fog)) = (state.vision.as_mut(), rules.fog.as_ref()) {
             v.reveal(state.entities[t].owner, at, tick, fog.reveal_ticks);
         }
+        if w.beam > 0 {
+            beam(state, rules, i, t, wid, &mut damage, events);
+            continue;
+        }
+        // A sapper spends itself on the building it reaches.
+        if k.sapper {
+            state.entities[i].health = 0;
+            events.push(Event::SapperDetonated { tick, unit, target: tid });
+        }
         if w.speed == 0 {
             damage.push(Damage { target: tid, attacker: unit, owner, weapon: wid, band: 100 });
             continue;
@@ -365,12 +392,22 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             continue;
         }
         events.push(Event::ProjectileHit { tick, projectile: p.id, weapon: p.weapon, x: p.to_x, y: p.to_y });
-        burst(state, rules, &p, &mut damage);
+        if w.converts > 0 {
+            gas(state, rules, &p, &mut converts);
+        } else {
+            burst(state, rules, &p, &mut damage);
+        }
     }
     state.projectiles = flying;
 
-    // 5. Apply damage in the order it was dealt.
+    // 5. Apply damage in the order it was dealt, then take over what gas reached and damage left standing.
     apply(state, rules, &damage, events);
+    for (target, owner, weapon) in converts {
+        let until = tick + rules.weapon(weapon).converts;
+        if let Some(i) = index(state, target).filter(|&i| state.entities[i].health > 0) {
+            convert(state, rules, i, owner, until, events);
+        }
+    }
 
     // 6. Remove the destroyed, in id order; their death blasts land at once, as one more pass.
     let dead: Vec<usize> = (0..state.entities.len()).filter(|&i| state.entities[i].health <= 0).collect();
@@ -390,7 +427,9 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             x: e.x,
             y: e.y,
         });
-        if let Some(d) = k.death {
+        // One that dies counting down to its own blast, by its fuse or by enemy fire, leaves that blast instead.
+        let blast = if e.fuse.is_some() { k.self_destruct.or(k.death) } else { k.death };
+        if let Some(d) = blast {
             let p = Projectile {
                 id: 0,
                 weapon: d,
@@ -415,6 +454,128 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
     // Blasts don't hurt those already destroyed this tick; anything they kill goes next tick.
     blasts.retain(|d| index(state, d.target).is_some());
     apply(state, rules, &blasts, events);
+}
+
+/// What runs out at the start of a tick, in id order: lifetimes (the unit disappears), conversions (the unit goes
+/// back to its own side) and self-destruct fuses (the unit is destroyed this tick, leaving its blast).
+fn timers(state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
+    let tick = state.tick;
+    state.entities.retain(|e| {
+        let gone = e.expires.is_some_and(|at| tick >= at);
+        if gone {
+            let (unit, kind, owner, x, y) = (e.id, e.kind, e.owner, e.x, e.y);
+            events.push(Event::Expired { tick, unit, kind, owner, x, y });
+        }
+        !gone
+    });
+    for i in 0..state.entities.len() {
+        if let Some((home, at)) = state.entities[i].converted
+            && tick >= at
+        {
+            let (unit, from) = (state.entities[i].id, state.entities[i].owner);
+            state.entities[i].converted = None;
+            change_sides(state, rules, i, home);
+            events.push(Event::Reverted { tick, unit, from, to: home });
+        }
+        let e = &mut state.entities[i];
+        if e.fuse.is_some_and(|at| tick >= at) {
+            e.health = 0;
+        }
+    }
+}
+
+/// Hand `state.entities[i]` to `owner`. It drops what it was doing and stands guard (a harvester goes back to
+/// work for its new side), and the new side's units stop shooting at it.
+fn change_sides(state: &mut GameState, rules: &Rules, i: usize, owner: u32) {
+    let e = &mut state.entities[i];
+    e.owner = owner;
+    e.target = None;
+    e.goal = None;
+    if rules.kind(e.kind).harvester.is_some() {
+        e.order = Order::Harvest;
+        e.task = Some(world::Task::Mining);
+    } else {
+        e.order = Order::Idle;
+    }
+    movement::stop(rules, e);
+    let id = e.id;
+    for o in &mut state.entities {
+        if o.target == Some(id) && o.owner == owner {
+            o.target = None;
+            if o.order == Order::Attack {
+                o.order = Order::Idle;
+                movement::stop(rules, o);
+            }
+        }
+    }
+}
+
+/// A converting weapon takes `state.entities[i]` over for `owner` until tick `until`. One already taken over has its
+/// time reset; one gassed by its own side's weapon goes straight back.
+fn convert(state: &mut GameState, rules: &Rules, i: usize, owner: u32, until: u32, events: &mut Vec<Event>) {
+    let e = &mut state.entities[i];
+    if e.owner == owner {
+        return;
+    }
+    let (unit, from) = (e.id, e.owner);
+    let home = e.converted.map_or(e.owner, |(home, _)| home);
+    e.converted = (home != owner).then_some((home, until));
+    change_sides(state, rules, i, owner);
+    let tick = state.tick;
+    if home == owner {
+        events.push(Event::Reverted { tick, unit, from, to: owner });
+    } else {
+        events.push(Event::Converted { tick, unit, from, to: owner, until });
+    }
+}
+
+/// A beam fired by `state.entities[i]` at `state.entities[t]`: a line from the firer's centre towards the target,
+/// the weapon's range long and `beam` wide, hits at once everything on the ground whose centre lies on it, except
+/// the firer and units armed with the same weapon. The perpendicular test squares both sides
+/// (`cross² * 4 <= width² * |seg|²`) so it needs no division or square root (rules-combat.md, "Special weapons").
+fn beam(
+    state: &GameState,
+    rules: &Rules,
+    i: usize,
+    t: usize,
+    wid: WeaponId,
+    out: &mut Vec<Damage>,
+    events: &mut Vec<Event>,
+) {
+    let (e, w) = (&state.entities[i], rules.weapon(wid));
+    let (dx, dy) = (state.entities[t].x - e.x, state.entities[t].y - e.y);
+    let len = (isqrt((dx * dx + dy * dy) as u64) as i64).max(1);
+    let (sx, sy) = (dx * w.range / len, dy * w.range / len);
+    let seg2 = sx * sx + sy * sy;
+    for o in &state.entities {
+        let ok = rules.kind(o.kind);
+        if o.id == e.id || o.airborne() || !ok.targetable || ok.weapon == Some(wid) {
+            continue;
+        }
+        let (px, py) = (o.x - e.x, o.y - e.y);
+        let along = px * sx + py * sy;
+        let cross = sx * py - sy * px;
+        if along < 0 || along > seg2 || cross * cross * 4 > w.beam * w.beam * seg2 {
+            continue;
+        }
+        out.push(Damage { target: o.id, attacker: e.id, owner: e.owner, weapon: wid, band: 100 });
+    }
+    let (x1, y1) = (e.x, e.y);
+    events.push(Event::BeamFired { tick: state.tick, unit: e.id, weapon: wid, x1, y1, x2: x1 + sx, y2: y1 + sy });
+}
+
+/// Gas bursts at its aim point and takes over, for the projectile's owner, every enemy ground vehicle a converting
+/// weapon may take within its splash radius. It hurts nothing.
+fn gas(state: &GameState, rules: &Rules, p: &Projectile, out: &mut Vec<(u32, u32, WeaponId)>) {
+    let r = rules.weapon(p.weapon).splash;
+    for e in &state.entities {
+        if e.owner == p.owner || e.airborne() || !rules.kind(e.kind).targetable || !convertible(rules, e) {
+            continue;
+        }
+        if dist2(e, p.to_x, p.to_y) <= r * r {
+            out.push((e.id, p.owner, p.weapon));
+        }
+    }
 }
 
 /// A projectile bursts at its aim point: a full hit on its target if the burst lands on its body, and splash on

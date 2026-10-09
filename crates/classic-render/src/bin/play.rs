@@ -180,7 +180,7 @@ impl App {
         pack_files: Files,
         skin_files: Vec<Files>,
     ) -> App {
-        let game = new_game(&pack, &maps[0].1);
+        let mut game = new_game(&pack, &maps[0].1);
         let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
         let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1) as u64;
         let mut mixer = Mixer::new(48_000);
@@ -190,6 +190,7 @@ impl App {
             say(&format!("sound: {w}"));
         }
         let faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % pack.factions.len().max(1);
+        give_factions(&mut game, &pack, player, faction);
         let hud = Hud::new(&pack, &pack_files, &game, player, faction);
         for w in &hud.feed.warnings {
             say(&format!("messages and lines: {w}"));
@@ -245,6 +246,7 @@ impl App {
     /// Start a game on the map, faction and opponents the menu shows, and play it.
     fn restart(&mut self) {
         self.game = new_game(&self.pack, &self.maps[self.menu.map].1);
+        give_factions(&mut self.game, &self.pack, self.player, self.menu.faction);
         // A new faction or map can change who is drawn in which colours.
         let ramps = self.ramps();
         if let Some(run) = self.run.as_mut().filter(|r| r.ramps != ramps) {
@@ -883,6 +885,15 @@ impl ApplicationHandler for App {
                         KeyCode::KeyH if !event.repeat => self.centre_on_base(),
                         KeyCode::KeyZ if !event.repeat => self.building_key(Mode::Sell),
                         KeyCode::KeyC if !event.repeat => self.building_key(Mode::Repair),
+                        // Ctrl+X: the selected units that can blow themselves up start their countdown.
+                        KeyCode::KeyX
+                            if !event.repeat
+                                && (self.keys.contains(&KeyCode::ControlLeft)
+                                    || self.keys.contains(&KeyCode::ControlRight)) =>
+                        {
+                            let ids = self.scene.selected.clone();
+                            self.game.order(self.player, &ids, CommandOrder::SelfDestruct);
+                        }
                         _ if !event.repeat && digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
                         KeyCode::KeyM if !event.repeat => self.toggle_mute(),
                         _ => {}
@@ -1063,6 +1074,17 @@ fn opponents(game: &Game, player: u32, on: bool) -> Vec<Ai> {
 
 /// A game of `pack` on `map`. `--fog on`, `shroud` (shroud only, nothing hidden once explored) or `off` overrides the
 /// pack's fog of war.
+/// Tell the game which of the pack's factions each player has, the local one on `chosen`, as the colours are dealt,
+/// so each builds its own faction's specials.
+fn give_factions(game: &mut Game, pack: &classic_data::Pack, local: u32, chosen: usize) {
+    let players = game.state.players.len();
+    let ids: Vec<&str> = art::player_factions(pack.factions.len(), players, local as usize, chosen)
+        .into_iter()
+        .filter_map(|f| pack.factions.get(f).map(|f| f.id.as_str()))
+        .collect();
+    game.set_factions(&ids);
+}
+
 fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
     let mut table = pack.rules.clone();
     if let Some(fog) = arg("fog")

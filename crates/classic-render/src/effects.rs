@@ -7,7 +7,7 @@
 //! same game draws the same effects. Their randomness (where smoke rises, which corner of a building burns) comes
 //! from a generator of their own that the simulation never reads.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use classic_sim::combat::facing_to;
 use classic_sim::map::TILE;
@@ -70,6 +70,8 @@ pub struct Effects {
     pub fired: BTreeMap<u32, u32>,
     /// The last tick damaged things have smoked for.
     smoked: u32,
+    /// Units counting down to their own blast, which go up bigger than a vehicle's.
+    fused: BTreeSet<u32>,
     rng: u32,
 }
 
@@ -103,6 +105,9 @@ impl Effects {
             if let Event::Fired { tick, unit, .. } = *ev {
                 self.fired.insert(unit, tick);
             }
+            if let Event::SelfDestructStarted { unit, .. } = *ev {
+                self.fused.insert(unit);
+            }
             if matches!(
                 ev,
                 Event::Fired { .. }
@@ -110,6 +115,7 @@ impl Effects {
                     | Event::ProjectileHit { .. }
                     | Event::Hit { .. }
                     | Event::Destroyed { .. }
+                    | Event::BeamFired { .. }
             ) {
                 self.pending.push(ev.clone());
             }
@@ -174,6 +180,28 @@ impl Effects {
                     let (jx, jy) = (self.random() - 0.5, self.random() - 0.5);
                     let (x, y) = centre(game, e);
                     self.burst("hit_spark", x + jx * 96.0, y - 48.0 + jy * 64.0, tick, 1.0);
+                }
+                // A beam ripples out along its line, a spark each half tile, a tick apart.
+                Event::BeamFired { tick, x1, y1, x2, y2, .. } => {
+                    let steps = (((x2 - x1).pow(2) + (y2 - y1).pow(2)) as f32).sqrt() / (TILE as f32 / 2.0);
+                    for i in 1..=steps as u32 {
+                        let t = i as f32 / steps;
+                        let (x, y) = (x1 as f32 + (x2 - x1) as f32 * t, y1 as f32 + (y2 - y1) as f32 * t);
+                        self.burst("hit_spark", x, y - 32.0, tick + i / 2, 1.4);
+                    }
+                }
+                Event::Destroyed { tick, entity, x, y, .. } if self.fused.remove(&entity) => {
+                    self.burst("explosion_large", x as f32, y as f32, tick, 1.6);
+                    for i in 0..4 {
+                        let (fx, fy) = (self.random() - 0.5, self.random() - 0.5);
+                        self.burst(
+                            "explosion_medium",
+                            x as f32 + fx * 640.0,
+                            y as f32 + fy * 640.0,
+                            tick + 2 + i * 2,
+                            1.0,
+                        );
+                    }
                 }
                 Event::Destroyed { tick, kind, x, y, .. } => {
                     let k = game.rules.kind(kind);

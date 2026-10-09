@@ -264,7 +264,10 @@ impl Feed {
                     ProduceError::QueueFull => self.say(game, "queue_full", None, Tone::Warn),
                     ProduceError::Requires { .. } => self.say(game, "needs_building", Some(kind), Tone::Warn),
                     // The rail never offers these; a script might.
-                    ProduceError::NotBuildable | ProduceError::NoFactory | ProduceError::NotQueued => {}
+                    ProduceError::NotBuildable
+                    | ProduceError::NoFactory
+                    | ProduceError::NotQueued
+                    | ProduceError::Faction => {}
                 },
                 Event::ProductionPaused { factory, kind, .. } if Self::owner(game, factory) == Some(local) => {
                     self.say(game, "no_credits", Some(kind), Tone::Warn)
@@ -352,6 +355,12 @@ impl Feed {
                 | Event::Delivered { .. }
                 | Event::StorageFull { .. }
                 | Event::CreditsLost { .. }
+                | Event::BeamFired { .. }
+                | Event::Converted { .. }
+                | Event::Reverted { .. }
+                | Event::SelfDestructStarted { .. }
+                | Event::SapperDetonated { .. }
+                | Event::Expired { .. }
                 | Event::Regrowth { .. }
                 | Event::CarrierPickup { .. }
                 | Event::CarrierDropoff { .. }

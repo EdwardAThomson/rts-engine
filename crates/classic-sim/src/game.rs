@@ -113,6 +113,7 @@ impl Game {
                 delivered: 0,
                 lost: 0,
                 lost_warned: None,
+                faction: None,
             });
             let (y, r, pk) = (rules.kind(yard), rules.kind(refinery), rules.kind(plant));
             let left = 2 * s.x + y.width > map.width;
@@ -145,6 +146,15 @@ impl Game {
             events: Vec::new(),
             queue: CommandQueue::default(),
         })
+    }
+
+    /// Give each player, in player order, the setting pack's faction with this generic id, which decides the
+    /// faction-only kinds they may build. Call it before the first tick; players past the end of `factions` keep
+    /// none.
+    pub fn set_factions<S: AsRef<str>>(&mut self, factions: &[S]) {
+        for (p, f) in self.state.players.iter_mut().zip(factions) {
+            p.faction = Some(f.as_ref().to_string());
+        }
     }
 
     /// Advance `n` ticks.

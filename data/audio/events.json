@@ -44,6 +44,12 @@
     "carrier_lost_cargo",
     "storage_full",
     "credits_lost",
-    "repair_stopped"
+    "repair_stopped",
+    "beam_fired",
+    "converted",
+    "reverted",
+    "self_destruct_started",
+    "sapper_detonated",
+    "expired"
   ]
 }
