@@ -261,7 +261,23 @@
       }
     },
 
-    "infantry": { "kind": "unit", "status": "planned" },
+    "infantry": {
+      "kind": "unit",
+      "status": "built",
+      "weapon": "rifle",
+      "armour": "infantry",
+      "built_at": "barracks",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 8, "min": 1, "max": 128 },
+        "noise": { "default": 1, "min": 0, "max": 32 },
+        "max_health": { "default": 50, "min": 1, "max": 100000 },
+        "cost": { "default": 80, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 150, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 32, "min": 1, "max": 128 },
+        "sight": { "default": 3, "min": 1, "max": 16 }
+      }
+    },
     "infantry_squad": {
       "kind": "unit",
       "status": "built",
@@ -279,7 +295,23 @@
         "sight": { "default": 3, "min": 1, "max": 16 }
       }
     },
-    "rocket_infantry": { "kind": "unit", "status": "planned" },
+    "rocket_infantry": {
+      "kind": "unit",
+      "status": "built",
+      "weapon": "rocket_light",
+      "armour": "infantry",
+      "built_at": "barracks",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 7, "min": 1, "max": 128 },
+        "noise": { "default": 1, "min": 0, "max": 32 },
+        "max_health": { "default": 60, "min": 1, "max": 100000 },
+        "cost": { "default": 120, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 225, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 32, "min": 1, "max": 128 },
+        "sight": { "default": 4, "min": 1, "max": 16 }
+      }
+    },
     "rocket_squad": {
       "kind": "unit",
       "status": "built",
@@ -372,8 +404,42 @@
         "sight": { "default": 5, "min": 1, "max": 16 }
       }
     },
-    "siege_tank": { "kind": "unit", "status": "planned" },
-    "missile_tank": { "kind": "unit", "status": "planned" },
+    "siege_tank": {
+      "kind": "unit",
+      "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "cannon_heavy",
+      "armour": "heavy",
+      "built_at": "heavy_factory",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 16, "min": 1, "max": 128 },
+        "noise": { "default": 5, "min": 0, "max": 32 },
+        "max_health": { "default": 350, "min": 1, "max": 100000 },
+        "cost": { "default": 700, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 8, "min": 1, "max": 128 },
+        "sight": { "default": 5, "min": 1, "max": 16 }
+      }
+    },
+    "missile_tank": {
+      "kind": "unit",
+      "status": "built",
+      "death": "blast_vehicle",
+      "weapon": "artillery",
+      "armour": "heavy",
+      "built_at": "heavy_factory",
+      "requires": [],
+      "numbers": {
+        "speed": { "default": 18, "min": 1, "max": 128 },
+        "noise": { "default": 4, "min": 0, "max": 32 },
+        "max_health": { "default": 200, "min": 1, "max": 100000 },
+        "cost": { "default": 750, "min": 0, "max": 100000 },
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "turn_rate": { "default": 6, "min": 1, "max": 128 },
+        "sight": { "default": 6, "min": 1, "max": 16 }
+      }
+    },
     "super_a": { "kind": "unit", "status": "planned" },
     "super_h": { "kind": "unit", "status": "planned" },
     "super_o": { "kind": "unit", "status": "planned" },

@@ -66,6 +66,58 @@
         "needs_power": { "default": 0, "min": 0, "max": 1 }
       }
     },
+    "rifle": {
+      "warhead": "bullet",
+      "numbers": {
+        "range": { "default": 640, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 15, "min": 1, "max": 600 },
+        "damage": { "default": 8, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "rocket_light": {
+      "warhead": "rocket",
+      "numbers": {
+        "range": { "default": 896, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 30, "min": 1, "max": 600 },
+        "damage": { "default": 30, "min": 0, "max": 10000 },
+        "speed": { "default": 80, "min": 0, "max": 1024 },
+        "scatter": { "default": 48, "min": 0, "max": 512 },
+        "splash": { "default": 64, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "cannon_heavy": {
+      "warhead": "shell",
+      "numbers": {
+        "range": { "default": 1280, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 40, "min": 1, "max": 600 },
+        "damage": { "default": 55, "min": 0, "max": 10000 },
+        "speed": { "default": 160, "min": 0, "max": 1024 },
+        "scatter": { "default": 32, "min": 0, "max": 512 },
+        "splash": { "default": 96, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
+    "artillery": {
+      "warhead": "rocket",
+      "numbers": {
+        "range": { "default": 2048, "min": 256, "max": 4096 },
+        "min_range": { "default": 512, "min": 0, "max": 2048 },
+        "reload": { "default": 60, "min": 1, "max": 600 },
+        "damage": { "default": 80, "min": 0, "max": 10000 },
+        "speed": { "default": 128, "min": 0, "max": 1024 },
+        "scatter": { "default": 160, "min": 0, "max": 512 },
+        "splash": { "default": 128, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
     "turret_gun": {
       "warhead": "shell",
       "numbers": {
