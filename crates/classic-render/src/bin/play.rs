@@ -11,6 +11,11 @@
 //! building or an enemy shows it on the selection card. Ctrl and a number key keeps the selected units as a group;
 //! the number selects them again, and a second press centres the view on them. H centres on your base.
 //!
+//! A right click with infantry selected on an enemy building hurt badly enough sends them in to capture it (the
+//! cursor shows `enter`), and with damaged vehicles selected on your own repair pad sends them to be mended. Z sells
+//! the buildings you have selected, and C turns their repair on (or off, when they all have it on already); with
+//! no building of yours selected, Z or C waits for a click on one instead (right click or Escape to stop waiting).
+//!
 //! The rail on the right builds: pick a factory's tab, left-click an item to queue one (shift: five), right-click to
 //! cancel one with a refund; Tab and shift-Tab change tabs. When a building is ready, click it and then a spot on
 //! the map; the ghost shows green where it fits. The minimap at the rail's foot moves the view (click or drag), and
@@ -37,7 +42,7 @@ use classic_render::hud::{Button, Click, RAIL_W};
 use classic_render::lines::Moment;
 use classic_render::menu::{Action, Menu, Screen};
 use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
-use classic_render::skin::{self, Pointer, Skin, SkinFiles};
+use classic_render::skin::{self, Mode, Pointer, Skin, SkinFiles};
 use classic_render::sound::Cue;
 use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View, feed};
 use classic_sim::map::TILE;
@@ -150,6 +155,8 @@ struct App {
     drag: Option<(f32, f32)>,
     /// The left button went down on the minimap: moving the mouse keeps moving the view.
     minimap_drag: bool,
+    /// Z or C pressed with no own building selected: the next left click on one sells it or toggles its repair.
+    mode: Option<Mode>,
     frames: u64,
     max_frames: Option<u64>,
     sound: SoundBoard,
@@ -224,6 +231,7 @@ impl App {
             mouse: (-1.0e4, -1.0e4),
             drag: None,
             minimap_drag: false,
+            mode: None,
             frames: 0,
             max_frames: arg("frames").and_then(|s| s.parse().ok()),
             sound,
@@ -316,8 +324,61 @@ impl App {
         self.cam.y = y * view.tile - view.screen.1 / 2.0 / self.cam.zoom;
     }
 
+    /// Z (sell) or C (repair): act on the own buildings selected, or with none, wait for a click on one. Repair
+    /// goes on for any of them that is damaged and not yet repairing, else off for all of them.
+    fn building_key(&mut self, mode: Mode) {
+        let own: Vec<u32> = self
+            .scene
+            .selected
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.game
+                    .state
+                    .entity(id)
+                    .is_some_and(|e| e.owner == self.player && self.game.rules.kind(e.kind).building)
+            })
+            .collect();
+        if own.is_empty() {
+            self.mode = if self.mode == Some(mode) { None } else { Some(mode) };
+            return;
+        }
+        self.mode = None;
+        self.building_order(mode, &own);
+    }
+
+    fn building_order(&mut self, mode: Mode, ids: &[u32]) {
+        let order = match mode {
+            Mode::Sell => CommandOrder::Sell,
+            Mode::Repair => {
+                let rules = &self.game.rules;
+                let start = ids
+                    .iter()
+                    .filter_map(|&id| self.game.state.entity(id))
+                    .any(|e| !e.repairing && e.selling == 0 && e.health < rules.kind(e.kind).max_health);
+                CommandOrder::Repair { on: start }
+            }
+        };
+        self.game.order(self.player, ids, order);
+        self.ui_sound("ui_order");
+    }
+
+    /// A left click while waiting with Z or C: an own building takes the order; anything else just ends the wait.
+    fn mode_click(&mut self, mode: Mode) {
+        self.mode = None;
+        let target = self.pick(self.mouse.0, self.mouse.1).filter(|&id| {
+            self.game.state.entity(id).is_some_and(|e| e.owner == self.player && self.game.rules.kind(e.kind).building)
+        });
+        if let Some(id) = target {
+            self.building_order(mode, &[id]);
+        }
+    }
+
     /// A right click goes to the HUD, else orders the selected units.
     fn right_click(&mut self) {
+        if self.mode.take().is_some() {
+            return;
+        }
         if !self.hud_click(Button::Right) {
             let (wx, wy) = self.cam.to_world(self.mouse.0, self.mouse.1);
             let tile = TILE as f32 * self.world_px();
@@ -476,6 +537,17 @@ impl App {
             })
             .collect();
         if ids.is_empty() {
+            return;
+        }
+        // Capturers into a building that can be taken, damaged vehicles to a repair pad; the rest as usual.
+        let (special, ids) = skin::special_orders(&self.game, self.player, &ids, target);
+        for (units, order) in &special {
+            self.game.order(self.player, units, *order);
+            self.hud.feed.reply(&self.game, Moment::Move, units);
+        }
+        if ids.is_empty() {
+            self.ui_sound("ui_order");
+            self.speak();
             return;
         }
         let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
@@ -637,6 +709,7 @@ impl App {
                 edge: (axis(mx, w), axis(my, h)),
                 hovered: self.pick(mx, my),
                 tile: view.tile_at(mx, my),
+                mode: self.mode,
             };
             skin::choose_cursor(&self.game, self.player, &self.scene.selected, &p)
         } else {
@@ -795,15 +868,20 @@ impl ApplicationHandler for App {
                     }
                     match code {
                         KeyCode::Escape if !event.repeat => {
-                            // Escape puts back a building, then clears the selection, then opens the pause menu.
-                            if !self.hud.cancel() && self.scene.selected.is_empty() {
-                                self.menu.escape();
+                            // Escape ends a sell or repair wait, puts back a building, then clears the selection,
+                            // then opens the pause menu.
+                            if self.mode.take().is_none() {
+                                if !self.hud.cancel() && self.scene.selected.is_empty() {
+                                    self.menu.escape();
+                                }
+                                self.scene.selected.clear();
                             }
-                            self.scene.selected.clear();
                         }
                         KeyCode::Space if !event.repeat => self.paused = !self.paused,
                         KeyCode::Tab if !event.repeat => self.hud.next_tab(&self.game, self.shift()),
                         KeyCode::KeyH if !event.repeat => self.centre_on_base(),
+                        KeyCode::KeyZ if !event.repeat => self.building_key(Mode::Sell),
+                        KeyCode::KeyC if !event.repeat => self.building_key(Mode::Repair),
                         _ if !event.repeat && digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
                         KeyCode::KeyM if !event.repeat => self.toggle_mute(),
                         _ => {}
@@ -836,7 +914,11 @@ impl ApplicationHandler for App {
                 }
                 (_, _) if !self.menu.playing() => {}
                 (MouseButton::Left, ElementState::Pressed) => {
-                    if !self.hud_click(Button::Left) {
+                    if let Some(mode) = self.mode
+                        && !self.hud.over(&self.game, self.view().screen, self.mouse.0, self.mouse.1)
+                    {
+                        self.mode_click(mode);
+                    } else if !self.hud_click(Button::Left) {
                         self.drag = Some(self.mouse);
                     }
                 }

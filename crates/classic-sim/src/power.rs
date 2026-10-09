@@ -1,16 +1,21 @@
 //! Power (rules-base-building-power.md, "Power"): each building adds to its owner's supply or draws from it (its
 //! `power` number in the rules data, positive for a producer). A producer gives power in proportion to its health,
 //! floor division each, so a damaged plant gives less. Power is worked out from the buildings standing, never
-//! stored, so it can't drift from them. What a shortfall slows down (production, repair, radar, defences) belongs
+//! stored, so it can't drift from them. A building being sold gives nothing but still draws its demand. What a shortfall slows down (production, repair, radar, defences) belongs
 //! to those modules; they read `Power::factor`.
 
-use crate::units::Rules;
-use crate::world::GameState;
+use crate::units::{KindRules, Rules};
+use crate::world::{Entity, GameState};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Power {
     pub supply: i64,
     pub demand: i64,
+}
+
+/// What a producer gives: in proportion to its health, and nothing while it is being sold.
+fn supply(k: &KindRules, e: &Entity) -> i64 {
+    if e.selling > 0 { 0 } else { k.power * e.health.max(0) / k.max_health }
 }
 
 impl Power {
@@ -20,7 +25,7 @@ impl Power {
         for e in state.entities.iter().filter(|e| e.owner == player) {
             let k = rules.kind(e.kind);
             if k.power > 0 {
-                p.supply += k.power * e.health.max(0) / k.max_health;
+                p.supply += supply(k, e);
             } else {
                 p.demand -= k.power;
             }
@@ -35,7 +40,7 @@ impl Power {
             let Some(p) = state.players.iter().position(|p| p.id == e.owner) else { continue };
             let k = rules.kind(e.kind);
             if k.power > 0 {
-                out[p].supply += k.power * e.health.max(0) / k.max_health;
+                out[p].supply += supply(k, e);
             } else {
                 out[p].demand -= k.power;
             }

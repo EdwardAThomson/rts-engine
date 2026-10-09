@@ -673,6 +673,12 @@ impl Hud {
             return ("ENEMY".to_string(), self.theme.bad);
         }
         if k.building {
+            if e.selling > 0 {
+                return ("SELLING".to_string(), self.theme.warn);
+            }
+            if e.repairing {
+                return ("REPAIRING".to_string(), self.theme.good);
+            }
             if let Some(q) = e.queue.first() {
                 let total = (game.rules.kind(q.item).build_ticks * 100).max(1);
                 let share = (q.progress * 100 / total).min(100);
@@ -705,6 +711,8 @@ impl Hud {
             (Order::Harvest, _) => ("HARVESTING".to_string(), self.theme.good),
             (Order::Move, _) => ("MOVING".to_string(), self.theme.text),
             (Order::Attack, _) => ("ATTACKING".to_string(), self.theme.warn),
+            (Order::Capture, _) => ("CAPTURING".to_string(), self.theme.warn),
+            (Order::Repair, _) => ("TO REPAIR".to_string(), self.theme.text),
             (Order::Idle, _) if e.target.is_some() => ("FIRING".to_string(), self.theme.warn),
             (Order::Idle, _) => ("GUARDING".to_string(), self.theme.dim),
         }

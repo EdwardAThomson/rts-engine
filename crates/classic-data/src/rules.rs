@@ -68,7 +68,7 @@ pub const ARMOURS: [&str; 6] = ["infantry", "light", "heavy", "building", "wall"
 pub const WARHEADS: [&str; 6] = ["bullet", "shell", "rocket", "sonic", "blast", "crush"];
 const KINDS: [&str; 5] = ["building", "unit", "power", "feature", "terrain"];
 /// Roles the simulation has code for. A new role is an engine change first.
-pub const ROLES: [&str; 3] = ["harvester", "refinery", "wall"];
+pub const ROLES: [&str; 6] = ["harvester", "refinery", "wall", "capturable", "capturer", "repair_pad"];
 
 /// The numbers every weapon has.
 pub const WEAPON_NUMBERS: [&str; 8] =
@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(r.number("harvester", "capacity"), Some(200));
         assert!(r.entities["battle_tank"].built);
         assert!(!r.entities["hazard"].built);
-        assert_eq!(r.entities["refinery"].roles, ["refinery"]);
+        assert_eq!(r.entities["refinery"].roles, ["refinery", "capturable"]);
         assert!(r.modules["harvesting"].built);
         assert_eq!(r.module_number("placement", "max_gap"), Some(0));
     }
