@@ -11,6 +11,7 @@ use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, ProduceError, QueueEntry};
+use crate::storage;
 use crate::units::{Kind, Rules};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
@@ -59,6 +60,8 @@ pub struct Snapshot {
     pub players: Vec<Player>,
     /// Each player's power, in player order.
     pub power: Vec<Power>,
+    /// Each player's storage cap, in player order.
+    pub storage: Vec<i64>,
     pub entities: Vec<EntityView>,
     pub resource_left: i64,
 }
@@ -94,7 +97,13 @@ impl Game {
         for p in 0..count {
             let s = map.start.get(p).copied().flatten().ok_or(format!("map has no start position {}", p + 1))?;
             let owner = p as u32;
-            state.players.push(Player { id: owner, credits: rules.production.starting_credits, delivered: 0 });
+            state.players.push(Player {
+                id: owner,
+                credits: rules.production.starting_credits,
+                delivered: 0,
+                lost: 0,
+                lost_warned: None,
+            });
             let (y, r, pk) = (rules.kind(yard), rules.kind(refinery), rules.kind(plant));
             let left = 2 * s.x + y.width > map.width;
             let up = 2 * s.y + y.height > map.height;
@@ -163,6 +172,11 @@ impl Game {
         Power::of(&self.state, &self.rules, player)
     }
 
+    /// A player's storage cap now: the most credits deliveries can bring them to.
+    pub fn storage(&self, player: u32) -> i64 {
+        storage::cap(&self.state, &self.rules, player)
+    }
+
     /// Whether `player` may order `kind` built now. Changes nothing.
     pub fn can_build(&self, player: u32, kind: Kind) -> Result<(), ProduceError> {
         production::can_build(&self.state, &self.rules, player, kind)
@@ -180,6 +194,7 @@ impl Game {
             tick: s.tick,
             players: s.players.clone(),
             power: Power::all(s, &self.rules),
+            storage: storage::all(s, &self.rules),
             entities: s
                 .entities
                 .iter()

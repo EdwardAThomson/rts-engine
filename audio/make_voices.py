@@ -62,6 +62,7 @@ SAY = {
     "harvester_no_refinery": "A harvester is idle. There's no refinery.",
     "harvester_attacked": "A harvester is under fire.",
     "hazard_sighted": "Hazard sighted.",
+    "storage_full": "Storage is full. Build more silos.",
     "enemy_wave": "Enemy forces are closing in.",
     "game_won": "The battle is won.",
     "game_lost": "The battle is lost.",

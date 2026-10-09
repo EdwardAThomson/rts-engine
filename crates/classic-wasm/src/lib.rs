@@ -80,6 +80,17 @@ pub unsafe extern "C" fn game_credits(game: *const Game, player: u32) -> i64 {
     unsafe { &*game }.state.players.get(player as usize).map_or(0, |p| p.credits)
 }
 
+/// A player's storage cap: the most credits harvests can bring them to.
+///
+/// # Safety
+/// `game` must be a live handle from `game_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn game_storage(game: *const Game, player: u32) -> i64 {
+    // SAFETY: a live handle from game_new.
+    let game = unsafe { &*game };
+    game.state.players.get(player as usize).map_or(0, |p| game.storage(p.id))
+}
+
 /// # Safety
 /// `game` must be a live handle from `game_new`, and is invalid afterwards.
 #[unsafe(no_mangle)]

@@ -37,6 +37,8 @@ pub struct Settings {
     pub build_order: Vec<(String, usize)>,
     /// Power supply kept above demand, counting the building about to be built.
     pub power_margin: i64,
+    /// Credits, as a percent of its storage cap, at which a silo comes before the build order; 0 means never.
+    pub silo_percent: i64,
     /// Harvesters wanted for each refinery, and the most in all.
     pub harvesters_per_refinery: usize,
     pub max_harvesters: usize,
@@ -99,6 +101,7 @@ impl Settings {
             think_every: 30,
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
             power_margin: 20,
+            silo_percent: 80,
             harvesters_per_refinery: 3,
             max_harvesters: 9,
             factory_queue: 2,

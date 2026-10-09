@@ -15,6 +15,7 @@ pub mod path;
 pub mod placement;
 pub mod power;
 pub mod production;
+pub mod storage;
 pub mod units;
 pub mod world;
 
