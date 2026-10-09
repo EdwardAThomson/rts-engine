@@ -113,7 +113,10 @@ pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> R
 /// makes it, otherwise their primary one, the first built (lowest id).
 fn factory_for(state: &GameState, rules: &Rules, player: u32, ids: &[u32], item: Kind) -> Option<usize> {
     let maker = rules.kinds.get(item.0 as usize)?.built_at?;
-    let fits = |i: &usize| state.entities[*i].owner == player && state.entities[*i].kind == maker;
+    let fits = |i: &usize| {
+        let e = &state.entities[*i];
+        e.owner == player && e.kind == maker && e.selling == 0
+    };
     match ids.first() {
         Some(&id) => state.entities.binary_search_by_key(&id, |e| e.id).ok().filter(fits),
         None => (0..state.entities.len()).find(fits),
@@ -244,6 +247,10 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
     let factors: Vec<i64> = Power::all(state, rules).iter().map(|p| p.factor(rules)).collect();
     for i in 0..state.entities.len() {
         let Some(&head) = state.entities[i].queue.first() else { continue };
+        // A factory being sold stops work; its queue is refunded when it goes.
+        if state.entities[i].selling > 0 {
+            continue;
+        }
         let (factory, owner) = (state.entities[i].id, state.entities[i].owner);
         let Some(p) = state.players.iter().position(|p| p.id == owner) else { continue };
         let k = rules.kind(head.item);

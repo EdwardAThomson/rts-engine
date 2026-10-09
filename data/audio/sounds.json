@@ -7,6 +7,8 @@
     "sfx_explode_small": { "bus": "sfx", "gain_db": -2, "priority": 70, "max_instances": 3, "spatial": true, "jitter_percent": 8 },
     "sfx_explode_large": { "bus": "sfx", "gain_db": 0, "priority": 80, "max_instances": 2, "spatial": true, "jitter_percent": 5 },
     "sfx_build": { "bus": "sfx", "gain_db": -3, "priority": 60, "max_instances": 2, "spatial": true, "jitter_percent": 0 },
+    "sfx_repair": { "bus": "sfx", "gain_db": -6, "priority": 55, "max_instances": 2, "spatial": true, "jitter_percent": 4 },
+    "sfx_sell": { "bus": "sfx", "gain_db": -4, "priority": 60, "max_instances": 2, "spatial": true, "jitter_percent": 0 },
     "ui_ready": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
     "ui_unit_ready": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
     "ui_error": { "bus": "ui", "gain_db": -8, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },

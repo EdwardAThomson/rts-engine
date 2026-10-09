@@ -239,6 +239,10 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
     for i in 0..state.entities.len() {
         let k = rules.kind(state.entities[i].kind);
         let Some(wid) = k.weapon else { continue };
+        // A building being sold no longer fires.
+        if state.entities[i].selling > 0 {
+            continue;
+        }
         let w = rules.weapon(wid);
         // Drop a target that has gone, or a unit that has slipped out of its owner's sight under fog (a building
         // stays a target as its owner last saw it); an attack order ends with it.

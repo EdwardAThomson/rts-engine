@@ -210,6 +210,37 @@ const RECIPES: &[Recipe] = &[
             layer(Square, 70.0, 55.0, 0.07, 0.15).tone(0.2, 0.2),
         ],
     },
+    // Repair under way: a ratchet, three quick metal clicks with a ringing ping on the last.
+    Recipe {
+        id: "sfx_repair",
+        folder: "sfx",
+        seconds: 0.45,
+        takes: 1,
+        drive: 0.3,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.012, 0.7).tone(0.7, 0.6),
+            layer(Square, 1800.0, 1600.0, 0.01, 0.25).tone(0.5, 0.5),
+            layer(Noise, 0.0, 0.0, 0.012, 0.7).tone(0.7, 0.6).at(0.07),
+            layer(Square, 1900.0, 1700.0, 0.01, 0.25).tone(0.5, 0.5).at(0.07),
+            layer(Noise, 0.0, 0.0, 0.015, 0.8).tone(0.7, 0.6).at(0.14),
+            layer(Sine, 2400.0, 2380.0, 0.12, 0.35).at(0.14),
+            layer(Sine, 3600.0, 3570.0, 0.06, 0.12).at(0.14),
+        ],
+    },
+    // A building sold: a falling clank as it comes apart, then two bright falling notes as the credits come in.
+    Recipe {
+        id: "sfx_sell",
+        folder: "sfx",
+        seconds: 0.7,
+        takes: 1,
+        drive: 0.5,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.08, 0.6).tone(0.3, 0.05),
+            layer(Square, 220.0, 90.0, 0.1, 0.25).tone(0.3, 0.1),
+            layer(Sine, 1568.0, 1568.0, 0.08, 0.45).at(0.22),
+            layer(Sine, 1175.0, 1175.0, 0.14, 0.5).at(0.32),
+        ],
+    },
     // Something finished building: two rising notes.
     Recipe {
         id: "ui_ready",

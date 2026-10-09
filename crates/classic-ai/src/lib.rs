@@ -7,7 +7,8 @@
 //! always gets the same orders and two AIs playing each other give the same hash every run.
 //!
 //! This first version is one "normal" opponent with three managers that share a small memory (`Ai`):
-//! - the base (`base.rs`): power, a build order of generic ids and where each building goes;
+//! - the base (`base.rs`): power, a build order of generic ids, where each building goes, and repairing buildings
+//!   once the fighting round them stops;
 //! - production and the economy: harvesters to fill its refineries, then combat units in a weighted mix;
 //! - the army (`army.rs`): gathers new units at a rally point, defends the base, and sends attack waves that grow
 //!   each time.
@@ -41,6 +42,11 @@ pub struct Settings {
     pub power_margin: i64,
     /// Credits, as a percent of its storage cap, at which a silo comes before the build order; 0 means never.
     pub silo_percent: i64,
+    /// A building below this percent of its health is repaired once nothing has hit it for `repair_quiet_ticks`,
+    /// while credits are at least `repair_reserve`; 0 means never.
+    pub repair_percent: i64,
+    pub repair_quiet_ticks: u32,
+    pub repair_reserve: i64,
     /// Harvesters wanted for each refinery, and the most in all.
     pub harvesters_per_refinery: usize,
     pub max_harvesters: usize,
@@ -107,6 +113,9 @@ impl Settings {
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
             power_margin: 20,
             silo_percent: 80,
+            repair_percent: 50,
+            repair_quiet_ticks: 15 * 5,
+            repair_reserve: 200,
             harvesters_per_refinery: 3,
             max_harvesters: 9,
             harvesters_per_carrier: 3,
@@ -202,6 +211,7 @@ impl Ai {
         let view = View::new(game, self.player);
         base::think(self, game, &view, &mut out);
         base::produce(self, game, &view, &mut out);
+        base::repair(self, game, &view, &mut out);
         if self.thinks.is_multiple_of(4) {
             base::harvesters(game, &view, &mut out);
         }

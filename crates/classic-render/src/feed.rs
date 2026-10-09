@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, VecDeque};
 use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
-use classic_sim::world::{Event, IdleReason, MoveEnd};
+use classic_sim::world::{CaptureError, Event, IdleReason, MoveEnd};
 use classic_sim::{Game, Kind, ProduceError};
 
 use crate::lines::{Lines, Moment, Speech, VOICES};
@@ -316,6 +316,31 @@ impl Feed {
                     };
                     self.say(game, id, Some(e.kind), Tone::Warn);
                 }
+                Event::RepairStarted { entity, owner, .. } if owner == local => {
+                    let kind = game.state.entity(entity).map(|e| e.kind);
+                    self.say(game, "repairing", kind, Tone::Info)
+                }
+                Event::RepairStopped { entity, owner, whole: true, .. } if owner == local => {
+                    let kind = game.state.entity(entity).map(|e| e.kind);
+                    self.say(game, "repaired", kind, Tone::Good)
+                }
+                Event::UnitRepaired { unit, owner, .. } if owner == local => {
+                    let kind = game.state.entity(unit).map(|e| e.kind);
+                    self.say(game, "repaired", kind, Tone::Good)
+                }
+                Event::BuildingSold { kind, owner, .. } if owner == local => {
+                    self.say(game, "building_sold", Some(kind), Tone::Info)
+                }
+                Event::Captured { kind, to, .. } if to == local => {
+                    self.say(game, "building_captured", Some(kind), Tone::Good)
+                }
+                Event::Captured { kind, from, .. } if from == local => {
+                    self.say(game, "building_taken", Some(kind), Tone::Bad)
+                }
+                Event::CaptureRefused { player, target, reason: CaptureError::TooHealthy, .. } if player == local => {
+                    let kind = game.state.entity(target).map(|e| e.kind);
+                    self.say(game, "cannot_capture", kind, Tone::Warn)
+                }
                 // Every other event is the sound's and the scene's business, or another player's.
                 Event::BuildingReady { .. }
                 | Event::UnitBuilt { .. }
@@ -343,7 +368,14 @@ impl Feed {
                 | Event::UnitStuck { .. }
                 | Event::HazardSurfaced { .. }
                 | Event::HazardAte { .. }
-                | Event::HazardLeft { .. } => {}
+                | Event::HazardLeft { .. }
+                | Event::RepairStarted { .. }
+                | Event::RepairStopped { .. }
+                | Event::UnitRepaired { .. }
+                | Event::SellStarted { .. }
+                | Event::BuildingSold { .. }
+                | Event::Captured { .. }
+                | Event::CaptureRefused { .. } => {}
             }
         }
         self.seen = game.events.len();

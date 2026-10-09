@@ -67,6 +67,34 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     }
 }
 
+/// Turn repair on for its badly hurt buildings once nothing has hit them for a while (ai-opponent.md, "Repairs
+/// damaged buildings once the area is clear"), while it has credits to spare.
+pub(crate) fn repair(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
+    let s = &ai.settings;
+    let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
+    if s.repair_percent == 0 || credits < s.repair_reserve {
+        return;
+    }
+    let tick = game.state.tick;
+    let ids: Vec<u32> = view
+        .mine
+        .iter()
+        .map(|&i| &game.state.entities[i])
+        .filter(|e| {
+            let k = game.rules.kind(e.kind);
+            k.building
+                && !e.repairing
+                && e.selling == 0
+                && e.health * 100 < k.max_health * s.repair_percent
+                && e.last_attacker.is_none_or(|(_, at)| tick.saturating_sub(at) >= s.repair_quiet_ticks)
+        })
+        .map(|e| e.id)
+        .collect();
+    if !ids.is_empty() {
+        out.push(ids, CommandOrder::Repair { on: true });
+    }
+}
+
 /// The first entry of the build order it has fewer of than it wants and may build now.
 fn next_building(ai: &Ai, game: &Game, view: &View) -> Option<Kind> {
     ai.settings.build_order.iter().find_map(|(id, want)| {

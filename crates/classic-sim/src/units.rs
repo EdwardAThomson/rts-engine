@@ -82,6 +82,14 @@ pub struct KindRules {
     pub carrier: bool,
     /// False for kinds with the `untargetable` role, which nothing may fire on.
     pub targetable: bool,
+    /// Buildings with the `capturable` role can be taken by a `capturer` unit (the capture module).
+    pub capturable: bool,
+    /// Units with the `capturer` role can take an enemy's `capturable` building.
+    pub capturer: bool,
+    /// Buildings with the `repair_pad` role mend their owner's vehicles beside them (the repair module).
+    pub repair_pad: bool,
+    /// A ground vehicle (a unit with `light` or `heavy` armour): what a repair pad mends.
+    pub vehicle: bool,
     /// Column in the damage table, an index into `classic_data::ARMOURS`.
     pub armour: usize,
     /// What it fires, if armed.
@@ -224,6 +232,38 @@ pub struct StorageRules {
     pub warn_every: u32,
 }
 
+/// Repairing buildings for credits, and vehicles at a repair pad (rules-base-building-power.md, "Repairing
+/// buildings"; the `repair` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepairRules {
+    /// A repairing building takes a step every this many ticks at full power; a short player's take longer.
+    pub every: u32,
+    /// A building's step is `max(1, max_health / step_div)` health.
+    pub step_div: i64,
+    /// What mending from nothing to full costs, in percent of the kind's cost; each step pays its share, at least 1
+    /// credit, unless this is 0.
+    pub cost_percent: i64,
+    /// A repair pad takes a step every this many ticks at full power, of `pad_step` health.
+    pub pad_every: u32,
+    pub pad_step: i64,
+}
+
+/// Selling buildings back (rules-base-building-power.md, "Selling"; the `sell` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SellRules {
+    /// Percent of the cost, scaled by health, paid back.
+    pub refund_percent: i64,
+    /// Ticks between the order and the building going, while it stops working but can still be shot.
+    pub ticks: u32,
+}
+
+/// Infantry taking enemy buildings (rules-base-building-power.md, "Capture"; the `capture` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaptureRules {
+    /// A building can be taken only below this percent of its maximum health; 100 means at any health.
+    pub below_percent: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
@@ -247,6 +287,11 @@ pub struct Rules {
     pub hazard: Option<HazardRules>,
     /// Set when a setting pack turns fog of war on.
     pub fog: Option<FogRules>,
+    pub repair: RepairRules,
+    /// Set unless a setting pack turns selling off.
+    pub sell: Option<SellRules>,
+    /// Set unless a setting pack turns capture off.
+    pub capture: Option<CaptureRules>,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -285,6 +330,10 @@ impl Rules {
                 air: role("air"),
                 carrier: role("carrier"),
                 targetable: !role("untargetable"),
+                capturable: building && role("capturable"),
+                capturer: !building && role("capturer"),
+                repair_pad: building && role("repair_pad"),
+                vehicle: !building && matches!(e.armour.as_deref(), Some("light" | "heavy")),
                 power: if building { num("power")? } else { 0 },
                 cost: t.number(id, "cost").unwrap_or(0),
                 build_ticks: t.number(id, "build_ticks").unwrap_or(0),
@@ -387,6 +436,19 @@ impl Rules {
         } else {
             None
         };
+        let repair = RepairRules {
+            every: (module("repair", "every_ticks")? as u32).max(1),
+            step_div: module("repair", "step_div")?.max(1),
+            cost_percent: module("repair", "cost_percent")?,
+            pad_every: (module("repair", "pad_every_ticks")? as u32).max(1),
+            pad_step: module("repair", "pad_step")?.max(1),
+        };
+        let sell = (module("sell", "on")? != 0).then_some(SellRules {
+            refund_percent: module("sell", "refund_percent")?,
+            ticks: (module("sell", "ticks")? as u32).max(1),
+        });
+        let capture = (module("capture", "on")? != 0)
+            .then_some(CaptureRules { below_percent: module("capture", "below_percent")?.max(1) });
         Ok(Rules {
             kinds,
             regrowth: Regrowth {
@@ -433,6 +495,9 @@ impl Rules {
             weapons,
             hazard,
             fog,
+            repair,
+            sell,
+            capture,
             hash: t.hash(),
         })
     }

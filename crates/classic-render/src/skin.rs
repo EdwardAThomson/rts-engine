@@ -13,8 +13,7 @@
 use std::collections::BTreeMap;
 
 use classic_data::json::{self, Value};
-use classic_sim::Game;
-use classic_sim::Terrain;
+use classic_sim::{CommandOrder, Game, Terrain};
 
 use crate::art::decode_png;
 use crate::platform::{Files, Font, Gpu, Rect, SpriteBatch, TexId};
@@ -420,11 +419,55 @@ pub struct Pointer {
     pub hovered: Option<u32>,
     /// The tile under the mouse.
     pub tile: (i32, i32),
+    /// Waiting for a click on a building to sell or repair (Z or C).
+    pub mode: Option<Mode>,
 }
 
-/// The cursor for `p`, by the ids of `plans/rts/ui.md` section 9. Only the orders the player can give today
-/// (select, move, attack, place) get a cursor of their own; harvest, enter, carry, deploy, sell and repair are drawn
-/// and wait for their orders.
+/// A click mode: the next left click on an own building sells it, or turns its repair on or off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Sell,
+    Repair,
+}
+
+impl Mode {
+    pub fn id(self) -> &'static str {
+        match self {
+            Mode::Sell => "sell",
+            Mode::Repair => "repair",
+        }
+    }
+}
+
+/// The orders a right click on `target` gives the selected `units` beyond the plain attack or move: capturers go
+/// into an enemy building that can be taken now, and damaged vehicles go to an own repair pad. Returns those orders
+/// and the units left over for the plain one.
+pub fn special_orders(
+    game: &Game,
+    player: u32,
+    units: &[u32],
+    target: Option<u32>,
+) -> (Vec<(Vec<u32>, CommandOrder)>, Vec<u32>) {
+    let Some(t) = target.and_then(|id| game.state.entity(id)) else { return (Vec::new(), units.to_vec()) };
+    let rules = &game.rules;
+    let kind = |id: u32| game.state.entity(id).map(|e| (e, rules.kind(e.kind)));
+    let (special, rest): (Vec<u32>, Vec<u32>) = if t.owner != player && game.can_capture(player, t.id).is_ok() {
+        units.iter().partition(|&&id| kind(id).is_some_and(|(_, k)| k.capturer))
+    } else if t.owner == player && rules.kind(t.kind).repair_pad && t.selling == 0 {
+        units.iter().partition(|&&id| kind(id).is_some_and(|(e, k)| k.vehicle && e.health < k.max_health))
+    } else {
+        (Vec::new(), units.to_vec())
+    };
+    if special.is_empty() {
+        return (Vec::new(), rest);
+    }
+    let order =
+        if t.owner == player { CommandOrder::RepairAt { pad: t.id } } else { CommandOrder::Capture { target: t.id } };
+    (vec![(special, order)], rest)
+}
+
+/// The cursor for `p`, by the ids of `plans/rts/ui.md` section 9. Carry and deploy are drawn and wait for their
+/// orders.
 pub fn choose_cursor(game: &Game, player: u32, selected: &[u32], p: &Pointer) -> &'static str {
     const SCROLL: [[&str; 3]; 3] = [
         ["scroll_nw", "scroll_n", "scroll_ne"],
@@ -440,14 +483,24 @@ pub fn choose_cursor(game: &Game, player: u32, selected: &[u32], p: &Pointer) ->
     if let Some(ok) = p.placing {
         return if ok { "place_ok" } else { "place_bad" };
     }
+    let hovered = p.hovered.and_then(|id| game.state.entity(id));
+    if let Some(mode) = p.mode {
+        let own_building = hovered.is_some_and(|e| e.owner == player && game.rules.kind(e.kind).building);
+        return if own_building { mode.id() } else { "no" };
+    }
     let units: Vec<_> = selected
         .iter()
         .filter_map(|&id| game.state.entity(id))
         .filter(|e| e.owner == player && !game.rules.kind(e.kind).building)
         .collect();
-    let hovered = p.hovered.and_then(|id| game.state.entity(id));
     if units.is_empty() {
         return if hovered.is_some() { "select" } else { "default" };
+    }
+    let ids: Vec<u32> = units.iter().map(|e| e.id).collect();
+    if let (Some(e), (special, _)) = (hovered, special_orders(game, player, &ids, p.hovered))
+        && !special.is_empty()
+    {
+        return if e.owner == player { "repair_pad" } else { "enter" };
     }
     match hovered {
         Some(e) if e.owner != player => {

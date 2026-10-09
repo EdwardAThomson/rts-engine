@@ -8,6 +8,7 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::rng::random_int;
 
 use crate::air::{self, Ferry};
+use crate::capture;
 use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::hazard::{self, Hazards, LeftReason};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
@@ -16,6 +17,8 @@ use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
+use crate::repair;
+use crate::sell;
 use crate::storage;
 use crate::units::{Kind, Rules, WeaponId};
 use crate::vision::{self, Vision, VisionCanon};
@@ -29,6 +32,10 @@ pub enum Order {
     Harvest,
     /// Going after one target the player chose, until it is destroyed.
     Attack,
+    /// A capturer on its way to take the enemy building in `goal`.
+    Capture,
+    /// A vehicle on its way to, or waiting at, the repair pad in `goal`.
+    Repair,
 }
 
 /// A harvester's step in its loop.
@@ -49,6 +56,8 @@ impl Order {
             Order::Move => "move",
             Order::Harvest => "harvest",
             Order::Attack => "attack",
+            Order::Capture => "capture",
+            Order::Repair => "repair",
         }
     }
 }
@@ -119,6 +128,15 @@ pub struct Entity {
     pub carried_by: Option<u32>,
     /// Carriers only: the lift it is doing.
     pub ferry: Option<Ferry>,
+    /// What a capture or repair order heads for: the building to take, or the repair pad. A repair pad's is the
+    /// vehicle it is mending.
+    pub goal: Option<u32>,
+    /// Buildings only: repair is on (the `repair` module).
+    pub repairing: bool,
+    /// Power-scaled ticks towards the next repair step, in hundredths: a repairing building's, or a repair pad's.
+    pub repair_due: i64,
+    /// Buildings only: ticks left until a building being sold goes; 0 when not being sold.
+    pub selling: u32,
 }
 
 impl Entity {
@@ -157,6 +175,8 @@ impl Canon for EntityCanon<'_> {
             .opt("carriedBy", e.carried_by.as_ref())
             .opt("facing", (e.facing != 0).then_some(&e.facing))
             .opt("ferry", e.ferry.as_ref())
+            // Repair, sell and capture fields are written only when set, so a game without them hashes as before.
+            .opt("goal", e.goal.as_ref())
             .field("health", &e.health)
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
@@ -168,7 +188,10 @@ impl Canon for EntityCanon<'_> {
             // Written only while something is queued, so a game with no production hashes as it did before.
             .opt("queue", (!queue.is_empty()).then_some(&queue))
             .opt("reload", (e.reload != 0).then_some(&e.reload))
+            .opt("repairDue", (e.repair_due != 0).then_some(&e.repair_due))
+            .opt("repairing", e.repairing.then_some(&true))
             .opt("repathFails", (e.repath_fails != 0).then_some(&e.repath_fails))
+            .opt("selling", (e.selling != 0).then_some(&e.selling))
             .opt("target", e.target.as_ref())
             .opt("task", e.task.as_ref())
             .field("type", self.1[e.kind.0 as usize].as_str())
@@ -282,6 +305,20 @@ pub enum CommandOrder {
     Cancel {
         kind: Kind,
     },
+    /// Turn repair on or off for the buildings in `ids`.
+    Repair {
+        on: bool,
+    },
+    /// Sell the buildings in `ids` back for part of their cost.
+    Sell,
+    /// Send the capturers in `ids` to take an enemy building.
+    Capture {
+        target: u32,
+    },
+    /// Send the damaged vehicles in `ids` to an own repair pad.
+    RepairAt {
+        pad: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -305,6 +342,30 @@ impl MoveEnd {
         match self {
             MoveEnd::Arrived => "arrived",
             MoveEnd::Blocked => "blocked",
+        }
+    }
+}
+
+/// Why a capture order was refused or ended without a capture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureError {
+    /// The rules have capture off.
+    Off,
+    /// Not an enemy building that can be taken (walls, turrets and the like never can).
+    NotCapturable,
+    /// Not hurt enough: at or above the capture module's `below_percent` of its maximum health.
+    TooHealthy,
+    /// No capturer among the units ordered.
+    NoCapturer,
+}
+
+impl CaptureError {
+    pub fn id(self) -> &'static str {
+        match self {
+            CaptureError::Off => "off",
+            CaptureError::NotCapturable => "not_capturable",
+            CaptureError::TooHealthy => "too_healthy",
+            CaptureError::NoCapturer => "no_capturer",
         }
     }
 }
@@ -532,6 +593,59 @@ pub enum Event {
         x: i32,
         y: i32,
     },
+    /// Repair was turned on for a damaged building.
+    RepairStarted {
+        tick: u32,
+        entity: u32,
+        owner: u32,
+    },
+    /// Repair went off: the building is whole, or its owner turned it off, sold it or lost it to a capture.
+    RepairStopped {
+        tick: u32,
+        entity: u32,
+        owner: u32,
+        whole: bool,
+    },
+    /// A repair pad mended a vehicle to full health.
+    UnitRepaired {
+        tick: u32,
+        unit: u32,
+        pad: u32,
+        owner: u32,
+    },
+    /// A building's owner ordered it sold; it goes in `sell.ticks`.
+    SellStarted {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
+    },
+    /// A building was sold and removed; `refund` includes what its queue had paid.
+    BuildingSold {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
+        refund: i64,
+        x: i64,
+        y: i64,
+    },
+    /// A capturer took a building: the capturer is gone, the building is `to`'s.
+    Captured {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        from: u32,
+        to: u32,
+        by: u32,
+    },
+    /// A capture order was refused, or a capturer gave up because its target healed.
+    CaptureRefused {
+        tick: u32,
+        player: u32,
+        target: u32,
+        reason: CaptureError,
+    },
 }
 
 impl Event {
@@ -567,6 +681,13 @@ impl Event {
             Event::CarrierPickup { .. } => "carrier_pickup",
             Event::CarrierDropoff { .. } => "carrier_dropoff",
             Event::CarrierLostCargo { .. } => "carrier_lost_cargo",
+            Event::RepairStarted { .. } => "repair_started",
+            Event::RepairStopped { .. } => "repair_stopped",
+            Event::UnitRepaired { .. } => "unit_repaired",
+            Event::SellStarted { .. } => "sell_started",
+            Event::BuildingSold { .. } => "building_sold",
+            Event::Captured { .. } => "captured",
+            Event::CaptureRefused { .. } => "capture_refused",
         }
     }
 
@@ -602,6 +723,13 @@ impl Event {
             | Event::CarrierPickup { tick, .. }
             | Event::CarrierDropoff { tick, .. }
             | Event::CarrierLostCargo { tick, .. } => tick,
+            Event::RepairStarted { tick, .. }
+            | Event::RepairStopped { tick, .. }
+            | Event::UnitRepaired { tick, .. }
+            | Event::SellStarted { tick, .. }
+            | Event::BuildingSold { tick, .. }
+            | Event::Captured { tick, .. }
+            | Event::CaptureRefused { tick, .. } => tick,
         }
     }
 }
@@ -639,6 +767,10 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         altitude: 0,
         carried_by: None,
         ferry: None,
+        goal: None,
+        repairing: false,
+        repair_due: 0,
+        selling: 0,
     });
     id
 }
@@ -728,6 +860,12 @@ pub fn apply_command(
     match cmd.order {
         CommandOrder::Produce { kind } => return production::produce(state, rules, cmd.player, &cmd.ids, kind, events),
         CommandOrder::Cancel { kind } => return production::cancel(state, rules, cmd.player, &cmd.ids, kind, events),
+        CommandOrder::Repair { on } => return repair::order(state, rules, cmd.player, &cmd.ids, on, events),
+        CommandOrder::Sell => return sell::order(state, rules, cmd.player, &cmd.ids, events),
+        CommandOrder::Capture { target } => {
+            return capture::order(pf, state, rules, cmd.player, &cmd.ids, target, events);
+        }
+        CommandOrder::RepairAt { pad } => return repair::send(pf, state, rules, cmd.player, &cmd.ids, pad),
         _ => {}
     }
     if let CommandOrder::Place { kind, x, y } = cmd.order {
@@ -776,13 +914,16 @@ pub fn apply_command(
                 e.path = movement::route(pf, e, Tile { x, y });
                 e.order = Order::Move;
                 e.target = None;
+                e.goal = None;
             }
             CommandOrder::Harvest if rules.kind(e.kind).harvester.is_some() => {
+                e.goal = None;
                 e.order = Order::Harvest;
                 e.task = Some(Task::Seek);
                 movement::halt(e);
             }
             CommandOrder::Attack { .. } if k.weapon.is_some() && attack != Some(e.id) => {
+                e.goal = None;
                 e.order = Order::Attack;
                 e.target = attack;
                 movement::stop(rules, e);
@@ -791,7 +932,11 @@ pub fn apply_command(
             CommandOrder::Harvest
             | CommandOrder::Place { .. }
             | CommandOrder::Produce { .. }
-            | CommandOrder::Cancel { .. } => {}
+            | CommandOrder::Cancel { .. }
+            | CommandOrder::Repair { .. }
+            | CommandOrder::Sell
+            | CommandOrder::Capture { .. }
+            | CommandOrder::RepairAt { .. } => {}
         }
     }
 }
@@ -809,8 +954,8 @@ pub fn step(
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat, movement, aircraft, crush (not built yet), the hazard, economy, world; then each player's
-    // sight.
+    // commands, combat, movement, aircraft, crush (not built yet), the hazard, capture, repair, selling, economy, world;
+    // then each player's sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
@@ -819,6 +964,9 @@ pub fn step(
     movement::tick(pf, state, rules, events);
     air::tick(map, pf, state, rules, events);
     hazard::tick(map, hazard_pf, state, rules, events);
+    capture::tick(pf, state, rules, events);
+    repair::tick(pf, state, rules, events);
+    sell::tick(pf, state, rules, events);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
     vision::tick(state, rules);
