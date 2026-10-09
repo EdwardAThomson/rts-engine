@@ -7,6 +7,7 @@ use std::sync::Arc;
 use rts_core::hash::{Canon, CanonHasher};
 use rts_core::rng::random_int;
 
+use crate::air::{self, Ferry};
 use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::hazard::{self, Hazards, LeftReason};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
@@ -112,12 +113,30 @@ pub struct Entity {
     pub yield_at: Option<u32>,
     /// Noise made lately on open ground, halved each hazard scan window; stays 0 while the hazard is off.
     pub noise: i64,
+    /// Aircraft only: height above the ground in sub-tile units, 0 when landed.
+    pub altitude: i64,
+    /// The carrier holding this unit up, from the moment it is picked up until it is set down.
+    pub carried_by: Option<u32>,
+    /// Carriers only: the lift it is doing.
+    pub ferry: Option<Ferry>,
 }
 
 impl Entity {
     pub fn tile(&self) -> Tile {
         Tile { x: self.x.div_euclid(TILE) as i32, y: self.y.div_euclid(TILE) as i32 }
     }
+
+    /// Off the ground: an aircraft not fully landed, or a unit being carried. Only weapons that hit air can aim at
+    /// it, and only a burst in the air can splash it.
+    pub fn airborne(&self) -> bool {
+        self.altitude > 0 || self.carried_by.is_some()
+    }
+}
+
+/// Whether `e` is a ground unit taking part in ground movement: not a building, not an aircraft, not carried.
+pub fn on_ground(rules: &Rules, e: &Entity) -> bool {
+    let k = rules.kind(e.kind);
+    !k.building && !k.air && e.carried_by.is_none()
 }
 
 /// An entity as the state hash writes it, with its kind spelt as the generic id.
@@ -130,10 +149,14 @@ impl Canon for EntityCanon<'_> {
         let attacker = e.last_attacker.map(|(id, _)| id);
         let attacked = e.last_attacker.map(|(_, tick)| tick);
         // Combat fields are written only when set, so an entity that never fought hashes as it did before combat.
+        // Air fields are written only when set too, so a game with no aircraft hashes as it did before them.
         w.object()
+            .opt("altitude", (e.altitude != 0).then_some(&e.altitude))
             .opt("attackedAt", attacked.as_ref())
             .opt("cargo", e.cargo.as_ref())
+            .opt("carriedBy", e.carried_by.as_ref())
             .opt("facing", (e.facing != 0).then_some(&e.facing))
+            .opt("ferry", e.ferry.as_ref())
             .field("health", &e.health)
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
@@ -485,6 +508,30 @@ pub enum Event {
         x: i64,
         y: i64,
     },
+    /// A carrier took hold of a unit to lift it to (to_x, to_y), a tile.
+    CarrierPickup {
+        tick: u32,
+        carrier: u32,
+        unit: u32,
+        to_x: i32,
+        to_y: i32,
+    },
+    /// A carrier set a unit down on tile (x, y).
+    CarrierDropoff {
+        tick: u32,
+        carrier: u32,
+        unit: u32,
+        x: i32,
+        y: i32,
+    },
+    /// A carrier was destroyed with a unit aboard, which fell to tile (x, y) and was hurt.
+    CarrierLostCargo {
+        tick: u32,
+        carrier: u32,
+        unit: u32,
+        x: i32,
+        y: i32,
+    },
 }
 
 impl Event {
@@ -517,6 +564,9 @@ impl Event {
             Event::HazardSurfaced { .. } => "hazard_surfaced",
             Event::HazardAte { .. } => "hazard_ate",
             Event::HazardLeft { .. } => "hazard_left",
+            Event::CarrierPickup { .. } => "carrier_pickup",
+            Event::CarrierDropoff { .. } => "carrier_dropoff",
+            Event::CarrierLostCargo { .. } => "carrier_lost_cargo",
         }
     }
 
@@ -548,7 +598,10 @@ impl Event {
             | Event::HazardSpawned { tick, .. }
             | Event::HazardSurfaced { tick, .. }
             | Event::HazardAte { tick, .. }
-            | Event::HazardLeft { tick, .. } => tick,
+            | Event::HazardLeft { tick, .. }
+            | Event::CarrierPickup { tick, .. }
+            | Event::CarrierDropoff { tick, .. }
+            | Event::CarrierLostCargo { tick, .. } => tick,
         }
     }
 }
@@ -583,6 +636,9 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         yield_for: None,
         yield_at: None,
         noise: 0,
+        altitude: 0,
+        carried_by: None,
+        ferry: None,
     });
     id
 }
@@ -613,7 +669,7 @@ fn dock_for(
     let taken = |d: Tile| {
         state.entities.iter().enumerate().any(|(j, e)| {
             j != me
-                && !rules.kind(e.kind).building
+                && on_ground(rules, e)
                 && (e.tile() == d
                     || movement::step_tile(e) == Some(d)
                     || (e.task == Some(Task::ToRefinery) && e.path.back() == Some(&d)))
@@ -651,10 +707,10 @@ pub(crate) fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeq
     pf.find(from.x, from.y, to.x, to.y).map(|p| p.tiles.into()).unwrap_or_default()
 }
 
-/// Units whose remaining path now crosses a blocked tile find a new way to the same end, in id order.
-fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState) {
+/// Ground units whose remaining path now crosses a blocked tile find a new way to the same end, in id order.
+fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules) {
     for e in &mut state.entities {
-        if e.path.iter().any(|t| !pf.passable(t.x, t.y)) {
+        if on_ground(rules, e) && e.path.iter().any(|t| !pf.passable(t.x, t.y)) {
             let end = *e.path.back().expect("a path that crosses something is not empty");
             e.path = movement::route(pf, e, end);
         }
@@ -682,7 +738,7 @@ pub fn apply_command(
                 production::take_ready(state, cmd.player, kind);
                 let entity = spawn(state, rules, kind, cmd.player, x, y);
                 occupy(pf, rules, state.entities.last().expect("just spawned"), true);
-                reroute_around_new_building(pf, state);
+                reroute_around_new_building(pf, state, rules);
                 events.push(Event::BuildingPlaced { tick, entity, kind, owner: cmd.player, x, y });
             }
             Err(reason) => events.push(Event::PlacementRejected { tick, player: cmd.player, kind, x, y, reason }),
@@ -701,10 +757,21 @@ pub fn apply_command(
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
         let e = &mut state.entities[i];
-        if e.owner != cmd.player || rules.kind(e.kind).building {
+        // A unit being carried takes no orders until it is set down.
+        if e.owner != cmd.player || rules.kind(e.kind).building || e.carried_by.is_some() {
             continue;
         }
+        let k = rules.kind(e.kind);
         match cmd.order {
+            // A carrier with a unit aboard finishes the lift first.
+            CommandOrder::Move { .. } if air::lifting(e) => {}
+            CommandOrder::Move { x, y } if k.air => {
+                // An aircraft flies straight there; a carrier on its way to a pickup gives the job up.
+                e.ferry = None;
+                e.path = [Tile { x: x.clamp(0, map.width - 1), y: y.clamp(0, map.height - 1) }].into();
+                e.order = Order::Move;
+                e.target = None;
+            }
             CommandOrder::Move { x, y } => {
                 e.path = movement::route(pf, e, Tile { x, y });
                 e.order = Order::Move;
@@ -715,10 +782,10 @@ pub fn apply_command(
                 e.task = Some(Task::Seek);
                 movement::halt(e);
             }
-            CommandOrder::Attack { .. } if rules.kind(e.kind).weapon.is_some() && attack != Some(e.id) => {
+            CommandOrder::Attack { .. } if k.weapon.is_some() && attack != Some(e.id) => {
                 e.order = Order::Attack;
                 e.target = attack;
-                movement::halt(e);
+                movement::stop(rules, e);
             }
             CommandOrder::Attack { .. } => {}
             CommandOrder::Harvest
@@ -742,13 +809,15 @@ pub fn step(
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat, movement, crush (not built yet), the hazard, economy, world; then each player's sight.
+    // commands, combat, movement, aircraft, crush (not built yet), the hazard, economy, world; then each player's
+    // sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
     combat::tick(pf, state, rules, events);
     movement::tick(pf, state, rules, events);
+    air::tick(map, pf, state, rules, events);
     hazard::tick(map, hazard_pf, state, rules, events);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
@@ -771,7 +840,8 @@ fn report_power(state: &GameState, rules: &Rules, before: &[Power], events: &mut
 fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     for i in 0..state.entities.len() {
         let e = &state.entities[i];
-        if rules.kind(e.kind).harvester.is_some() && e.order == Order::Harvest {
+        // A harvester in a carrier's hold has its loop on hold too.
+        if rules.kind(e.kind).harvester.is_some() && e.order == Order::Harvest && e.carried_by.is_none() {
             harvest(map, pf, state, rules, i, events);
         }
     }
@@ -883,7 +953,7 @@ fn nearest_resource(
     from: Tile,
 ) -> Option<Tile> {
     let mut held = vec![false; state.resource.len()];
-    for e in state.entities.iter().filter(|e| e.id != me && !rules.kind(e.kind).building) {
+    for e in state.entities.iter().filter(|e| e.id != me && on_ground(rules, e)) {
         for t in std::iter::once(e.tile()).chain(movement::step_tile(e)) {
             if map.in_bounds(t.x, t.y) {
                 held[map.index(t.x, t.y)] = true;

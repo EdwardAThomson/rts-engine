@@ -32,6 +32,9 @@
     "hit",
     "move_ended",
     "unit_yielded",
-    "unit_stuck"
+    "unit_stuck",
+    "carrier_pickup",
+    "carrier_dropoff",
+    "carrier_lost_cargo"
   ]
 }

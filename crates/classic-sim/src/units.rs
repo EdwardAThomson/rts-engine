@@ -35,6 +35,10 @@ pub struct WeaponRules {
     pub splash: i64,
     /// Doesn't fire while its owner is short of power.
     pub needs_power: bool,
+    /// May aim at aircraft in flight.
+    pub hits_air: bool,
+    /// May aim at anything on the ground, landed aircraft included.
+    pub hits_ground: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +76,12 @@ pub struct KindRules {
     pub refinery: bool,
     /// Kinds with the `wall` role block movement but don't extend their owner's building area.
     pub wall: bool,
+    /// Kinds with the `air` role fly (the air module): straight over any tile, with no ground collision.
+    pub air: bool,
+    /// Kinds with the `carrier` role lift their owner's harvesters on long trips.
+    pub carrier: bool,
+    /// False for kinds with the `untargetable` role, which nothing may fire on.
+    pub targetable: bool,
     /// Column in the damage table, an index into `classic_data::ARMOURS`.
     pub armour: usize,
     /// What it fires, if armed.
@@ -175,6 +185,26 @@ pub struct HazardRules {
     pub firing_noise: i64,
 }
 
+/// Aircraft (rules-movement.md section 9; rules-economy-production.md section 13 for the carrier).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AirRules {
+    /// The height an aircraft flies at, in sub-tile units; 0 is landed. Only the renderer draws it, but an aircraft
+    /// moves and fires only once it is all the way up.
+    pub cruise_altitude: i64,
+    /// Height gained or lost each tick taking off or landing.
+    pub climb: i64,
+    /// A harvester whose way still to go is longer than this many tiles is offered a lift.
+    pub ferry_min_path: usize,
+    /// Ticks a carrier hovers to pick a unit up, and to set one down.
+    pub pickup_ticks: u32,
+    pub drop_ticks: u32,
+    /// How far from a taken drop tile a carrier may set down instead, and how often it looks again if it can't.
+    pub drop_rings: i32,
+    pub drop_retry_ticks: u32,
+    /// Percent of its full health a unit loses when its carrier is destroyed under it.
+    pub fall_damage_percent: i64,
+}
+
 /// Fog of war (rules-world.md, sections 2 and 3; the `fog` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FogRules {
@@ -210,6 +240,7 @@ pub struct Rules {
     pub storage: StorageRules,
     pub production: ProductionRules,
     pub movement: MovementRules,
+    pub air: AirRules,
     pub weapons: Vec<WeaponRules>,
     pub combat: CombatRules,
     /// Set when a setting pack turns the hazard on.
@@ -251,6 +282,9 @@ impl Rules {
                 harvester,
                 refinery: role("refinery"),
                 wall: role("wall"),
+                air: role("air"),
+                carrier: role("carrier"),
+                targetable: !role("untargetable"),
                 power: if building { num("power")? } else { 0 },
                 cost: t.number(id, "cost").unwrap_or(0),
                 build_ticks: t.number(id, "build_ticks").unwrap_or(0),
@@ -299,6 +333,8 @@ impl Rules {
                 scatter: n("scatter")?,
                 splash: n("splash")?,
                 needs_power: n("needs_power")? != 0,
+                hits_air: n("hits_air")? != 0,
+                hits_ground: n("hits_ground")? != 0,
             });
         }
         let weapon_index =
@@ -378,6 +414,16 @@ impl Rules {
                 yield_expires: module("movement", "yield_expires")? as u32,
                 close_enough_rings: module("movement", "close_enough_rings")? as i32,
                 nodes_local: module("movement", "nodes_local")? as u32,
+            },
+            air: AirRules {
+                cruise_altitude: module("air", "cruise_altitude")?,
+                climb: module("air", "climb")?.max(1),
+                ferry_min_path: module("air", "ferry_min_path")? as usize,
+                pickup_ticks: (module("air", "pickup_ticks")? as u32).max(1),
+                drop_ticks: (module("air", "drop_ticks")? as u32).max(1),
+                drop_rings: module("air", "drop_rings")? as i32,
+                drop_retry_ticks: (module("air", "drop_retry_ticks")? as u32).max(1),
+                fall_damage_percent: module("air", "fall_damage_percent")?,
             },
             combat: CombatRules {
                 table,

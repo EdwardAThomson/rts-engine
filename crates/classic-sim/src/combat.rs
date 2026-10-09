@@ -72,6 +72,9 @@ pub struct Projectile {
     pub y: i64,
     pub to_x: i64,
     pub to_y: i64,
+    /// Fired at an aircraft in flight: it follows its target (homing), and its burst splashes only what is in the
+    /// air.
+    pub air: bool,
 }
 
 /// A projectile as the state hash writes it, with its weapon spelt as the generic id.
@@ -81,6 +84,7 @@ impl Canon for ProjectileCanon<'_> {
     fn canon(&self, w: &mut CanonHasher) {
         let p = self.0;
         w.object()
+            .opt("air", p.air.then_some(&true))
             .field("firer", &p.firer)
             .field("id", &p.id)
             .field("owner", &p.owner)
@@ -128,10 +132,18 @@ fn on_body(rules: &Rules, e: &Entity, x: i64, y: i64) -> bool {
     }
 }
 
-/// Whether `e`'s weapon could ever hurt `t`: an enemy its warhead affects. Walls are never fair game unless ordered.
+/// Whether weapon `w` may aim at `t` where it is now: something targetable, not being carried, in the air for a
+/// weapon that hits air or on the ground for one that hits ground.
+fn aims_at(rules: &Rules, w: WeaponId, t: &Entity) -> bool {
+    let wr = rules.weapon(w);
+    rules.kind(t.kind).targetable && t.carried_by.is_none() && if t.airborne() { wr.hits_air } else { wr.hits_ground }
+}
+
+/// Whether `e`'s weapon could hurt `t` now: an enemy its weapon can aim at and its warhead affects. Walls are never
+/// fair game unless ordered.
 fn can_hit(rules: &Rules, e: &Entity, t: &Entity) -> bool {
     let Some(w) = rules.kind(e.kind).weapon else { return false };
-    t.owner != e.owner && table(rules, w, t) > 0
+    t.owner != e.owner && aims_at(rules, w, t) && table(rules, w, t) > 0
 }
 
 /// Pick the best target in sight (rules-combat.md, "Target selection and auto-targeting").
@@ -190,6 +202,10 @@ fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> O
     // before.
     let off_grid = !pf.passable(here.x, here.y);
     let w_rules = rules.weapon(rules.kind(from.kind).weapon?);
+    // An aircraft flies straight at it.
+    if rules.kind(from.kind).air {
+        return Some(t);
+    }
     let artillery = w_rules.min_range > 0 && !off_grid;
     if !artillery && !k.building {
         if off_grid || pf.connected((here.x, here.y), (t.x, t.y)) {
@@ -227,16 +243,18 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         // Drop a target that has gone, or a unit that has slipped out of its owner's sight under fog (a building
         // stays a target as its owner last saw it); an attack order ends with it.
         let owner = state.entities[i].owner;
+        // A target that has taken off out of reach of a ground-only weapon, landed under an air-only one, or been
+        // picked up by a carrier is dropped too.
         let target = state.entities[i].target.and_then(|id| index(state, id)).filter(|&t| {
             let t = &state.entities[t];
-            rules.kind(t.kind).building || vision::visible(state, rules, owner, t)
+            aims_at(rules, wid, t) && (rules.kind(t.kind).building || vision::visible(state, rules, owner, t))
         });
         if target.is_none() {
             let e = &mut state.entities[i];
             e.target = None;
             if e.order == Order::Attack {
                 e.order = Order::Idle;
-                movement::halt(e);
+                movement::stop(rules, e);
             }
         }
         // 1. Scan, unless moving under orders or attacking a target the player chose.
@@ -259,14 +277,15 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         // An attack order closes in until the target is in range, then stands.
         if state.entities[i].order == Order::Attack && !k.building {
             if in_range {
-                movement::halt(&mut state.entities[i]);
+                movement::stop(rules, &mut state.entities[i]);
             } else if let Some(goal) = approach(pf, rules, &state.entities[i], &state.entities[t])
                 // Set off at once, then follow a moving target on scan ticks.
                 && (state.entities[i].path.is_empty() || (tick + state.entities[i].id).is_multiple_of(rules.combat.scan_every))
                 && state.entities[i].path.back() != Some(&goal)
                 && state.entities[i].tile() != goal
             {
-                state.entities[i].path = movement::route(pf, &state.entities[i], goal);
+                let e = &state.entities[i];
+                state.entities[i].path = if k.air { [goal].into() } else { movement::route(pf, e, goal) };
             }
         }
         // 2. Turn towards it.
@@ -274,9 +293,10 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         let e = &mut state.entities[i];
         e.facing = turn(e.facing, want, k.turn_rate);
         e.reload = e.reload.saturating_sub(1);
-        // 3. Fire when in range, on target, reloaded and powered.
+        // 3. Fire when in range, on target, reloaded and powered; an aircraft only once it is all the way up.
         let powered = !w.needs_power || !state.players.iter().position(|p| p.id == e.owner).is_some_and(|p| short[p]);
-        if !in_range || facing_gap(e.facing, want) > 8 || e.reload > 0 || !powered {
+        let up = !k.air || e.altitude >= rules.air.cruise_altitude;
+        if !in_range || facing_gap(e.facing, want) > 8 || e.reload > 0 || !powered || !up {
             continue;
         }
         e.reload = w.reload;
@@ -290,8 +310,10 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             damage.push(Damage { target: tid, attacker: unit, owner, weapon: wid, band: 100 });
             continue;
         }
+        // A shot at an aircraft homes in on it (step 4), so it needs no aim error.
+        let air = state.entities[t].airborne();
         let (mut ox, mut oy) = (0, 0);
-        if w.scatter > 0 {
+        if w.scatter > 0 && !air {
             for _ in 0..4 {
                 let span = (2 * w.scatter + 1) as u32;
                 let x = random_int(&mut state.rng, span) as i64 - w.scatter;
@@ -315,6 +337,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             y: ty,
             to_x,
             to_y,
+            air,
         });
         events.push(Event::ProjectileSpawned { tick, projectile: id, weapon: wid, x: tx, y: ty, to_x, to_y });
     }
@@ -323,6 +346,12 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
     let mut flying = Vec::with_capacity(state.projectiles.len());
     for mut p in std::mem::take(&mut state.projectiles) {
         let w = rules.weapon(p.weapon);
+        // Homing: a shot at an aircraft re-aims at it each tick while it is still in the air.
+        if p.air
+            && let Some(t) = index(state, p.target).map(|t| &state.entities[t]).filter(|t| t.airborne())
+        {
+            (p.to_x, p.to_y) = (t.x, t.y);
+        }
         let (dx, dy) = (p.to_x - p.x, p.to_y - p.y);
         let left = isqrt((dx * dx + dy * dy) as u64) as i64;
         if left > w.speed {
@@ -368,6 +397,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
                 y: e.y,
                 to_x: e.x,
                 to_y: e.y,
+                air: false,
             };
             splash(state, rules, &p, None, &mut blasts);
         }
@@ -386,7 +416,8 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
 /// A projectile bursts at its aim point: a full hit on its target if the burst lands on its body, and splash on
 /// everyone else around.
 fn burst(state: &GameState, rules: &Rules, p: &Projectile, out: &mut Vec<Damage>) {
-    let direct = index(state, p.target).filter(|&t| on_body(rules, &state.entities[t], p.to_x, p.to_y));
+    let direct = index(state, p.target)
+        .filter(|&t| state.entities[t].airborne() == p.air && on_body(rules, &state.entities[t], p.to_x, p.to_y));
     if let Some(t) = direct {
         let target = state.entities[t].id;
         out.push(Damage { target, attacker: p.firer, owner: p.owner, weapon: p.weapon, band: 100 });
@@ -395,7 +426,9 @@ fn burst(state: &GameState, rules: &Rules, p: &Projectile, out: &mut Vec<Damage>
 }
 
 /// Splash in two bands round (to_x, to_y): full within half the radius, half within all of it. It hurts both
-/// sides (its own at `own_splash_percent`, applied later) but never the firer, nor the one already hit directly.
+/// sides (its own at `own_splash_percent`, applied later) but never the firer, nor the one already hit directly. A
+/// burst in the air splashes only aircraft in flight, one on the ground (death blasts included) only what is on
+/// the ground; neither reaches a unit being carried or one that can't be targeted.
 fn splash(state: &GameState, rules: &Rules, p: &Projectile, skip: Option<u32>, out: &mut Vec<Damage>) {
     let r = rules.weapon(p.weapon).splash;
     if r == 0 {
@@ -403,6 +436,9 @@ fn splash(state: &GameState, rules: &Rules, p: &Projectile, skip: Option<u32>, o
     }
     for e in &state.entities {
         if e.id == p.firer || Some(e.id) == skip {
+            continue;
+        }
+        if e.airborne() != p.air || e.carried_by.is_some() || !rules.kind(e.kind).targetable {
             continue;
         }
         let d2 = dist2(e, p.to_x, p.to_y);

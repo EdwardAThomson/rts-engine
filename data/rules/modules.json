@@ -55,7 +55,7 @@
         "shell_vs_heavy": { "default": 100, "min": 0, "max": 400 },
         "shell_vs_building": { "default": 75, "min": 0, "max": 400 },
         "shell_vs_wall": { "default": 60, "min": 0, "max": 400 },
-        "shell_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "shell_vs_air": { "default": 75, "min": 0, "max": 400 },
         "rocket_vs_infantry": { "default": 40, "min": 0, "max": 400 },
         "rocket_vs_light": { "default": 100, "min": 0, "max": 400 },
         "rocket_vs_heavy": { "default": 125, "min": 0, "max": 400 },
@@ -67,13 +67,13 @@
         "sonic_vs_heavy": { "default": 100, "min": 0, "max": 400 },
         "sonic_vs_building": { "default": 60, "min": 0, "max": 400 },
         "sonic_vs_wall": { "default": 40, "min": 0, "max": 400 },
-        "sonic_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "sonic_vs_air": { "default": 75, "min": 0, "max": 400 },
         "blast_vs_infantry": { "default": 100, "min": 0, "max": 400 },
         "blast_vs_light": { "default": 100, "min": 0, "max": 400 },
         "blast_vs_heavy": { "default": 100, "min": 0, "max": 400 },
         "blast_vs_building": { "default": 100, "min": 0, "max": 400 },
         "blast_vs_wall": { "default": 100, "min": 0, "max": 400 },
-        "blast_vs_air": { "default": 0, "min": 0, "max": 400 },
+        "blast_vs_air": { "default": 50, "min": 0, "max": 400 },
         "crush_vs_infantry": { "default": 100, "min": 0, "max": 400 },
         "crush_vs_light": { "default": 0, "min": 0, "max": 400 },
         "crush_vs_heavy": { "default": 0, "min": 0, "max": 400 },
@@ -82,6 +82,19 @@
         "crush_vs_air": { "default": 0, "min": 0, "max": 400 },
         "own_splash_percent": { "default": 50, "min": 0, "max": 100 },
         "scan_every_ticks": { "default": 8, "min": 1, "max": 60 }
+      }
+    },
+    "air": {
+      "status": "built",
+      "numbers": {
+        "cruise_altitude": { "default": 256, "min": 1, "max": 1024 },
+        "climb": { "default": 32, "min": 1, "max": 1024 },
+        "ferry_min_path": { "default": 12, "min": 1, "max": 256 },
+        "pickup_ticks": { "default": 10, "min": 1, "max": 300 },
+        "drop_ticks": { "default": 15, "min": 1, "max": 300 },
+        "drop_rings": { "default": 3, "min": 0, "max": 8 },
+        "drop_retry_ticks": { "default": 15, "min": 1, "max": 300 },
+        "fall_damage_percent": { "default": 50, "min": 0, "max": 100 }
       }
     },
     "fog": {

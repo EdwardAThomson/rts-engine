@@ -328,6 +328,9 @@ impl Feed {
                 | Event::StorageFull { .. }
                 | Event::CreditsLost { .. }
                 | Event::Regrowth { .. }
+                | Event::CarrierPickup { .. }
+                | Event::CarrierDropoff { .. }
+                | Event::CarrierLostCargo { .. }
                 | Event::BuildingPlaced { .. }
                 | Event::ProductionQueued { .. }
                 | Event::ProductionCancelled { .. }

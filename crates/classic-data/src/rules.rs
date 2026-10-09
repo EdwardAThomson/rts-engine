@@ -68,11 +68,11 @@ pub const ARMOURS: [&str; 6] = ["infantry", "light", "heavy", "building", "wall"
 pub const WARHEADS: [&str; 6] = ["bullet", "shell", "rocket", "sonic", "blast", "crush"];
 const KINDS: [&str; 5] = ["building", "unit", "power", "feature", "terrain"];
 /// Roles the simulation has code for. A new role is an engine change first.
-pub const ROLES: [&str; 3] = ["harvester", "refinery", "wall"];
+pub const ROLES: [&str; 6] = ["harvester", "refinery", "wall", "air", "carrier", "untargetable"];
 
 /// The numbers every weapon has.
-pub const WEAPON_NUMBERS: [&str; 8] =
-    ["range", "min_range", "reload", "damage", "speed", "scatter", "splash", "needs_power"];
+pub const WEAPON_NUMBERS: [&str; 10] =
+    ["range", "min_range", "reload", "damage", "speed", "scatter", "splash", "needs_power", "hits_air", "hits_ground"];
 
 /// A generic id: lowercase ASCII letters, digits and underscores.
 pub fn is_generic_id(id: &str) -> bool {

@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 25] = [
+pub const EVENT_NAMES: [&str; 28] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -99,6 +99,9 @@ pub const EVENT_NAMES: [&str; 25] = [
     "hazard_surfaced",
     "hazard_ate",
     "hazard_left",
+    "carrier_pickup",
+    "carrier_dropoff",
+    "carrier_lost_cargo",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
@@ -368,6 +371,9 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         | Event::UnitYielded { unit, .. }
         | Event::UnitStuck { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
         Event::HazardAte { owner, x, y, .. } => Facts { owner: Some(owner), at: Some((x, y)), ..none },
+        Event::CarrierPickup { unit, .. }
+        | Event::CarrierDropoff { unit, .. }
+        | Event::CarrierLostCargo { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
         Event::HazardSpawned { x, y, .. } | Event::HazardSurfaced { x, y, .. } | Event::HazardLeft { x, y, .. } => {
             Facts { at: Some((x, y)), ..none }
         }

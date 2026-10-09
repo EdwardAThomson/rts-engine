@@ -193,6 +193,15 @@ fn exit_tile(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, f
         .min_by_key(|t| (std::cmp::Reverse(pf.reach(t.x, t.y)), t.off_middle(map.width, map.height), t.y, t.x))
 }
 
+/// Where a finished aircraft appears: as `exit_tile`, but units on the ground don't stand in its way, so it is
+/// never blocked. Off the passable ground only when the factory is walled in, and then it hovers.
+fn air_exit(map: &MapData, pf: &Pathfinder, state: &GameState, rules: &Rules, factory: usize) -> Option<Tile> {
+    let (x, y, w, h) = factory_rect(state, rules, factory);
+    world::around(x, y, w, h).filter(|t| map.in_bounds(t.x, t.y)).min_by_key(|t| {
+        (!pf.passable(t.x, t.y), std::cmp::Reverse(pf.reach(t.x, t.y)), t.off_middle(map.width, map.height), t.y, t.x)
+    })
+}
+
 /// A footprint as (left, top, width, height) in tiles.
 type Rect = (i32, i32, i32, i32);
 
@@ -204,7 +213,7 @@ fn factory_rect(state: &GameState, rules: &Rules, factory: usize) -> Rect {
 
 /// Whether a unit stands on this tile or is on its way into it.
 fn held(state: &GameState, rules: &Rules, t: Tile) -> bool {
-    state.entities.iter().any(|e| !rules.kind(e.kind).building && (e.tile() == t || movement::step_tile(e) == Some(t)))
+    state.entities.iter().any(|e| world::on_ground(rules, e) && (e.tile() == t || movement::step_tile(e) == Some(t)))
 }
 
 /// Where a new unit drives to so the next one can come out: the nearest free tile two to four steps from the exit
@@ -262,14 +271,18 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
                 }
             }
         }
+        let exit = |state: &GameState| {
+            if k.air { air_exit(map, pf, state, rules, i) } else { exit_tile(map, pf, state, rules, i) }
+        };
         if entry.state == EntryState::Blocked
-            && let Some(t) = exit_tile(map, pf, state, rules, i)
+            && let Some(t) = exit(state)
         {
             state.entities[i].queue.remove(0);
             let entity = world::spawn(state, rules, head.item, owner, t.x, t.y);
             events.push(Event::UnitBuilt { tick, factory, entity, kind: head.item });
             // A harvester goes about its work; anything else drives clear of the exit.
             if k.harvester.is_none()
+                && !k.air
                 && let Some(to) = clear_of_exit(map, pf, state, rules, factory_rect(state, rules, i), t)
             {
                 let e = state.entities.last_mut().expect("just spawned");
