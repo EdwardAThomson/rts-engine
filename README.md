@@ -251,9 +251,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,
-  the card's unit chips can't be clicked, and the advisor and the units speak in text only (the feed, and a
-  subtitle when units are selected or ordered), and aloud only where a pack has voices for them (the generic pack has
-  none); the refused-order reply has lines but nothing says it yet. A pack's own art (the Blender
+  the card's unit chips can't be clicked. The advisor and the units speak in text (the feed, and a subtitle when units
+  are selected or ordered) and aloud where a pack has voices for them; the generic pack's placeholder voices speak
+  the engine's own words, and a pack's own voices replace them. The advisor also warns of a harvester under attack,
+  a hazard appearing and enemy units massing near the base, and says how the game ended; a move order no unit can
+  walk to gets the refused-order reply (the units still go as near as they can). Storage and superweapon lines wait
+  for those mechanics. A pack's own art (the Blender
   studio's packed sprites in `art/sprites/`, its terrain tiles in `art/tiles/`) is drawn over the generic pack's,
   file by file, so a pack draws only what it changes. Icons in the rail are still the placeholders, and wrecks and the build-up frames
   aren't drawn. Squads are drawn as three soldiers; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display

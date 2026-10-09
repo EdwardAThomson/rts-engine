@@ -216,7 +216,7 @@ fn spoken_lines_play_the_take_the_screen_shows_and_no_reply_talks_over_the_advis
     use classic_render::platform::Played;
     let mut mixer = Mixer::new(48_000);
     let mut b = voiced(&mut mixer);
-    let say = |who: &'static str, key: &str, variant| Speech { who, key: key.into(), variant };
+    let say = |who: &'static str, key: &str, variant| Speech { who, key: key.into(), variant, engine: false };
     let advisor = b.speak("faction_a", &say("advisor", "low_power", 1), &mixer).unwrap();
     let generic = setting::root().join("settings/generic");
     let decode = |f: &str| classic_render::platform::wav::decode(&std::fs::read(generic.join(f)).unwrap()).unwrap();
@@ -281,6 +281,44 @@ fn the_feed_hands_what_it_said_to_the_sound_board() {
     let line = hud.feed.lines.iter().find(|l| l.id == "low_power").unwrap();
     assert_eq!((said[1].who, said[1].key.as_str()), ("advisor", "low_power"));
     assert_eq!(["One", "Two"][said[1].variant], line.text);
+}
+
+#[test]
+fn the_generic_voices_speak_every_engine_line_but_only_in_the_engines_words() {
+    use classic_render::lines::{Lines, Moment, Speech, VOICES};
+    use classic_render::platform::Files;
+    let generic = setting::root().join("settings/generic");
+    let mut mixer = Mixer::new(48_000);
+    let b = SoundBoard::from_files(&[Files::Dir(generic.clone())], 0, 1, &mut mixer);
+    assert!(b.warnings.is_empty(), "{:?}", b.warnings);
+    assert!(b.engine_voices);
+    let provenance = std::fs::read_to_string(generic.join("audio/voices/provenance.jsonl")).unwrap();
+    let engine = Lines::engine();
+    let pack = setting::load("generic").unwrap();
+    for f in &pack.factions {
+        for id in classic_render::feed::default_words().keys() {
+            let key = (f.id.clone(), "advisor".to_string(), id.clone());
+            assert_eq!(b.voices.get(&key).map_or(0, Vec::len), 1, "{key:?}");
+        }
+        for voice in VOICES {
+            for m in Moment::ALL {
+                let key = (f.id.clone(), voice.to_string(), m.id().to_string());
+                assert_eq!(b.voices.get(&key).map_or(0, Vec::len), engine.acks[&(voice, m)].len(), "{key:?}");
+            }
+        }
+    }
+    let index = std::fs::read_to_string(generic.join(classic_render::sound::VOICE_INDEX)).unwrap();
+    for file in classic_render::sound::voice_files_named(&index) {
+        assert!(provenance.contains(&format!("\"file\": \"{file}\"")), "{file} has no provenance line");
+    }
+    // The engine's words take the generic voices; a pack's own words don't.
+    let say = |engine| Speech { who: "advisor", key: "low_power".into(), variant: 0, engine };
+    assert!(b.speak("faction_a", &say(true), &mixer).is_some());
+    assert!(b.speak("faction_a", &say(false), &mixer).is_none());
+    // A pack with voices of its own replaces the generic cast whole.
+    let own = voiced(&mut mixer);
+    assert!(!own.engine_voices);
+    assert!(!own.voices.contains_key(&("faction_a".to_string(), "advisor".to_string(), "base_attacked".to_string())));
 }
 
 #[test]

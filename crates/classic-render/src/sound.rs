@@ -10,6 +10,8 @@
 //! `advisor` by line id or a unit voice set by moment, the n-th file speaking the n-th line. The feed says which line
 //! it showed ([`Speech`]) and [`SoundBoard::speak`] plays the matching take on the voice bus, one line of each kind at
 //! a time and no reply over the advisor, holding the sound effects down while it lasts ([`SoundBoard::duck`]).
+//! A pack's voices replace the generic pack's whole, so no line is spoken by a voice from another cast. The generic
+//! pack's voices speak the engine's own words, so they only play a line the pack left in those words.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -372,6 +374,8 @@ pub struct SoundBoard {
     rng: u64,
     /// Spoken takes by faction id, who speaks (`advisor` or a unit voice set) and line id or moment.
     pub voices: BTreeMap<(String, String, String), Vec<ClipId>>,
+    /// Whether `voices` are the first pack's (the generic pack's), which speak only the engine's own words.
+    pub engine_voices: bool,
     /// The sound effects' level before a voice held it down, while it does.
     ducked: Option<f32>,
     pub warnings: Vec<String>,
@@ -394,8 +398,10 @@ impl SoundBoard {
         let mut tables = Tables::builtin();
         let mut warnings = Vec::new();
         let mut voices = BTreeMap::new();
-        for files in packs {
-            if let Ok(text) = files.read_text(VOICE_INDEX) {
+        // Only the last pack with voices speaks.
+        let voiced = packs.iter().rposition(|f| f.read_text(VOICE_INDEX).is_ok());
+        for (n, files) in packs.iter().enumerate() {
+            if let Some(text) = files.read_text(VOICE_INDEX).ok().filter(|_| voiced == Some(n)) {
                 match json::parse(&text).ok().as_ref().and_then(|v| v.get("voices")?.as_object().map(|o| o.to_vec())) {
                     Some(factions) => {
                         for (faction, who) in &factions {
@@ -447,6 +453,7 @@ impl SoundBoard {
             short: BTreeMap::new(),
             rng: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
             voices,
+            engine_voices: voiced == Some(0),
             ducked: None,
             warnings,
         }
@@ -491,11 +498,12 @@ impl SoundBoard {
         self.cue(def, 1.0, 0.0)
     }
 
-    /// The take that speaks `s` for `faction`, on the voice bus, or `None` when the pack has no voice for it or a
-    /// unit would talk over the advisor, who `mixer` is still playing.
+    /// The take that speaks `s` for `faction`, on the voice bus, or `None` when the pack has no voice for it, the
+    /// voices are the generic pack's and `s` isn't in the engine's words, or a unit would talk over the advisor, who
+    /// `mixer` is still playing.
     pub fn speak(&self, faction: &str, s: &Speech, mixer: &Mixer) -> Option<Cue> {
         let advisor = s.who == "advisor";
-        if !advisor && mixer.playing_key(ADVISOR_KEY) > 0 {
+        if (!advisor && mixer.playing_key(ADVISOR_KEY) > 0) || (self.engine_voices && !s.engine) {
             return None;
         }
         let key = (faction.to_string(), s.who.to_string(), s.key.clone());

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, VecDeque};
 use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
-use classic_sim::world::{Event, IdleReason};
+use classic_sim::world::{Event, IdleReason, MoveEnd};
 use classic_sim::{Game, Kind, ProduceError};
 
 use crate::lines::{Lines, Moment, Speech, VOICES};
@@ -33,6 +33,14 @@ const ATTACK_EVERY: u32 = 20 * TICKS_PER_SECOND;
 pub const REPLY_LIFE: u32 = 2 * TICKS_PER_SECOND;
 /// Replies come at most this often, in ticks (a quarter of a second), however fast the player clicks.
 pub const REPLY_EVERY: u32 = TICKS_PER_SECOND / 4;
+/// A hazard appearing is news at most this often, in ticks.
+const HAZARD_EVERY: u32 = 30 * TICKS_PER_SECOND;
+/// Enemy units this close to one of the local player's buildings, in tiles, are coming for the base...
+pub const WAVE_RANGE: i32 = 10;
+/// ...when there are at least this many of them,
+pub const WAVE_SIZE: usize = 4;
+/// and the warning comes at most this often, in ticks. The feed looks once a second.
+const WAVE_EVERY: u32 = 60 * TICKS_PER_SECOND;
 
 /// How a line reads: news, good news, a warning or a loss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +82,16 @@ pub struct Feed {
     short: bool,
     building_attacked: Option<u32>,
     unit_attacked: Option<u32>,
+    harvester_attacked: Option<u32>,
+    hazard_sighted: Option<u32>,
+    enemy_wave: Option<u32>,
+    /// How many enemy units were near the base at the last look.
+    near: usize,
+    /// Whether the end of the game has been said.
+    over: bool,
+    /// The engine's own words and replies, to tell which lines the pack left in them (`Speech::engine`).
+    engine_words: BTreeMap<String, String>,
+    engine_acks: BTreeMap<(&'static str, Moment), Vec<String>>,
     pub warnings: Vec<String>,
 }
 
@@ -91,7 +109,8 @@ impl Feed {
     /// A feed for `local`, in the words of the pack's `ui/messages.json` in `pack` where it has one, naming things as
     /// `names` does (generic id to the pack's name), with `speech` (`Lines::load`) for its advisor and units.
     pub fn new(pack: &Files, names: BTreeMap<String, String>, local: u32, speech: Lines) -> Feed {
-        let mut table = default_words();
+        let engine_words = default_words();
+        let mut table = engine_words.clone();
         let mut warnings = Vec::new();
         if let Ok(text) = pack.read_text(MESSAGES_FILE) {
             match json::parse(&text).ok().as_ref().and_then(words) {
@@ -122,6 +141,13 @@ impl Feed {
             short: false,
             building_attacked: None,
             unit_attacked: None,
+            harvester_attacked: None,
+            hazard_sighted: None,
+            enemy_wave: None,
+            near: 0,
+            over: false,
+            engine_words,
+            engine_acks: Lines::engine().acks,
             warnings,
         }
     }
@@ -152,9 +178,8 @@ impl Feed {
             return;
         }
         let at = self.turn(id, said.len());
-        if self.speech.advisor.contains_key(id) {
-            self.voice(Speech { who: "advisor", key: id.to_string(), variant: at });
-        }
+        let engine = !self.speech.advisor.contains_key(id) && self.words.get(id) == self.engine_words.get(id);
+        self.voice(Speech { who: "advisor", key: id.to_string(), variant: at, engine });
         let text = said[at].clone();
         self.lines.push_back(Line { id, text, tone, tick });
         while self.lines.len() > MAX_LINES {
@@ -205,7 +230,8 @@ impl Feed {
             if mine.iter().all(|e| Some(game.rules.kind(e.kind).armour) == infantry) { VOICES[0] } else { VOICES[1] };
         let Some(said) = self.speech.acks.get(&(voice, moment)).cloned() else { return };
         let at = self.turn(&format!("{voice}.{}", moment.id()), said.len());
-        self.voice(Speech { who: voice, key: moment.id().to_string(), variant: at });
+        let engine = self.engine_acks.get(&(voice, moment)) == Some(&said);
+        self.voice(Speech { who: voice, key: moment.id().to_string(), variant: at, engine });
         let text = said[at].clone();
         self.reply = Some(Line { id: moment.id(), text, tone: Tone::Info, tick });
     }
@@ -241,12 +267,17 @@ impl Feed {
                 }
                 Event::Hit { target, .. } => {
                     let Some(e) = game.state.entity(target).filter(|e| e.owner == local) else { continue };
-                    let building = game.rules.kind(e.kind).building;
-                    let last = if building { &mut self.building_attacked } else { &mut self.unit_attacked };
+                    let k = game.rules.kind(e.kind);
+                    let (last, id, kind) = if k.building {
+                        (&mut self.building_attacked, "base_attacked", None)
+                    } else if k.harvester.is_some() {
+                        (&mut self.harvester_attacked, "harvester_attacked", Some(e.kind))
+                    } else {
+                        (&mut self.unit_attacked, "units_attacked", None)
+                    };
                     if last.is_none_or(|t| tick.saturating_sub(t) >= ATTACK_EVERY) {
                         *last = Some(tick);
-                        let id = if building { "base_attacked" } else { "units_attacked" };
-                        self.say(game, id, None, Tone::Bad);
+                        self.say(game, id, kind, Tone::Bad);
                     }
                 }
                 Event::Destroyed { kind, owner, .. } if owner == local => {
@@ -255,6 +286,16 @@ impl Feed {
                 }
                 Event::HazardAte { kind, owner, .. } if owner == local => {
                     self.say(game, "hazard_ate", Some(kind), Tone::Bad)
+                }
+                Event::HazardSpawned { .. } => {
+                    if self.hazard_sighted.is_none_or(|t| tick.saturating_sub(t) >= HAZARD_EVERY) {
+                        self.hazard_sighted = Some(tick);
+                        self.say(game, "hazard_sighted", None, Tone::Warn);
+                    }
+                }
+                // A local unit gave up on its way: it can't get there.
+                Event::MoveEnded { unit, reason: MoveEnd::Blocked, .. } if Self::owner(game, unit) == Some(local) => {
+                    self.reply(game, Moment::Cant, &[unit])
                 }
                 Event::HarvesterIdle { unit, reason, .. } => {
                     let Some(e) = game.state.entity(unit).filter(|e| e.owner == local) else { continue };
@@ -284,7 +325,6 @@ impl Feed {
                 | Event::MoveEnded { .. }
                 | Event::UnitYielded { .. }
                 | Event::UnitStuck { .. }
-                | Event::HazardSpawned { .. }
                 | Event::HazardSurfaced { .. }
                 | Event::HazardAte { .. }
                 | Event::HazardLeft { .. } => {}
@@ -299,9 +339,29 @@ impl Feed {
             self.short = short;
         }
         let now = game.state.tick;
+        if now.is_multiple_of(TICKS_PER_SECOND) {
+            let near = enemies_near_base(game, local);
+            if near >= WAVE_SIZE
+                && self.near < WAVE_SIZE
+                && self.enemy_wave.is_none_or(|t| now.saturating_sub(t) >= WAVE_EVERY)
+            {
+                self.enemy_wave = Some(now);
+                self.say(game, "enemy_wave", None, Tone::Bad);
+            }
+            self.near = near;
+        }
         self.lines.retain(|l| now.saturating_sub(l.tick) < LIFE);
         if self.reply.as_ref().is_some_and(|r| now.saturating_sub(r.tick) >= REPLY_LIFE) {
             self.reply = None;
+        }
+    }
+
+    /// The game is over for the local player, won or lost: the advisor says so, once.
+    pub fn over(&mut self, game: &Game, won: bool) {
+        if !self.over {
+            self.over = true;
+            let (id, tone) = if won { ("game_won", Tone::Good) } else { ("game_lost", Tone::Bad) };
+            self.say(game, id, None, tone);
         }
     }
 
@@ -309,4 +369,38 @@ impl Feed {
     pub fn words(&self) -> &BTreeMap<String, String> {
         &self.words
     }
+}
+
+/// How many of other players' units stand within `WAVE_RANGE` tiles of one of `player`'s buildings.
+pub fn enemies_near_base(game: &Game, player: u32) -> usize {
+    let mine: Vec<_> = game
+        .state
+        .entities
+        .iter()
+        .filter(|e| e.owner == player && game.rules.kind(e.kind).building)
+        .map(|e| (e.tile(), game.rules.kind(e.kind)))
+        .collect();
+    game.state
+        .entities
+        .iter()
+        .filter(|e| e.owner != player && !game.rules.kind(e.kind).building)
+        .filter(|e| {
+            let t = e.tile();
+            // The distance to the building's footprint, in tiles, counting diagonals as one.
+            mine.iter().any(|(b, k)| {
+                let dx = (b.x - t.x).max(t.x - (b.x + k.width - 1)).max(0);
+                let dy = (b.y - t.y).max(t.y - (b.y + k.height - 1)).max(0);
+                dx.max(dy) <= WAVE_RANGE
+            })
+        })
+        .count()
+}
+
+/// Whether any of `units` could walk to `tile`: a move order anywhere else gets the `cant` reply. Units standing in
+/// the way don't count, since they move.
+pub fn reachable(game: &Game, units: &[u32], (x, y): (i32, i32)) -> bool {
+    units.iter().filter_map(|&id| game.state.entity(id)).any(|e| {
+        let t = e.tile();
+        game.pathfinder.connected((t.x, t.y), (x, y))
+    })
 }

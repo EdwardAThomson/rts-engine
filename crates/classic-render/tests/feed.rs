@@ -112,11 +112,11 @@ fn attacks_are_announced_now_and_then_and_losses_by_name() {
     println!("{said:?}");
     assert!(said.iter().any(|(_, t)| t == "Harvester lost"), "a loss is told by name");
     // However many hits, each kind of attack warning comes at most once per 20 seconds.
-    for warning in ["Base under attack", "Units under attack"] {
+    for warning in ["Base under attack", "Units under attack", "Harvester under attack"] {
         let at: Vec<u32> = said.iter().filter(|(_, t)| t == warning).map(|(tick, _)| *tick).collect();
         assert!(at.windows(2).all(|w| w[1] - w[0] >= 20 * 15), "{warning} at {at:?}");
     }
-    assert!(said.iter().any(|(_, t)| t == "Units under attack"));
+    assert!(said.iter().any(|(_, t)| t == "Harvester under attack"), "a harvester's attack is its own warning");
     // Player 1 lost nothing it was told about, and nothing of theirs shows on player 0's feed.
     assert!(said.iter().all(|(_, t)| !t.contains("Battle Tank")), "{said:?}");
 }
@@ -185,6 +185,62 @@ fn the_engine_has_a_reply_for_every_voice_and_moment_and_planned_ids_are_new() {
 }
 
 /// A pack in `target/` with `lines` as its `lines.json`.
+#[test]
+fn the_advisor_warns_of_massing_enemies_and_hazards_now_and_then_and_says_how_the_game_ended() {
+    use classic_sim::world::{Event, MoveEnd};
+    let (mut game, mut hud) = game();
+    let mut said = Vec::new();
+    let tank = game.kind("battle_tank").unwrap();
+    // A few enemy tanks far off and then near player 0's base: only enough of them near it is a wave.
+    let far: Vec<u32> = (0..6).map(|i| game.spawn(tank, 1, 40, 14 + i)).collect();
+    run(&mut game, &mut hud, 30, &mut said);
+    for i in 0..(feed::WAVE_SIZE as i32 - 1) {
+        game.spawn(tank, 1, 8 + feed::WAVE_RANGE, 2 + i);
+    }
+    run(&mut game, &mut hud, 30, &mut said);
+    assert_eq!(feed::enemies_near_base(&game, 0), feed::WAVE_SIZE - 1);
+    assert!(said.iter().all(|(_, t)| t != "Enemy forces approaching"), "{far:?} far off, too few near: {said:?}");
+    game.spawn(tank, 1, 8 + feed::WAVE_RANGE, 6);
+    run(&mut game, &mut hud, 30, &mut said);
+    let waves = |said: &Vec<(u32, String)>| said.iter().filter(|(_, t)| t == "Enemy forces approaching").count();
+    assert_eq!(waves(&said), 1, "{said:?}");
+    run(&mut game, &mut hud, 600, &mut said);
+    assert_eq!(waves(&said), 1, "said once while they stay");
+
+    // A hazard appearing is news, but not every time.
+    for _ in 0..2 {
+        game.events.push(Event::HazardSpawned { tick: game.state.tick, hazard: 1, x: 0, y: 0 });
+        run(&mut game, &mut hud, 1, &mut said);
+    }
+    assert_eq!(said.iter().filter(|(_, t)| t == "Hazard sighted").count(), 1);
+
+    // A local unit giving up on its way says it can't get there.
+    let mine = game.spawn(tank, 0, 20, 2);
+    run(&mut game, &mut hud, 10, &mut said);
+    game.events.push(Event::MoveEnded { tick: game.state.tick, unit: mine, reason: MoveEnd::Blocked, x: 20, y: 2 });
+    hud.after_step(&game);
+    let reply = hud.feed.reply.clone().expect("a reply");
+    assert_eq!(reply.id, "cant");
+    assert!(Lines::engine().acks[&("vehicle", Moment::Cant)].contains(&reply.text));
+
+    // The end of the game, once.
+    hud.feed.over(&game, true);
+    hud.feed.over(&game, false);
+    let ends: Vec<_> = hud.feed.lines.iter().filter(|l| l.id.starts_with("game_")).map(|l| l.text.as_str()).collect();
+    assert_eq!(ends, ["Battle won"]);
+}
+
+#[test]
+fn a_move_order_nobody_can_walk_to_is_one_the_units_cant_carry_out() {
+    let (mut game, _) = game();
+    let tank = game.kind("battle_tank").unwrap();
+    let mine = game.spawn(tank, 0, 20, 2);
+    assert!(feed::reachable(&game, &[mine], (40, 2)), "open ground");
+    assert!(!feed::reachable(&game, &[mine], (31, 5)), "a cliff");
+    assert!(!feed::reachable(&game, &[mine], (5, 5)), "under a building");
+    assert!(!feed::reachable(&game, &[], (40, 2)), "nobody to go");
+}
+
 fn pack_with_lines(name: &str, lines: &str) -> Files {
     let dir = setting::root().join("target").join(name);
     std::fs::create_dir_all(&dir).unwrap();
@@ -198,7 +254,7 @@ fn a_pack_gives_each_faction_its_own_lines_and_mistakes_are_warned_about() {
         "lines-test-pack",
         r#"{
           "voice": { "faction_a": "notes for recording, not read by the engine" },
-          "advisor": { "low_power": "Everyone: power low", "hazard_sighted": "Something stirs" },
+          "advisor": { "low_power": "Everyone: power low", "superpower_ready": "Ready to strike" },
           "acks": { "vehicle": { "move": ["Pack rolling.", "Pack driving."] } },
           "factions": {
             "faction_a": {
@@ -214,7 +270,7 @@ fn a_pack_gives_each_faction_its_own_lines_and_mistakes_are_warned_about() {
     let a = Lines::load(&pack, &factions, Some("faction_a"));
     println!("warnings: {:#?}", a.warnings);
     assert_eq!(a.advisor["low_power"], ["A: power low", "A: lights dim"], "the faction's own words win");
-    assert_eq!(a.advisor["hazard_sighted"], ["Something stirs"], "a planned id may have lines already");
+    assert_eq!(a.advisor["superpower_ready"], ["Ready to strike"], "a planned id may have lines already");
     assert_eq!(a.acks[&("vehicle", Moment::Select)], ["A here."]);
     assert_eq!(a.acks[&("vehicle", Moment::Move)], ["Pack rolling.", "Pack driving."], "pack-wide lines carry over");
     assert_eq!(a.acks[&("infantry", Moment::Move)], Lines::engine().acks[&("infantry", Moment::Move)]);

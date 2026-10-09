@@ -15,12 +15,7 @@
     }
   },
   "planned": [
-    "harvester_attacked",
     "storage_full",
-    "hazard_sighted",
-    "superpower_ready",
-    "enemy_wave",
-    "game_won",
-    "game_lost"
+    "superpower_ready"
   ]
 }

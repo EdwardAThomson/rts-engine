@@ -15,6 +15,11 @@
     "unit_lost": "{name} lost",
     "hazard_ate": "{name} swallowed by the hazard",
     "harvester_no_resource": "{name} idle: no resource left",
-    "harvester_no_refinery": "{name} idle: no refinery"
+    "harvester_no_refinery": "{name} idle: no refinery",
+    "harvester_attacked": "{name} under attack",
+    "hazard_sighted": "Hazard sighted",
+    "enemy_wave": "Enemy forces approaching",
+    "game_won": "Battle won",
+    "game_lost": "Battle lost"
   }
 }
