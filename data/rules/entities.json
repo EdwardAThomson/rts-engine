@@ -508,7 +508,7 @@
       }
     },
     "resource_bloom": { "kind": "feature", "status": "planned" },
-    "hazard": { "kind": "feature", "status": "planned" },
+    "hazard": { "kind": "feature", "status": "built" },
 
     "rock": { "kind": "terrain", "status": "built" },
     "open": { "kind": "terrain", "status": "built" }

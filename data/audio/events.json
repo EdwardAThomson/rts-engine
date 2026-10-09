@@ -39,6 +39,8 @@
     "move_ended",
     "unit_yielded",
     "unit_stuck",
+    "storage_full",
+    "credits_lost",
     "repair_stopped"
   ]
 }
