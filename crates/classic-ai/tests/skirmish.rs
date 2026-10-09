@@ -70,24 +70,49 @@ fn builds_a_base_harvests_and_produces_an_army() {
 
 #[test]
 fn its_army_mixes_infantry_light_vehicles_and_tanks() {
+    // It never attacks here, so the game runs the whole time and the army is all it has bought.
     let mut g = game(2);
-    let mut ai = [Ai::new(0, Settings::normal())];
-    play(&mut g, &mut ai, 12_000);
+    let mut ai = [Ai::new(0, Settings { first_wave_tick: u32::MAX, ..Settings::normal() })];
+    play(&mut g, &mut ai, 15_000);
     let built = units_built(&g, 0);
-    println!("units built in 12000 ticks against an idle player: {built:?}");
+    println!("units built in 15000 ticks, never attacking: {built:?}");
     let n = |id: &str| built.iter().find(|(b, _)| b == id).map_or(0, |&(_, n)| n);
-    for id in ["infantry_squad", "rocket_squad", "scout_bike", "quad", "battle_tank"] {
+    let kinds = [
+        "infantry",
+        "infantry_squad",
+        "rocket_infantry",
+        "rocket_squad",
+        "scout_bike",
+        "quad",
+        "battle_tank",
+        "siege_tank",
+        "missile_tank",
+    ];
+    for id in kinds {
         assert!(n(id) >= 1, "it built a {id}");
     }
-    // Weighted 6 to 3 to 2 to 1 to 1 (Settings::normal), so the dearest kind isn't the only one bought.
-    assert!(n("battle_tank") < n("infantry_squad") + n("rocket_squad") + n("scout_bike") + n("quad"));
+    // Weighted 6 to 3 to 2 to 1 (Settings::normal): battle tanks lead, but the dearest kinds aren't all it buys.
+    assert!(kinds.iter().all(|&id| n(id) <= n("battle_tank")));
+    let heavy = n("battle_tank") + n("siege_tank") + n("missile_tank");
+    assert!(heavy < built.iter().filter(|(id, _)| id != "harvester").map(|(_, n)| n).sum::<usize>());
 }
 
 /// With a weight of 0 a kind is never built, and with the mix left empty every armed unit weighs 1.
 #[test]
 fn the_mix_comes_from_settings_and_the_rules() {
-    let only_tanks: Vec<(String, usize)> =
-        ["infantry_squad", "rocket_squad", "scout_bike", "quad"].iter().map(|id| (id.to_string(), 0)).collect();
+    let only_tanks: Vec<(String, usize)> = [
+        "infantry",
+        "infantry_squad",
+        "rocket_infantry",
+        "rocket_squad",
+        "scout_bike",
+        "quad",
+        "siege_tank",
+        "missile_tank",
+    ]
+    .iter()
+    .map(|id| (id.to_string(), 0))
+    .collect();
     let mut g = game(2);
     let mut ai = [Ai::new(0, Settings { unit_mix: only_tanks, ..Settings::normal() })];
     play(&mut g, &mut ai, 9000);
@@ -273,7 +298,7 @@ fn with_its_income_gone_it_spends_what_is_left_on_units_it_can_pay_for() {
     play(&mut g, &mut ai, 7000);
     g.state.resource.iter_mut().for_each(|r| *r = 0);
     let broke = ai[0].settings.broke_ticks;
-    // On past a win over the idle enemy, if it comes first: this is about its own economy.
+    // Not `play`, which stops once the idle player is beaten: the income has to stay gone for `broke_ticks`.
     for _ in 0..broke + 900 {
         ai[0].tick(&mut g);
         g.step(1);

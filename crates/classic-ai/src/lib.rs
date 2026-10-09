@@ -86,7 +86,17 @@ impl Settings {
             ("heavy_factory", 2),
             ("gun_turret", 4),
         ];
-        let mix = [("battle_tank", 6), ("rocket_squad", 3), ("quad", 2), ("infantry_squad", 1), ("scout_bike", 1)];
+        let mix = [
+            ("battle_tank", 6),
+            ("rocket_squad", 3),
+            ("siege_tank", 2),
+            ("quad", 2),
+            ("missile_tank", 1),
+            ("infantry_squad", 1),
+            ("rocket_infantry", 1),
+            ("infantry", 1),
+            ("scout_bike", 1),
+        ];
         Settings {
             think_every: 30,
             build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
