@@ -86,15 +86,24 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
         art.push(Files::Memory { label: d, files });
     }
 
-    // The generic pack's sounds, then the pack's own over them, as on the desktop.
+    // The generic pack's sounds, then the pack's own over them, as on the desktop. Only one pack's voices speak:
+    // the pack's own if it has some, else the generic pack's.
+    let own_voices = dir != GENERIC
+        && web::fetch_files(&format!("{ROOT}{dir}/"), &[sound::VOICE_INDEX.to_string()])
+            .await?
+            .contains_key(sound::VOICE_INDEX);
     let mut sounds = Vec::new();
     for d in if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![GENERIC.to_string(), dir.clone()] } {
         let base = format!("{ROOT}{d}/");
         let mut files = web::fetch_files(&base, &[SOUND_INDEX.to_string()]).await?;
         let Some(index) = files.get(SOUND_INDEX) else { continue };
         let mut names = sound::files_named(&String::from_utf8_lossy(index));
-        // Its spoken lines too, when it has them.
-        let voices = web::fetch_files(&base, &[sound::VOICE_INDEX.to_string()]).await?;
+        // Its spoken lines too, when it has them and they are the ones that speak.
+        let voices = if d == GENERIC && own_voices {
+            Default::default()
+        } else {
+            web::fetch_files(&base, &[sound::VOICE_INDEX.to_string()]).await?
+        };
         if let Some(index) = voices.get(sound::VOICE_INDEX) {
             names.extend(sound::voice_files_named(&String::from_utf8_lossy(index)));
         }

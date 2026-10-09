@@ -51,5 +51,11 @@ change the recipe and rerun it. A test fails when the files and the recipes disa
 Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack
 supplies its own files the same way, in its own `audio/sounds.json`; ids it leaves out play these.
 
-Not made yet: music, voices and looping sounds. The units' written replies are the engine's own
-(`data/ui/lines.json`), and the feed's words are its advisor (`data/ui/messages.json`).
+Voices are the exception: `audio/voices/` and `audio/voices.json` are spoken by `audio/make_voices.py` with a free
+text-to-speech model (Kokoro-82M, Apache-2.0, run locally), as placeholders. They speak the engine's own lines, the
+feed's messages (`data/ui/messages.json`, in the advisor's own phrasing, since a voice can't say `{name}`) and the
+units' replies (`data/ui/lines.json`), with one cast for every faction. They only play a line a pack left in the
+engine's words, and a pack with voices of its own replaces them whole. `audio/voices/provenance.jsonl` records each
+take and its text. After changing those lines, rerun the script (see its header).
+
+Not made yet: music and looping sounds.

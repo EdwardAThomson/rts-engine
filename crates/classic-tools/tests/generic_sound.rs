@@ -31,6 +31,8 @@ fn committed_sounds_match_the_recipes() {
     }
     let mut on_disk = BTreeSet::new();
     files_under(&pack.join("audio"), &mut on_disk);
+    // The voices are spoken by audio/make_voices.py, not synthesised here.
+    on_disk.retain(|p| !p.starts_with(pack.join("audio/voices")) && *p != pack.join("audio/voices.json"));
     let extra: Vec<_> = on_disk.difference(&expected).map(|p| p.display().to_string()).collect();
     assert!(
         stale.is_empty() && extra.is_empty(),

@@ -51,6 +51,9 @@ pub struct Speech {
     pub who: &'static str,
     pub key: String,
     pub variant: usize,
+    /// Said in the engine's own words (`data/ui`), which the pack left alone; only these may take the generic
+    /// pack's voices, which speak the engine's words.
+    pub engine: bool,
 }
 
 /// One faction's lines, after the pack's.

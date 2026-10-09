@@ -35,7 +35,7 @@ use classic_render::menu::{Action, Menu, Screen};
 use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::skin::{self, Pointer, Skin, SkinFiles};
 use classic_render::sound::Cue;
-use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View};
+use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View, feed};
 use classic_sim::map::TILE;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use winit::application::ApplicationHandler;
@@ -470,6 +470,8 @@ impl App {
         let enemy = target.filter(|&id| self.game.state.entity(id).is_some_and(|e| e.owner != self.player));
         let (order, moment) = match enemy {
             Some(target) => (CommandOrder::Attack { target }, Moment::Attack),
+            // The units still go as near as they can; they only say so.
+            None if !feed::reachable(&self.game, &ids, (x, y)) => (CommandOrder::Move { x, y }, Moment::Cant),
             None => (CommandOrder::Move { x, y }, Moment::Move),
         };
         self.game.order(self.player, &ids, order);
@@ -505,6 +507,10 @@ impl App {
             let cues = self.sound.after_step(&self.game, &listener);
             self.hear(cues);
             self.menu.after_step(&self.game, self.player);
+            if let Screen::Over { won } = self.menu.screen {
+                self.hud.feed.over(&self.game, won);
+                self.speak();
+            }
             if !self.menu.playing() {
                 self.owed = Duration::ZERO;
                 break;

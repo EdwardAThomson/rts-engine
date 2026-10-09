@@ -1,0 +1,229 @@
+{
+  "about": "The generic pack's placeholder voices for the engine's own lines (data/ui/messages.json for the advisor, data/ui/lines.json for the units), spoken by audio/make_voices.py. Every faction shares one cast. By faction, then `advisor` by message id or a unit voice set by moment; the n-th file speaks the n-th line.",
+  "voices": {
+    "faction_a": {
+      "advisor": {
+        "building_ready": [
+          "audio/voices/advisor/building_ready_1.wav"
+        ],
+        "unit_ready": [
+          "audio/voices/advisor/unit_ready_1.wav"
+        ],
+        "cannot_place": [
+          "audio/voices/advisor/cannot_place_1.wav"
+        ],
+        "queue_full": [
+          "audio/voices/advisor/queue_full_1.wav"
+        ],
+        "needs_building": [
+          "audio/voices/advisor/needs_building_1.wav"
+        ],
+        "no_credits": [
+          "audio/voices/advisor/no_credits_1.wav"
+        ],
+        "low_power": [
+          "audio/voices/advisor/low_power_1.wav"
+        ],
+        "power_restored": [
+          "audio/voices/advisor/power_restored_1.wav"
+        ],
+        "base_attacked": [
+          "audio/voices/advisor/base_attacked_1.wav"
+        ],
+        "units_attacked": [
+          "audio/voices/advisor/units_attacked_1.wav"
+        ],
+        "building_lost": [
+          "audio/voices/advisor/building_lost_1.wav"
+        ],
+        "unit_lost": [
+          "audio/voices/advisor/unit_lost_1.wav"
+        ],
+        "hazard_ate": [
+          "audio/voices/advisor/hazard_ate_1.wav"
+        ],
+        "harvester_no_resource": [
+          "audio/voices/advisor/harvester_no_resource_1.wav"
+        ],
+        "harvester_no_refinery": [
+          "audio/voices/advisor/harvester_no_refinery_1.wav"
+        ],
+        "harvester_attacked": [
+          "audio/voices/advisor/harvester_attacked_1.wav"
+        ],
+        "hazard_sighted": [
+          "audio/voices/advisor/hazard_sighted_1.wav"
+        ],
+        "enemy_wave": [
+          "audio/voices/advisor/enemy_wave_1.wav"
+        ],
+        "game_won": [
+          "audio/voices/advisor/game_won_1.wav"
+        ],
+        "game_lost": [
+          "audio/voices/advisor/game_lost_1.wav"
+        ]
+      },
+      "infantry": {
+        "select": [
+          "audio/voices/infantry/select_1.wav",
+          "audio/voices/infantry/select_2.wav",
+          "audio/voices/infantry/select_3.wav",
+          "audio/voices/infantry/select_4.wav"
+        ],
+        "move": [
+          "audio/voices/infantry/move_1.wav",
+          "audio/voices/infantry/move_2.wav",
+          "audio/voices/infantry/move_3.wav",
+          "audio/voices/infantry/move_4.wav"
+        ],
+        "attack": [
+          "audio/voices/infantry/attack_1.wav",
+          "audio/voices/infantry/attack_2.wav",
+          "audio/voices/infantry/attack_3.wav",
+          "audio/voices/infantry/attack_4.wav"
+        ],
+        "cant": [
+          "audio/voices/infantry/cant_1.wav",
+          "audio/voices/infantry/cant_2.wav"
+        ]
+      },
+      "vehicle": {
+        "select": [
+          "audio/voices/vehicle/select_1.wav",
+          "audio/voices/vehicle/select_2.wav",
+          "audio/voices/vehicle/select_3.wav",
+          "audio/voices/vehicle/select_4.wav"
+        ],
+        "move": [
+          "audio/voices/vehicle/move_1.wav",
+          "audio/voices/vehicle/move_2.wav",
+          "audio/voices/vehicle/move_3.wav",
+          "audio/voices/vehicle/move_4.wav"
+        ],
+        "attack": [
+          "audio/voices/vehicle/attack_1.wav",
+          "audio/voices/vehicle/attack_2.wav",
+          "audio/voices/vehicle/attack_3.wav",
+          "audio/voices/vehicle/attack_4.wav"
+        ],
+        "cant": [
+          "audio/voices/vehicle/cant_1.wav",
+          "audio/voices/vehicle/cant_2.wav"
+        ]
+      }
+    },
+    "faction_b": {
+      "advisor": {
+        "building_ready": [
+          "audio/voices/advisor/building_ready_1.wav"
+        ],
+        "unit_ready": [
+          "audio/voices/advisor/unit_ready_1.wav"
+        ],
+        "cannot_place": [
+          "audio/voices/advisor/cannot_place_1.wav"
+        ],
+        "queue_full": [
+          "audio/voices/advisor/queue_full_1.wav"
+        ],
+        "needs_building": [
+          "audio/voices/advisor/needs_building_1.wav"
+        ],
+        "no_credits": [
+          "audio/voices/advisor/no_credits_1.wav"
+        ],
+        "low_power": [
+          "audio/voices/advisor/low_power_1.wav"
+        ],
+        "power_restored": [
+          "audio/voices/advisor/power_restored_1.wav"
+        ],
+        "base_attacked": [
+          "audio/voices/advisor/base_attacked_1.wav"
+        ],
+        "units_attacked": [
+          "audio/voices/advisor/units_attacked_1.wav"
+        ],
+        "building_lost": [
+          "audio/voices/advisor/building_lost_1.wav"
+        ],
+        "unit_lost": [
+          "audio/voices/advisor/unit_lost_1.wav"
+        ],
+        "hazard_ate": [
+          "audio/voices/advisor/hazard_ate_1.wav"
+        ],
+        "harvester_no_resource": [
+          "audio/voices/advisor/harvester_no_resource_1.wav"
+        ],
+        "harvester_no_refinery": [
+          "audio/voices/advisor/harvester_no_refinery_1.wav"
+        ],
+        "harvester_attacked": [
+          "audio/voices/advisor/harvester_attacked_1.wav"
+        ],
+        "hazard_sighted": [
+          "audio/voices/advisor/hazard_sighted_1.wav"
+        ],
+        "enemy_wave": [
+          "audio/voices/advisor/enemy_wave_1.wav"
+        ],
+        "game_won": [
+          "audio/voices/advisor/game_won_1.wav"
+        ],
+        "game_lost": [
+          "audio/voices/advisor/game_lost_1.wav"
+        ]
+      },
+      "infantry": {
+        "select": [
+          "audio/voices/infantry/select_1.wav",
+          "audio/voices/infantry/select_2.wav",
+          "audio/voices/infantry/select_3.wav",
+          "audio/voices/infantry/select_4.wav"
+        ],
+        "move": [
+          "audio/voices/infantry/move_1.wav",
+          "audio/voices/infantry/move_2.wav",
+          "audio/voices/infantry/move_3.wav",
+          "audio/voices/infantry/move_4.wav"
+        ],
+        "attack": [
+          "audio/voices/infantry/attack_1.wav",
+          "audio/voices/infantry/attack_2.wav",
+          "audio/voices/infantry/attack_3.wav",
+          "audio/voices/infantry/attack_4.wav"
+        ],
+        "cant": [
+          "audio/voices/infantry/cant_1.wav",
+          "audio/voices/infantry/cant_2.wav"
+        ]
+      },
+      "vehicle": {
+        "select": [
+          "audio/voices/vehicle/select_1.wav",
+          "audio/voices/vehicle/select_2.wav",
+          "audio/voices/vehicle/select_3.wav",
+          "audio/voices/vehicle/select_4.wav"
+        ],
+        "move": [
+          "audio/voices/vehicle/move_1.wav",
+          "audio/voices/vehicle/move_2.wav",
+          "audio/voices/vehicle/move_3.wav",
+          "audio/voices/vehicle/move_4.wav"
+        ],
+        "attack": [
+          "audio/voices/vehicle/attack_1.wav",
+          "audio/voices/vehicle/attack_2.wav",
+          "audio/voices/vehicle/attack_3.wav",
+          "audio/voices/vehicle/attack_4.wav"
+        ],
+        "cant": [
+          "audio/voices/vehicle/cant_1.wav",
+          "audio/voices/vehicle/cant_2.wav"
+        ]
+      }
+    }
+  }
+}
