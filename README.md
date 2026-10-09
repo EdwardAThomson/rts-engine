@@ -98,6 +98,7 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-data` | A small JSON reader (whole numbers only), the rules table and tuning, and the setting pack loader with its checks. |
 | `crates/classic-sim/src/units.rs` | Kinds and the typed rules the tick reads: every built unit and building in the rules data is a kind, and its roles say which mechanics it joins. |
 | `crates/classic-sim/src/power.rs` | Each player's power supply and demand, worked out from the buildings standing; producers give power in proportion to their health. |
+| `crates/classic-sim/src/storage.rs` | Each player's storage cap, from the refineries and silos standing; a delivery fills credits only up to the cap, and the rest is lost and counted. |
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/vision.rs` | Fog of war, when a pack turns the `fog` module on (the generic pack does): each player's explored tiles and a count of their sight sources over each tile, kept up to date by adding and removing discs as entities appear, move tile and die, from a building's edges. Fog hides enemy units out of sight and keeps a ghost of each enemy building as last seen (or, with `hide` off, shroud only: explored ground shows everything, as the original did). Targets must be in their owner's sight, attack orders need a target in sight or a ghost, and a unit that fires is shown to the player it fires at for a moment. Hashed while on. |
@@ -131,6 +132,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   When units began to leave factories and harvesters to unload on any side, and a start in the bottom half to be
   laid out turned round, every hash was re-recorded on purpose; standalone paths, path checksums, the scripted
   command log and the lone tank's position were checked unchanged, and the bench scenes' credits rose.
+  When harvests began to be capped by storage, every hash from the first delivery on was re-recorded on purpose;
+  with storage tuned out of reach every earlier value matched exactly, and the scripted replay hash is now
+  `80655e40`.
 - The WebAssembly build gives the same hashes as the native build.
 - Two runs with the same seed and orders give the same state after 10,000 ticks; a different seed gives a
   different game; replaying seed, map and command log reproduces the live game.
@@ -145,6 +149,13 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   its owner's base (diagonals count, walls don't) and refuses each broken rule with its reason, including a
   refinery with no side to unload on; tuning can allow open ground or let a base reach further; a tank already moving drives round a building placed on
   its path; a bigger refinery moves its dock and harvesters still deliver; placements replay from the command log.
+- Storage: a refinery and a silo each add 1,000 to their owner's cap and the yard nothing; a silo waiting to be
+  placed adds nothing; a 200 delivery onto 950 of a 1,000 cap stores 50, loses 150, empties at its normal rate and
+  says `storage_full` and `credits_lost` once each; credits above the cap (the start's 1,200, a refund) are kept but
+  every delivery is lost; a lost silo lowers the cap without taking credits; `credits_lost` comes at most once per
+  450 ticks while every loss is counted. The advisor says "Storage full" once for a fill and the loss after it, the
+  readout shows credits out of storage, and the computer opponent puts a silo first when credits it has no plans
+  for pass 80% of its storage.
 - Power adds up from the buildings standing, a damaged plant gives less, the power factor stops at its 25%
   floor, `power_changed` reports supply, demand and shortfall only when they change, and a pack's tuning changes
   the numbers and the floor.

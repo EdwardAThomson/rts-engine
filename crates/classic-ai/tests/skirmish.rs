@@ -480,3 +480,26 @@ fn never_shuts_its_own_units_in_with_buildings() {
         assert!(shut.is_empty());
     }
 }
+
+#[test]
+fn with_credits_it_has_no_use_for_near_its_storage_it_builds_a_silo_first() {
+    // The starting credits go on the build order: no silo yet.
+    let mut g = game(10);
+    let mut ai = Ai::new(0, Settings::normal());
+    let wants = |ai: &mut Ai, g: &Game| -> Vec<String> {
+        ai.think(g)
+            .into_iter()
+            .filter_map(|c| match c.order {
+                CommandOrder::Produce { kind } if g.rules.kind(kind).building => Some(g.rules.kind(kind).id.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let at_start = wants(&mut ai, &g);
+    // With far more than its plans need, harvests would soon be lost: a silo comes before the build order.
+    g.state.players[0].credits = 2000;
+    let rich = wants(&mut ai, &g);
+    println!("storage {}: at the start it builds {at_start:?}, with 2,000 credits {rich:?}", g.storage(0));
+    assert!(!at_start.is_empty() && !at_start.contains(&"silo".to_string()));
+    assert_eq!(rich, ["silo"]);
+}

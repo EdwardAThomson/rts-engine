@@ -9,6 +9,12 @@
         "min_factor": { "default": 25, "min": 0, "max": 100 }
       }
     },
+    "storage": {
+      "status": "built",
+      "numbers": {
+        "warn_every_ticks": { "default": 450, "min": 1, "max": 100000 }
+      }
+    },
     "placement": {
       "status": "built",
       "numbers": {

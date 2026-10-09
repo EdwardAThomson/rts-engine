@@ -35,6 +35,8 @@ pub const REPLY_LIFE: u32 = 2 * TICKS_PER_SECOND;
 pub const REPLY_EVERY: u32 = TICKS_PER_SECOND / 4;
 /// A hazard appearing is news at most this often, in ticks.
 const HAZARD_EVERY: u32 = 30 * TICKS_PER_SECOND;
+/// A full store is news at most this often, in ticks, whether it just filled or a harvest was lost to it.
+const STORAGE_EVERY: u32 = 30 * TICKS_PER_SECOND;
 /// Enemy units this close to one of the local player's buildings, in tiles, are coming for the base...
 pub const WAVE_RANGE: i32 = 10;
 /// ...when there are at least this many of them,
@@ -84,6 +86,7 @@ pub struct Feed {
     unit_attacked: Option<u32>,
     harvester_attacked: Option<u32>,
     hazard_sighted: Option<u32>,
+    storage_full: Option<u32>,
     enemy_wave: Option<u32>,
     /// How many enemy units were near the base at the last look.
     near: usize,
@@ -143,6 +146,7 @@ impl Feed {
             unit_attacked: None,
             harvester_attacked: None,
             hazard_sighted: None,
+            storage_full: None,
             enemy_wave: None,
             near: 0,
             over: false,
@@ -293,6 +297,13 @@ impl Feed {
                         self.say(game, "hazard_sighted", None, Tone::Warn);
                     }
                 }
+                // The store filled, or a harvest was lost for want of room: build silos.
+                Event::StorageFull { player, .. } | Event::CreditsLost { player, .. } if player == local => {
+                    if self.storage_full.is_none_or(|t| tick.saturating_sub(t) >= STORAGE_EVERY) {
+                        self.storage_full = Some(tick);
+                        self.say(game, "storage_full", None, Tone::Warn);
+                    }
+                }
                 // A local unit gave up on its way: it can't get there.
                 Event::MoveEnded { unit, reason: MoveEnd::Blocked, .. } if Self::owner(game, unit) == Some(local) => {
                     self.reply(game, Moment::Cant, &[unit])
@@ -314,6 +325,8 @@ impl Feed {
                 | Event::PowerChanged { .. }
                 | Event::Destroyed { .. }
                 | Event::Delivered { .. }
+                | Event::StorageFull { .. }
+                | Event::CreditsLost { .. }
                 | Event::Regrowth { .. }
                 | Event::BuildingPlaced { .. }
                 | Event::ProductionQueued { .. }

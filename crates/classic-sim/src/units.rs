@@ -97,6 +97,8 @@ pub struct KindRules {
     pub power: i64,
     /// Noise it makes each tick it moves on open ground, which draws the hazard; 0 for silent kinds.
     pub noise: i64,
+    /// Credits it adds to its owner's storage cap (the `storage` module); 0 for most kinds.
+    pub storage: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,6 +187,13 @@ pub struct FogRules {
     pub start_explored: bool,
 }
 
+/// The storage cap's numbers (rules-economy-production.md, section 6; the `storage` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StorageRules {
+    /// Ticks between `credits_lost` events for one player.
+    pub warn_every: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
@@ -198,6 +207,7 @@ pub struct Rules {
     pub regrowth: Regrowth,
     pub placement: Placement,
     pub power: PowerRules,
+    pub storage: StorageRules,
     pub production: ProductionRules,
     pub movement: MovementRules,
     pub weapons: Vec<WeaponRules>,
@@ -256,6 +266,7 @@ impl Rules {
                 sight: t.number(id, "sight").unwrap_or(0) * crate::map::TILE,
                 vision: t.number(id, "vision").unwrap_or(2) as i32,
                 noise: t.number(id, "noise").unwrap_or(0),
+                storage: t.number(id, "storage").unwrap_or(0),
             });
         }
         if kinds.len() > u16::MAX as usize {
@@ -354,6 +365,7 @@ impl Rules {
                 rock_only: module("placement", "rock_only")? != 0,
             },
             power: PowerRules { min_factor: module("power", "min_factor")? },
+            storage: StorageRules { warn_every: (module("storage", "warn_every_ticks")? as u32).max(1) },
             production: ProductionRules {
                 queue_size: module("production", "queue_size")? as usize,
                 instant_build: module("production", "instant_build")? != 0,

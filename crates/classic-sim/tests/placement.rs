@@ -261,9 +261,10 @@ fn a_refinery_tuned_smaller_moves_its_dock_and_harvesters_still_deliver() {
     assert_eq!(g.state.entity(unit(&g, 0, "harvester")).unwrap().tile(), Tile { x: 3, y: 5 }, "dock right below");
     assert_eq!(g.state.entity(unit(&g, 0, "battle_tank")).unwrap().tile(), Tile { x: 5, y: 5 });
     g.step(1200);
+    // Delivered, not credits: each side starts with more than its refinery can store, so the harvest is lost.
     for p in &g.state.players {
-        println!("player {} credits {}", p.id, p.credits);
-        assert!(p.credits >= 1200 + 200);
+        println!("player {} delivered {}", p.id, p.delivered);
+        assert!(p.delivered >= 200);
     }
 }
 
