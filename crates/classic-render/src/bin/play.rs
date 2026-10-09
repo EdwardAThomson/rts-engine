@@ -3,8 +3,14 @@
 //!     [--ai 1 | --ai none] [--fog on | shroud | off] [--start]
 //!
 //! It opens on the title screen, with the map waiting behind it: Start plays, and the opponents switch says whether
-//! every other player is a computer opponent (`--ai` lists which ones, or says `none`). `--start` skips the title.
-//! When someone wins, or you lose your last building, the end screen offers another game or the title.
+//! every other player is a computer opponent (`--ai` lists which ones, or says `none`), and the difficulty switch how
+//! well they play (easy, normal or hard; `--difficulty` sets it). `--start` skips the title. When someone wins, or
+//! you lose your last building, the end screen shows the score and offers another game or the title.
+//!
+//! The settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the
+//! keys; they are kept between runs, in the user's settings folder or the browser's storage for the page. The pause
+//! menu saves the game and loads it again, one save per setting pack; loading plays the game forward to the saved
+//! tick and checks its state hash (`classic_render::save`).
 //!
 //! Arrow keys or WASD (or the mouse at a screen edge) scroll, the wheel zooms, a left click or drag selects your
 //! units, and a right click sends them: onto an enemy to attack it, anywhere else to move there. A click on a
@@ -31,16 +37,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use classic_ai::{Ai, Settings};
+use classic_ai::{Ai, Difficulty};
 use classic_render::art::{self, Art};
-use classic_render::hud::{Button, Click, RAIL_W};
+use classic_render::hud::{self, Button, Click, RAIL_W};
 use classic_render::lines::Moment;
 use classic_render::menu::{Action, Menu, Screen};
 use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
+use classic_render::prefs::{Bind, Prefs};
+use classic_render::save::{Save, SaveInfo, map_hash};
+use classic_render::score::Score;
 use classic_render::skin::{self, Pointer, Skin, SkinFiles};
 use classic_render::sound::Cue;
+use classic_render::store::Store;
 use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View, feed};
 use classic_sim::map::TILE;
+use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
@@ -158,7 +169,17 @@ struct App {
     #[cfg(feature = "device")]
     speaker: Option<classic_render::platform::Speaker>,
     speaker_tried: bool,
+    /// Where the settings and the saved game are kept.
+    store: Store,
+    /// The game's seed and the player's fog override (`--seed`, `--fog`), kept with a save.
+    seed: i32,
+    fog: Option<String>,
+    /// The mixer's starting bus levels, which the volume settings scale.
+    default_gain: [f32; 4],
 }
+
+/// The settings file's name in the store.
+const PREFS: &str = "settings.txt";
 
 impl App {
     /// A player for a game of `pack` on one of `maps` (name and text, the first unless the title screen picks
@@ -173,12 +194,13 @@ impl App {
         pack_files: Files,
         skin_files: Vec<Files>,
     ) -> App {
-        let game = new_game(&pack, &maps[0].1);
+        let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1);
+        let fog = arg("fog");
+        let game = new_game(&pack, &maps[0].1, seed, fog.as_deref());
         let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
-        let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1) as u64;
         let mut mixer = Mixer::new(48_000);
         mixer.muted = flag("mute");
-        let sound = SoundBoard::from_files(sound_files, player, seed, &mut mixer);
+        let mut sound = SoundBoard::from_files(sound_files, player, seed as u64, &mut mixer);
         for w in &sound.warnings {
             say(&format!("sound: {w}"));
         }
@@ -197,10 +219,28 @@ impl App {
         menu.faction = faction;
         menu.opponents = arg("ai").as_deref() != Some("none");
         menu.can_quit = cfg!(not(target_arch = "wasm32"));
+        let store = Store::user();
+        if let Some(text) = store.read(PREFS) {
+            let (prefs, warnings) = Prefs::parse(&text);
+            for w in warnings {
+                say(&format!("settings ({}): {w}", store.describe()));
+            }
+            menu.prefs = prefs;
+        }
+        if let Some(d) = arg("difficulty") {
+            match Difficulty::from_id(&d) {
+                Some(d) => menu.prefs.difficulty = d,
+                None => say(&format!("--difficulty {d}: use easy, normal or hard")),
+            }
+        }
+        menu.has_save = store.read(&save_name(&pack)).is_some();
+        menu.local = player;
+        let default_gain = mixer.bus_gain;
+        sound.set_levels(&mut mixer, menu.prefs.bus_gain(default_gain));
         if flag("start") {
             menu.screen = Screen::Playing;
         }
-        let ais = opponents(&game, player, menu.opponents);
+        let ais = opponents(&game, player, menu.opponents, menu.difficulty());
         App {
             game,
             menu,
@@ -231,19 +271,30 @@ impl App {
             #[cfg(feature = "device")]
             speaker: None,
             speaker_tried: false,
+            store,
+            seed,
+            fog,
+            default_gain,
         }
     }
 
     /// Start a game on the map, faction and opponents the menu shows, and play it.
     fn restart(&mut self) {
-        self.game = new_game(&self.pack, &self.maps[self.menu.map].1);
+        let game = new_game(&self.pack, &self.maps[self.menu.map].1, self.seed, self.fog.as_deref());
+        let ais = opponents(&game, self.player, self.menu.opponents, self.menu.difficulty());
+        self.begin(game, ais, Score::default());
+    }
+
+    /// Play `game` against `ais`, with the score counted so far: a new game, or a loaded one.
+    fn begin(&mut self, game: Game, ais: Vec<Ai>, score: Score) {
+        self.game = game;
         // A new faction or map can change who is drawn in which colours.
         let ramps = self.ramps();
         if let Some(run) = self.run.as_mut().filter(|r| r.ramps != ramps) {
             run.art = Art::from_files(&run.gpu, &mut run.batch, &self.art_files, &ramps).expect("the pack's art loads");
             run.ramps = ramps;
         }
-        self.ais = opponents(&self.game, self.player, self.menu.opponents);
+        self.ais = ais;
         let scale = self.hud.scale;
         self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player, self.menu.faction);
         self.hud.scale = scale;
@@ -251,17 +302,108 @@ impl App {
         self.owed = Duration::ZERO;
         self.paused = false;
         self.centre_on_base();
-        self.menu.screen = Screen::Playing;
+        self.menu.score = score;
+        self.menu.local = self.player;
+        self.menu.show(Screen::Playing);
+    }
+
+    /// Save the game being played, over the last save.
+    fn save_game(&mut self) -> Result<(), String> {
+        let (map, text) = &self.maps[self.menu.map];
+        let info = SaveInfo {
+            setting: self.pack.id.clone(),
+            map: map.clone(),
+            map_hash: map_hash(text),
+            seed: self.seed,
+            fog: self.fog.clone().unwrap_or_else(|| "pack".into()),
+            player: self.player,
+            faction: self.menu.faction,
+        };
+        // Each opponent's difficulty is the preset its settings came from.
+        let ais: Vec<(u32, Difficulty)> = self
+            .ais
+            .iter()
+            .map(|a| (a.player, Difficulty::ALL.into_iter().find(|d| d.settings() == a.settings).unwrap_or_default()))
+            .collect();
+        let save = Save::of(&self.game, &ais, info);
+        self.store.write(&save_name(&self.pack), &save.to_text(&self.game.rules))?;
+        say(&format!("saved at tick {} in {}", save.tick, self.store.describe()));
+        Ok(())
+    }
+
+    /// Load the saved game: start it again and play it forward to the tick it was saved on.
+    fn load_game(&mut self) -> Result<(), String> {
+        let text = self.store.read(&save_name(&self.pack)).ok_or("there is no saved game")?;
+        let save = Save::parse(&text, &self.game.rules)?;
+        if save.setting != self.pack.id {
+            return Err(format!("the save is for the {} setting", save.setting));
+        }
+        let map = self
+            .maps
+            .iter()
+            .position(|(name, text)| *name == save.map && map_hash(text) == save.map_hash)
+            .ok_or_else(|| format!("the save's map, {}, isn't on offer", save.map))?;
+        if save.faction >= self.pack.factions.len().max(1) {
+            return Err("the save's faction isn't in this pack".into());
+        }
+        let fog = Some(save.fog.clone()).filter(|f| f != "pack");
+        let fresh = new_game(&self.pack, &self.maps[map].1, save.seed, fog.as_deref());
+        let mut score = Score::default();
+        let started = Instant::now();
+        let (game, ais) = save.replay(fresh, |g| score.after_step(g))?;
+        say(&format!("loaded tick {} in {:.1} s", save.tick, (Instant::now() - started).as_secs_f32()));
+        (self.seed, self.fog, self.player) = (save.seed, fog, save.player);
+        self.menu.map = map;
+        self.menu.faction = save.faction;
+        self.menu.opponents = !ais.is_empty();
+        self.begin(game, ais, score);
+        Ok(())
+    }
+
+    /// Keep the settings and put the volumes into the mixer.
+    fn keep_prefs(&mut self) {
+        if let Ok(mut m) = self.mixer.lock() {
+            self.sound.set_levels(&mut m, self.menu.prefs.bus_gain(self.default_gain));
+        }
+        if let Err(e) = self.store.write(PREFS, &self.menu.prefs.to_text()) {
+            say(&format!("couldn't keep the settings: {e}"));
+        }
+    }
+
+    /// Whether a key is held: the `bind`'s key, or `also` (an arrow key).
+    fn held(&self, bind: Bind, also: KeyCode) -> bool {
+        self.keys.contains(&also) || self.keys.iter().any(|k| key_name(*k) == self.menu.prefs.key(bind))
     }
 
     /// Do what a menu button asks.
     fn menu_action(&mut self, action: Action, event_loop: &ActiveEventLoop) {
         match action {
             Action::Start | Action::Restart => self.restart(),
-            Action::Resume => self.menu.screen = Screen::Playing,
-            Action::ToTitle => self.menu.screen = Screen::Title,
+            Action::Resume => self.menu.show(Screen::Playing),
+            Action::ToTitle => self.menu.show(Screen::Title),
             Action::Quit => event_loop.exit(),
+            Action::Save => {
+                let notice = match self.save_game() {
+                    Ok(()) => {
+                        self.menu.has_save = true;
+                        format!("SAVED AT {}", hud::clock_text(self.game.state.tick / TICKS_PER_SECOND))
+                    }
+                    Err(e) => {
+                        say(&format!("couldn't save: {e}"));
+                        "COULDN'T SAVE THE GAME".to_string()
+                    }
+                };
+                self.menu.notice = Some(notice);
+            }
+            Action::Load => {
+                if let Err(e) = self.load_game() {
+                    say(&format!("couldn't load: {e}"));
+                    self.menu.notice = Some(format!("COULDN'T LOAD: {}", e.to_uppercase()));
+                }
+            }
+            Action::Difficulty | Action::Volume(_) | Action::Scroll | Action::ResetKeys => self.keep_prefs(),
             Action::Opponents | Action::Map | Action::Faction => {}
+            Action::Settings | Action::Keys | Action::Bind(_) | Action::Back => {}
         }
         self.ui_sound("ui_select");
     }
@@ -536,20 +678,19 @@ impl App {
 
     fn scroll(&mut self, dt: f32, w: f32, h: f32) {
         let (mut dx, mut dy) = (0.0, 0.0);
-        let held = |k: &[KeyCode]| k.iter().any(|k| self.keys.contains(k));
-        if held(&[KeyCode::ArrowLeft, KeyCode::KeyA]) || self.mouse.0 < EDGE {
+        if self.held(Bind::ScrollLeft, KeyCode::ArrowLeft) || self.mouse.0 < EDGE {
             dx -= 1.0;
         }
-        if held(&[KeyCode::ArrowRight, KeyCode::KeyD]) || self.mouse.0 > w - EDGE {
+        if self.held(Bind::ScrollRight, KeyCode::ArrowRight) || self.mouse.0 > w - EDGE {
             dx += 1.0;
         }
-        if held(&[KeyCode::ArrowUp, KeyCode::KeyW]) || self.mouse.1 < EDGE {
+        if self.held(Bind::ScrollUp, KeyCode::ArrowUp) || self.mouse.1 < EDGE {
             dy -= 1.0;
         }
-        if held(&[KeyCode::ArrowDown, KeyCode::KeyS]) || self.mouse.1 > h - EDGE {
+        if self.held(Bind::ScrollDown, KeyCode::ArrowDown) || self.mouse.1 > h - EDGE {
             dy += 1.0;
         }
-        let speed = SCROLL * dt / self.cam.zoom;
+        let speed = SCROLL * self.menu.prefs.scroll as f32 / 100.0 * dt / self.cam.zoom;
         let tile = TILE as f32 * self.world_px();
         let (mw, mh) = (self.game.map.width as f32 * tile, self.game.map.height as f32 * tile);
         let (vw, vh) = (w / self.cam.zoom, h / self.cam.zoom);
@@ -780,15 +921,24 @@ impl ApplicationHandler for App {
                 let PhysicalKey::Code(code) = event.physical_key else { return };
                 if event.state == ElementState::Pressed {
                     self.keys.insert(code);
+                    if self.menu.waiting.is_some() && !event.repeat {
+                        // The keys screen waits for a new key.
+                        if self.menu.key(&key_name(code)) {
+                            self.keep_prefs();
+                            self.ui_sound("ui_select");
+                        }
+                        return;
+                    }
+                    let bind = self.menu.prefs.bound(&key_name(code));
                     if !self.menu.playing() {
-                        // On a menu only Escape (back to the game, or quit from the title) and mute work.
+                        // On a menu only Escape (back, or quit from the title) and mute work.
                         match code {
                             KeyCode::Escape if !event.repeat && !self.menu.escape() && self.menu.can_quit => {
                                 if self.menu.screen == Screen::Title {
                                     event_loop.exit();
                                 }
                             }
-                            KeyCode::KeyM if !event.repeat => self.toggle_mute(),
+                            _ if !event.repeat && bind == Some(Bind::Mute) => self.toggle_mute(),
                             _ => {}
                         }
                         return;
@@ -801,12 +951,15 @@ impl ApplicationHandler for App {
                             }
                             self.scene.selected.clear();
                         }
-                        KeyCode::Space if !event.repeat => self.paused = !self.paused,
-                        KeyCode::Tab if !event.repeat => self.hud.next_tab(&self.game, self.shift()),
-                        KeyCode::KeyH if !event.repeat => self.centre_on_base(),
-                        _ if !event.repeat && digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
-                        KeyCode::KeyM if !event.repeat => self.toggle_mute(),
-                        _ => {}
+                        _ if event.repeat => {}
+                        _ if digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
+                        _ => match bind {
+                            Some(Bind::Pause) => self.paused = !self.paused,
+                            Some(Bind::NextTab) => self.hud.next_tab(&self.game, self.shift()),
+                            Some(Bind::Base) => self.centre_on_base(),
+                            Some(Bind::Mute) => self.toggle_mute(),
+                            _ => {}
+                        },
                     }
                 } else {
                     self.keys.remove(&code);
@@ -828,9 +981,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorLeft { .. } => self.mouse = (-1.0e4, -1.0e4),
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
-                (MouseButton::Left, ElementState::Pressed) if !self.menu.playing() => {
+                (MouseButton::Left | MouseButton::Right, ElementState::Pressed) if !self.menu.playing() => {
                     let screen = self.view().screen;
-                    if let Some(action) = self.menu.click(screen, self.mouse) {
+                    if let Some(action) = self.menu.click_with(screen, self.mouse, button == MouseButton::Right) {
                         self.menu_action(action, event_loop);
                     }
                 }
@@ -960,8 +1113,19 @@ fn main() {
 /// The map played when none is given, from the repository root.
 const MAP: &str = "maps/skirmish-01.txt";
 
-/// The computer opponents: none when `on` is false, else the players `--ai` lists, else every player but `player`.
-fn opponents(game: &Game, player: u32, on: bool) -> Vec<Ai> {
+/// The name a key is kept under in the settings: winit's own name for it.
+fn key_name(code: KeyCode) -> String {
+    format!("{code:?}")
+}
+
+/// The name of a pack's saved game in the store.
+fn save_name(pack: &classic_data::Pack) -> String {
+    format!("save-{}.txt", pack.id)
+}
+
+/// The computer opponents at `difficulty`: none when `on` is false, else the players `--ai` lists, else every player
+/// but `player`.
+fn opponents(game: &Game, player: u32, on: bool, difficulty: Difficulty) -> Vec<Ai> {
     match arg("ai").as_deref() {
         _ if !on => Vec::new(),
         Some("none") | None => game
@@ -970,22 +1134,23 @@ fn opponents(game: &Game, player: u32, on: bool) -> Vec<Ai> {
             .iter()
             .map(|p| p.id)
             .filter(|&p| p != player)
-            .map(|p| Ai::new(p, Settings::normal()))
+            .map(|p| Ai::new(p, difficulty.settings()))
             .collect(),
-        Some(list) => {
-            list.split(',').map(|p| Ai::new(p.trim().parse().expect("a player number"), Settings::normal())).collect()
-        }
+        Some(list) => list
+            .split(',')
+            .map(|p| Ai::new(p.trim().parse().expect("a player number"), difficulty.settings()))
+            .collect(),
     }
 }
 
-/// A game of `pack` on `map`. `--fog on`, `shroud` (shroud only, nothing hidden once explored) or `off` overrides the
-/// pack's fog of war.
-fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
+/// A game of `pack` on `map`. `fog` (`--fog`) is `on`, `shroud` (shroud only, nothing hidden once explored) or `off`
+/// to override the pack's fog of war.
+fn new_game(pack: &classic_data::Pack, map: &str, seed: i32, fog: Option<&str>) -> Game {
     let mut table = pack.rules.clone();
-    if let Some(fog) = arg("fog")
+    if let Some(fog) = fog
         && let Some(m) = table.modules.get_mut("fog")
     {
-        let (on, hide) = match fog.as_str() {
+        let (on, hide) = match fog {
             "off" => (0, 1),
             "shroud" => (1, 0),
             _ => (1, 1),
@@ -997,6 +1162,5 @@ fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
         }
     }
     let rules = Rules::from_table(&table).expect("pack rules match the simulation");
-    let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
     Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map")
 }

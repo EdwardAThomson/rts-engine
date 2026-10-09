@@ -6,7 +6,8 @@
 //! It is deterministic: integer maths, entities in id order, no clock and no randomness of its own, so the same game
 //! always gets the same orders and two AIs playing each other give the same hash every run.
 //!
-//! This first version is one "normal" opponent with three managers that share a small memory (`Ai`):
+//! The opponent comes in three strengths (`Difficulty`: easy, normal, hard), which are only different `Settings`.
+//! It has three managers that share a small memory (`Ai`):
 //! - the base (`base.rs`): power, a build order of generic ids and where each building goes;
 //! - production and the economy: harvesters to fill its refineries, then combat units in a weighted mix;
 //! - the army (`army.rs`): gathers new units at a rally point, defends the base, and sends attack waves that grow
@@ -119,6 +120,86 @@ impl Settings {
             retreat_percent: 30,
             defend_radius: 10,
             rally_distance: 6,
+        }
+    }
+
+    /// A gentler opponent: it thinks half as often, keeps fewer harvesters and a bigger reserve, builds fewer
+    /// turrets, and waits longer before smaller waves that turn back sooner.
+    pub fn easy() -> Settings {
+        let normal = Settings::normal();
+        let order = [
+            ("power_plant", 1),
+            ("refinery", 1),
+            ("light_factory", 1),
+            ("heavy_factory", 1),
+            ("barracks", 1),
+            ("radar", 1),
+            ("refinery", 2),
+            ("gun_turret", 2),
+        ];
+        Settings {
+            think_every: 60,
+            build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
+            harvesters_per_refinery: 2,
+            max_harvesters: 4,
+            factory_queue: 1,
+            unit_reserve: 600,
+            first_wave_tick: 15 * 60 * 10,
+            first_wave: 3,
+            wave_growth: 1,
+            wave_cap: 10,
+            retreat_percent: 50,
+            ..normal
+        }
+    }
+
+    /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast and only
+    /// attacks where it would win clearly. AI-versus-AI runs on the skirmish map found that a richer economy (more
+    /// harvesters, a third refinery, thinking more often) alone made it no stronger, but bigger, surer waves did.
+    pub fn hard() -> Settings {
+        Settings { first_wave: 8, wave_growth: 4, wave_cap: 30, attack_margin: 200, ..Settings::normal() }
+    }
+}
+
+/// How strong the computer opponent plays: a name for one of the `Settings` presets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Difficulty {
+    Easy,
+    #[default]
+    Normal,
+    Hard,
+}
+
+impl Difficulty {
+    pub const ALL: [Difficulty; 3] = [Difficulty::Easy, Difficulty::Normal, Difficulty::Hard];
+
+    pub fn settings(self) -> Settings {
+        match self {
+            Difficulty::Easy => Settings::easy(),
+            Difficulty::Normal => Settings::normal(),
+            Difficulty::Hard => Settings::hard(),
+        }
+    }
+
+    /// Its id in saved settings and saved games: `easy`, `normal` or `hard`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "easy",
+            Difficulty::Normal => "normal",
+            Difficulty::Hard => "hard",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Difficulty> {
+        Difficulty::ALL.into_iter().find(|d| d.id() == id)
+    }
+
+    /// The next one up, wrapping from hard to easy.
+    pub fn next(self) -> Difficulty {
+        match self {
+            Difficulty::Easy => Difficulty::Normal,
+            Difficulty::Normal => Difficulty::Hard,
+            Difficulty::Hard => Difficulty::Easy,
         }
     }
 }
