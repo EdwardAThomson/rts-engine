@@ -44,6 +44,15 @@ impl Moment {
     }
 }
 
+/// A line just said, for the sound board to voice: who said it (`advisor`, or a unit voice set), its id (an advisor
+/// line id, or a moment's) and which of its variants, from 0, so the voice speaks the words the screen shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Speech {
+    pub who: &'static str,
+    pub key: String,
+    pub variant: usize,
+}
+
 /// One faction's lines, after the pack's.
 #[derive(Clone, Debug, Default)]
 pub struct Lines {

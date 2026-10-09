@@ -252,12 +252,13 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,
   the card's unit chips can't be clicked, and the advisor and the units speak in text only (the feed, and a
-  subtitle when units are selected or ordered), not yet aloud; the refused-order reply has lines but nothing says it yet. A pack's own art (the Blender
+  subtitle when units are selected or ordered), and aloud only where a pack has voices for them (the generic pack has
+  none); the refused-order reply has lines but nothing says it yet. A pack's own art (the Blender
   studio's packed sprites in `art/sprites/`, its terrain tiles in `art/tiles/`) is drawn over the generic pack's,
   file by file, so a pack draws only what it changes. Icons in the rail are still the placeholders, and wrecks and the build-up frames
   aren't drawn. Squads are drawn as three soldiers; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
-- Sound is effects and interface sounds only: no music, spoken unit replies or advisor announcements, looping sounds or
+- Sound is effects, interface sounds and a pack's spoken lines: no music, looping sounds or
   volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and
   it has not been heard there. The placeholder sounds were checked by tests and numbers
   (length, peak, never clipping), not yet by ear, and the player has not been run with a real sound card.

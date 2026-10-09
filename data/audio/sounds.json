@@ -15,5 +15,11 @@
     "ui_credits": { "bus": "ui", "gain_db": -18, "priority": 30, "max_instances": 1, "spatial": false, "jitter_percent": 4 },
     "ui_power_down": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
     "ui_power_up": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 }
+  },
+  "voices": {
+    "about": "How spoken lines (a pack's audio/voices.json) are mixed, on the voice bus: one advisor line and one unit reply at a time at most, no reply starting while the advisor speaks, and the sound effects held down by duck_db while anyone speaks.",
+    "advisor": { "gain_db": 0, "priority": 95 },
+    "unit": { "gain_db": -2, "priority": 60 },
+    "duck_db": -6
   }
 }

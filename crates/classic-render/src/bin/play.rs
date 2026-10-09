@@ -334,6 +334,7 @@ impl App {
         } else if !self.scene.groups[n].is_empty() {
             self.ui_sound("ui_select");
             self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
+            self.speak();
         }
     }
 
@@ -360,6 +361,18 @@ impl App {
     fn hear(&self, cues: Vec<Cue>) {
         if let Ok(mut m) = self.mixer.lock() {
             for c in cues {
+                m.play(c.sound);
+            }
+        }
+    }
+
+    /// Voice what the advisor and the units just said, in the local player's faction's voices if the pack has them.
+    fn speak(&mut self) {
+        let said = std::mem::take(&mut self.hud.feed.spoken);
+        let Some(faction) = self.pack.factions.get(self.menu.faction).map(|f| f.id.clone()) else { return };
+        let Ok(mut m) = self.mixer.lock() else { return };
+        for s in &said {
+            if let Some(c) = self.sound.speak(&faction, s, &m) {
                 m.play(c.sound);
             }
         }
@@ -410,6 +423,7 @@ impl App {
             if !self.scene.selected.is_empty() {
                 self.ui_sound("ui_select");
                 self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
+                self.speak();
             }
             return;
         }
@@ -432,6 +446,7 @@ impl App {
         if !self.scene.selected.is_empty() {
             self.ui_sound("ui_select");
             self.hud.feed.reply(&self.game, Moment::Select, &self.scene.selected);
+            self.speak();
         }
     }
 
@@ -460,10 +475,14 @@ impl App {
         self.game.order(self.player, &ids, order);
         self.ui_sound("ui_order");
         self.hud.feed.reply(&self.game, moment, &ids);
+        self.speak();
     }
 
     /// Advance the game by the ticks owed since the last frame, at most a few at once so a stall doesn't snowball.
     fn advance(&mut self) -> f32 {
+        if let Ok(mut m) = self.mixer.lock() {
+            self.sound.duck(&mut m);
+        }
         let now = Instant::now();
         let dt = now - self.last;
         self.last = now;
@@ -482,6 +501,7 @@ impl App {
             self.game.step(1);
             self.scene.after_step(&self.game);
             self.hud.after_step(&self.game);
+            self.speak();
             let cues = self.sound.after_step(&self.game, &listener);
             self.hear(cues);
             self.menu.after_step(&self.game, self.player);

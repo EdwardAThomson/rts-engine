@@ -5,6 +5,11 @@
 //! (`sounds.json`). A setting pack supplies only the files for those ids, in its `audio/sounds.json`; any id it
 //! leaves out falls back to the generic pack's placeholder. Input sounds (a click on the build rail, an order)
 //! belong to the interface, which plays them by id with [`SoundBoard::ui`].
+//!
+//! Spoken lines are the pack's too: its `audio/voices.json` gives the files for its `lines.json`, by faction, then
+//! `advisor` by line id or a unit voice set by moment, the n-th file speaking the n-th line. The feed says which line
+//! it showed ([`Speech`]) and [`SoundBoard::speak`] plays the matching take on the voice bus, one line of each kind at
+//! a time and no reply over the advisor, holding the sound effects down while it lasts ([`SoundBoard::duck`]).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -13,12 +18,35 @@ use classic_data::json::{self, Value};
 use classic_sim::map::TILE;
 use classic_sim::{Event, Game};
 
+use crate::lines::Speech;
 use crate::platform::Files;
 use crate::platform::audio::{Bus, ClipId, Mixer, Sound, db};
 use crate::platform::wav;
 
 /// A pack's sound index, from the pack's folder: which files each sound id plays.
 pub const SOUND_INDEX: &str = "audio/sounds.json";
+
+/// A pack's voice index, from the pack's folder: which files speak each of its lines.
+pub const VOICE_INDEX: &str = "audio/voices.json";
+
+/// The mixer keys of the advisor's lines and of the units' replies, well clear of the sound ids' keys. Each plays
+/// one at a time; a reply waits out the advisor (see [`SoundBoard::speak`]).
+pub const ADVISOR_KEY: u32 = 0xFFFF_0000;
+pub const REPLY_KEY: u32 = 0xFFFF_0001;
+
+/// Every file the voice index `index` names, for the browser build.
+pub fn voice_files_named(index: &str) -> Vec<String> {
+    let Ok(v) = json::parse(index) else { return Vec::new() };
+    let mut files = Vec::new();
+    for (_, who) in v.get("voices").and_then(Value::as_object).unwrap_or(&[]) {
+        for (_, keys) in who.as_object().unwrap_or(&[]) {
+            for (_, list) in keys.as_object().unwrap_or(&[]) {
+                files.extend(list.as_array().unwrap_or(&[]).iter().filter_map(Value::as_str).map(String::from));
+            }
+        }
+    }
+    files
+}
 
 /// Every file the sound index `index` names, so the browser build knows what to fetch.
 pub fn files_named(index: &str) -> Vec<String> {
@@ -98,12 +126,23 @@ struct Rule {
     power: Option<PowerTurn>,
 }
 
+/// How spoken lines are mixed, from `data/audio/sounds.json` `voices`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VoiceMix {
+    /// Level and priority of the advisor's lines and of the units' replies.
+    pub advisor: (i64, i64),
+    pub unit: (i64, i64),
+    /// How far the sound effects drop while someone speaks.
+    pub duck_db: i64,
+}
+
 /// The engine's sound tables, before any files are loaded.
 #[derive(Clone, Debug)]
 pub struct Tables {
     pub defs: Vec<SoundDef>,
     rules: Vec<Rule>,
     pub silent: Vec<String>,
+    pub voices: VoiceMix,
 }
 
 fn field<'a>(v: &'a Value, key: &str, at: &str) -> Result<&'a Value, String> {
@@ -138,6 +177,15 @@ impl Tables {
                 clips: Vec::new(),
             });
         }
+        let v = field(&sounds, "voices", "sounds.json")?;
+        let num = |o: &Value, k: &str, at: &str| {
+            field(o, k, at)?.as_int().ok_or_else(|| format!("voices.{at}.{k}: not a whole number"))
+        };
+        let pair = |k: &str| -> Result<(i64, i64), String> {
+            let o = field(v, k, "voices")?;
+            Ok((num(o, "gain_db", k)?, num(o, "priority", k)?))
+        };
+        let voices = VoiceMix { advisor: pair("advisor")?, unit: pair("unit")?, duck_db: num(v, "duck_db", "voices")? };
         let events = json::parse(events).map_err(|e| format!("events.json: {e:?}"))?;
         let mut rules = Vec::new();
         for (i, r) in field(&events, "rules", "events.json")?
@@ -193,7 +241,7 @@ impl Tables {
         if let Some(s) = silent.iter().find(|s| !EVENT_NAMES.contains(&s.as_str())) {
             return Err(format!("events.json: silent lists {s}, which is no event"));
         }
-        Ok(Tables { defs, rules, silent })
+        Ok(Tables { defs, rules, silent, voices })
     }
 
     /// Ids that some event plays.
@@ -314,6 +362,10 @@ pub struct SoundBoard {
     short: BTreeMap<u32, bool>,
     /// For picking a take and its speed; the board's own, never the game's.
     rng: u64,
+    /// Spoken takes by faction id, who speaks (`advisor` or a unit voice set) and line id or moment.
+    pub voices: BTreeMap<(String, String, String), Vec<ClipId>>,
+    /// The sound effects' level before a voice held it down, while it does.
+    ducked: Option<f32>,
     pub warnings: Vec<String>,
 }
 
@@ -333,7 +385,31 @@ impl SoundBoard {
     pub fn from_files(packs: &[Files], local: u32, seed: u64, mixer: &mut Mixer) -> SoundBoard {
         let mut tables = Tables::builtin();
         let mut warnings = Vec::new();
+        let mut voices = BTreeMap::new();
         for files in packs {
+            if let Ok(text) = files.read_text(VOICE_INDEX) {
+                match json::parse(&text).ok().as_ref().and_then(|v| v.get("voices")?.as_object().map(|o| o.to_vec())) {
+                    Some(factions) => {
+                        for (faction, who) in &factions {
+                            for (w, keys) in who.as_object().unwrap_or(&[]) {
+                                for (key, list) in keys.as_object().unwrap_or(&[]) {
+                                    let mut clips = Vec::new();
+                                    for f in list.as_array().unwrap_or(&[]).iter().filter_map(Value::as_str) {
+                                        match files.read(f).and_then(|b| {
+                                            wav::decode(&b).map_err(|e| format!("{}: {e}", files.name(f)))
+                                        }) {
+                                            Ok(clip) => clips.push(mixer.add_clip(clip)),
+                                            Err(e) => warnings.push(e),
+                                        }
+                                    }
+                                    voices.insert((faction.clone(), w.clone(), key.clone()), clips);
+                                }
+                            }
+                        }
+                    }
+                    None => warnings.push(format!("{}: needs a `voices` object", files.name(VOICE_INDEX))),
+                }
+            }
             let Ok(text) = files.read_text(SOUND_INDEX) else { continue };
             let Ok(v) = json::parse(&text) else {
                 warnings.push(format!("{}: not valid JSON", files.name(SOUND_INDEX)));
@@ -362,6 +438,8 @@ impl SoundBoard {
             seen: 0,
             short: BTreeMap::new(),
             rng: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
+            voices,
+            ducked: None,
             warnings,
         }
     }
@@ -403,6 +481,47 @@ impl SoundBoard {
     pub fn ui(&mut self, id: &str) -> Option<Cue> {
         let def = self.tables.defs.iter().position(|d| d.id == id)?;
         self.cue(def, 1.0, 0.0)
+    }
+
+    /// The take that speaks `s` for `faction`, on the voice bus, or `None` when the pack has no voice for it or a
+    /// unit would talk over the advisor, who `mixer` is still playing.
+    pub fn speak(&self, faction: &str, s: &Speech, mixer: &Mixer) -> Option<Cue> {
+        let advisor = s.who == "advisor";
+        if !advisor && mixer.playing_key(ADVISOR_KEY) > 0 {
+            return None;
+        }
+        let key = (faction.to_string(), s.who.to_string(), s.key.clone());
+        let clip = *self.voices.get(&key)?.get(s.variant)?;
+        let (gain_db, priority) = if advisor { self.tables.voices.advisor } else { self.tables.voices.unit };
+        Some(Cue {
+            id: format!("voice {faction} {}.{}", s.who, s.key),
+            sound: Sound {
+                clip,
+                key: if advisor { ADVISOR_KEY } else { REPLY_KEY },
+                bus: Bus::Voice,
+                gain: db(gain_db as f32),
+                pan: 0.0,
+                speed: 1.0,
+                priority: priority as i32,
+                max_instances: 1,
+            },
+        })
+    }
+
+    /// Hold the sound effects down while a line is spoken, and bring them back after. Call once a frame.
+    pub fn duck(&mut self, mixer: &mut Mixer) {
+        let sfx = Bus::Sfx as usize;
+        match (mixer.playing_key(ADVISOR_KEY) + mixer.playing_key(REPLY_KEY) > 0, self.ducked) {
+            (true, None) => {
+                self.ducked = Some(mixer.bus_gain[sfx]);
+                mixer.bus_gain[sfx] *= db(self.tables.voices.duck_db as f32);
+            }
+            (false, Some(level)) => {
+                mixer.bus_gain[sfx] = level;
+                self.ducked = None;
+            }
+            _ => {}
+        }
     }
 
     /// The sounds for every event since the last call, heard from `listener`.
