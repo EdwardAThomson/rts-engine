@@ -108,8 +108,9 @@ fn buildable(game: &Game, view: &View, player: u32, kind: Kind) -> bool {
     game.can_build(player, kind).is_ok() && view.mine.iter().any(|&i| Some(game.state.entities[i].kind) == maker)
 }
 
-/// Keep each factory's queue topped up: harvesters until every refinery has its share, then combat units in the
-/// weighted mix of `Settings::unit_mix`.
+/// Keep each factory's queue topped up: harvesters until every refinery has its share, a carrier for every
+/// `harvesters_per_carrier` harvesters (ai-opponent.md: they lift harvesters by themselves), then combat units in
+/// the weighted mix of `Settings::unit_mix`.
 pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     let es = &game.state.entities;
     let rules = &game.rules;
@@ -119,6 +120,10 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     let queued_harvesters = view.mine.iter().flat_map(|&i| es[i].queue.iter()).filter(|q| is_harvester(q.item)).count();
     let mut harvesters = view.mine.iter().filter(|&&i| is_harvester(es[i].kind)).count() + queued_harvesters;
     let want = (refineries * ai.settings.harvesters_per_refinery).min(ai.settings.max_harvesters);
+    let is_carrier = |k: Kind| rules.kind(k).carrier;
+    let queued_carriers = view.mine.iter().flat_map(|&i| es[i].queue.iter()).filter(|q| is_carrier(q.item)).count();
+    let mut carriers = view.mine.iter().filter(|&&i| is_carrier(es[i].kind)).count() + queued_carriers;
+    let carriers_wanted = harvesters.checked_div(ai.settings.harvesters_per_carrier).unwrap_or(0);
     let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
     // How many of each kind it has or has queued, by kind index; and what everything queued still owes, plus the
     // next building it wants if none is queued, so combat units are bought only from what is left over.
@@ -171,6 +176,15 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
         {
             harvesters += 1;
             out.push(vec![f.id], CommandOrder::Produce { kind: h });
+            continue;
+        }
+        if carriers < carriers_wanted
+            && !dry
+            && let Some(&c) = made_here.iter().find(|&&k| is_carrier(k))
+        {
+            carriers += 1;
+            owed += rules.kind(c).cost;
+            out.push(vec![f.id], CommandOrder::Produce { kind: c });
             continue;
         }
         factories.push((f.id, f.queue.len(), made_here));

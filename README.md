@@ -245,6 +245,21 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   a target they know, and one finds and beats a player who does nothing by tick 8,714 with fog and with shroud only
   (`crates/classic-ai/tests/fog.rs`). The renderer test draws a fogged map and checks the enemy base is black and the
   player's own lit; a sound test checks a fight in the shroud is silent for the player who can't see it.
+- Aircraft (`crates/classic-sim/tests/air.rs`, the `air` module): no aircraft in any golden game, so every golden
+  hash is unchanged. An aircraft climbs before it moves, flies a straight line over a cliff wall a ground unit
+  would go round, slows over its last 2 tiles and lands; aircraft share tiles with each other and with ground units,
+  and hover instead of landing over a building or a cliff. Only weapons that hit air (rocket infantry, rocket
+  squads, the rocket turret) aim at an aircraft in flight, and their shots home in on it; a tank drops an attack
+  order on one, but shells a landed one. A gunship crosses the cliff and fires on a tank only from the air. A burst
+  on the ground never splashes an aircraft above it, and nothing aims at the untargetable supply ship. An air
+  factory builds a carrier, which waits landed beside it; a gunship needs a research lab. An idle carrier lifts a
+  full harvester 26 tiles from home and it delivers sooner than by road; aboard, it can't be shot and takes no
+  orders, and its carrier finishes the lift before obeying a move; a carrier shot down drops it to the ground with
+  half its full health gone. Games with aircraft replay to the same hash. The renderer test draws a carrier and a
+  gunship lifted above the shadows they leave on the ground. The computer opponent builds an air factory last in
+  its build order and keeps a carrier for every three harvesters: in 16 games on `skirmish-01` and `mirror-01`
+  carriers made about 300 lifts a game, and in 8 games on `mirror-01` the two sides lifted and delivered within 4%
+  of each other.
 
 ## Not verified / not built yet
 
@@ -254,9 +269,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   changed-tiles list performance.md plans; the bench runs with fog off. Effects (shots, explosions) in fog are still
   drawn, dimmed by it; in shroud they are covered. The computer opponent knows a ghost building's real health, and
   that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
-- Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
+- Collision covers vehicles only (aircraft have none, by design): no infantry positions, crushing, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank fires one rocket for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet), aircraft or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
+- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank fires one rocket for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
@@ -275,7 +290,13 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
   acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
   because the starting base doesn't turn with them.
-- No storage cap, tech levels, factory upgrades or starport.
+- No tech levels, factory upgrades or starport. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
+  3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
+  way; the supply ship is built but nothing sends it yet (the starport, issue #75). The computer opponent builds no
+  gunships (no research lab in its build order). Carriers make the economy faster, so fields run dry and more AI games end:
+  of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
+  (8 for the right start), so that lean is older than aircraft and wants a look of its own. Aircraft were checked in tests and a rendered
+  frame, not yet by a person playing.
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,

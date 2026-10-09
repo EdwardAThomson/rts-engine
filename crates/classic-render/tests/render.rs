@@ -408,3 +408,33 @@ fn fog_of_war_hides_what_the_viewer_has_not_seen() {
     let shroud = seen.chunks_exact(4).filter(|p| p[..3] == [0, 0, 0]).count();
     assert!(shroud * 2 > seen.len() / 4, "most of an unexplored map is black: {shroud}");
 }
+
+#[test]
+fn an_aircraft_in_flight_is_drawn_above_its_shadow() {
+    let mut r = rig();
+    let cam = Camera { x: 12.0 * 32.0 - 100.0, y: 9.0 * 32.0 - 100.0, zoom: 1.0 };
+    let mut scene = Scene::default();
+    let empty = frame(&mut r, &mut scene, &cam);
+    let carrier = r.game.kind("carrier").unwrap();
+    let gunship = r.game.kind("gunship").unwrap();
+    let c = r.game.spawn(carrier, 0, 12, 9);
+    r.game.spawn(gunship, 1, 14, 9);
+    let landed = frame(&mut r, &mut scene, &cam);
+    for e in r.game.state.entities.iter_mut().filter(|e| e.id >= c) {
+        e.altitude = r.game.rules.air.cruise_altitude;
+    }
+    let up = frame(&mut r, &mut scene, &cam);
+    let png = classic_tools::art::png::encode(W as usize, H as usize, &up);
+    std::fs::write(setting::root().join("target/air-test.png"), png).unwrap();
+    let changed = |a: &[u8], b: &[u8], (x, y, w, h): (u32, u32, u32, u32)| {
+        (y..y + h)
+            .flat_map(|py| (x..x + w).map(move |px| ((py * W + px) * 4) as usize))
+            .filter(|&i| a[i..i + 3] != b[i..i + 3])
+            .count()
+    };
+    // The carrier's tile is about 100 pixels from the view's corner; at cruising height it is drawn 24 pixels up,
+    // over the tile above, while its shadow stays on its own tile.
+    assert!(changed(&empty, &landed, (84, 84, 32, 32)) > 50, "drawn on its tile when landed");
+    assert!(changed(&landed, &up, (84, 60, 32, 24)) > 50, "lifted into the tile above in flight");
+    assert!(changed(&empty, &up, (84, 92, 32, 24)) > 20, "with its shadow left on the ground");
+}

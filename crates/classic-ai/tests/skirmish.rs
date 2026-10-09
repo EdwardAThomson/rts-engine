@@ -122,8 +122,10 @@ fn the_mix_comes_from_settings_and_the_rules() {
     play(&mut g, &mut ai, 9000);
     let even = units_built(&g, 0);
     println!("weights 0 for all but tanks: {tanks_only:?}; no list, every armed unit 1: {even:?}");
-    assert!(tanks_only.iter().all(|(id, _)| id == "battle_tank" || id == "harvester"));
-    assert!(even.iter().filter(|(id, _)| id != "harvester").count() >= 4);
+    // Harvesters and carriers, which lift them, come before the mix.
+    let workers = |id: &str| id == "harvester" || id == "carrier";
+    assert!(tanks_only.iter().all(|(id, _)| id == "battle_tank" || workers(id)));
+    assert!(even.iter().filter(|(id, _)| !workers(id)).count() >= 4);
 }
 
 #[test]

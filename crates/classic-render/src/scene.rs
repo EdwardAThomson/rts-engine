@@ -52,6 +52,8 @@ const WALK_TICKS: u32 = 3;
 const FALL_TICKS: u32 = 48;
 /// Ticks each frame of a building's overlay (a pump, a turning dish) stays on screen.
 const OVERLAY_TICKS: u32 = 4;
+/// How high an aircraft at its cruising height is drawn above its shadow, in tiles.
+const CRUISE_LIFT: f32 = 0.75;
 /// Ticks each frame of the hazard's ripple stays on screen.
 const RIPPLE_TICKS: u32 = 3;
 /// Frames in the hazard's strike, then its sink, played out over the ticks it stays surfaced (the studio's
@@ -232,7 +234,8 @@ impl Scene {
             let (sx, sy) = cam.to_screen(t.x as f32 * tile, t.y as f32 * tile);
             let dst = Rect::new(sx, sy, k.width as f32 * tile * cam.zoom, k.height as f32 * tile * cam.zoom);
             let anims: &[&str] = if e.health * 2 < k.max_health { &["damaged"] } else { &["idle"] };
-            let pose = Pose { facing: e.facing, turret: e.facing, anims, step: tick / OVERLAY_TICKS, alpha: 255 };
+            let pose =
+                Pose { facing: e.facing, turret: e.facing, anims, step: tick / OVERLAY_TICKS, alpha: 255, lift: 0.0 };
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), dst, &pose);
         }
         // Enemy buildings out of sight, as the viewer last saw them; gone or not.
@@ -241,10 +244,18 @@ impl Scene {
             let (sx, sy) = cam.to_screen(g.x as f32 * tile, g.y as f32 * tile);
             let dst = Rect::new(sx, sy, k.width as f32 * tile * cam.zoom, k.height as f32 * tile * cam.zoom);
             let anims: &[&str] = if g.health * 2 < k.max_health { &["damaged"] } else { &["idle"] };
-            let pose = Pose { facing: 0, turret: 0, anims, step: 0, alpha: 255 };
+            let pose = Pose { facing: 0, turret: 0, anims, step: 0, alpha: 255, lift: 0.0 };
             draw_look(batch, art, cam.zoom, &k.id, g.owner, (sx, sy), dst, &pose);
         }
         units.sort_by_key(|e| (e.y, e.id));
+        // Aircraft, and what they carry, go over everything on the ground (rules-movement.md section 9); a carried
+        // unit just before its carrier, so it hangs under it.
+        let (mut flying, units): (Vec<&Entity>, Vec<&Entity>) =
+            units.into_iter().partition(|e| game.rules.kind(e.kind).air || e.carried_by.is_some());
+        let carrier_of = |e: &Entity| e.carried_by.and_then(|c| game.state.entity(c));
+        flying.sort_by_key(|e| {
+            (carrier_of(e).map_or(e.y, |c| c.y), carrier_of(e).map_or(e.id, |c| c.id), e.carried_by.is_none())
+        });
         // The viewer sees a hazard only where they see the ground it is on.
         let hazard_shows = |z: &Hazard| {
             let t = classic_sim::Tile { x: z.x.div_euclid(TILE) as i32, y: z.y.div_euclid(TILE) as i32 };
@@ -258,7 +269,8 @@ impl Scene {
             let y = (oy as f32 + (z.y - oy) as f32 * alpha) * px;
             // A full one fades as it goes deep.
             let fade = z.leaving.map_or(255, |left| (255 * left.min(30) / 30) as u8);
-            let pose = Pose { facing: 0, turret: 0, anims: &["ripple"], step: tick / RIPPLE_TICKS, alpha: fade };
+            let pose =
+                Pose { facing: 0, turret: 0, anims: &["ripple"], step: tick / RIPPLE_TICKS, alpha: fade, lift: 0.0 };
             draw_hazard(batch, art, cam, tile, (x, y), &pose);
         }
         // Squad members lost since the last frame fall where they stood, fading under the units still standing.
@@ -297,15 +309,22 @@ impl Scene {
             let (sx, sy) = cam.to_screen(f.x, f.y);
             let cell =
                 Rect::new(sx - tile * cam.zoom / 2.0, sy - tile * cam.zoom / 2.0, tile * cam.zoom, tile * cam.zoom);
-            let pose = Pose { facing: f.facing, turret: f.facing, anims: &[die], step, alpha };
+            let pose = Pose { facing: f.facing, turret: f.facing, anims: &[die], step, alpha, lift: 0.0 };
             draw_look(batch, art, cam.zoom, &f.member, f.owner, (sx, sy), cell, &pose);
             true
         });
         // Muzzle flashes the bodies hide, under them.
         self.fx.draw(batch, art, game, cam, alpha, true);
-        for e in units {
+        let (ground, total) = (units.len(), units.len() + flying.len());
+        for (n, e) in units.into_iter().chain(flying).enumerate() {
+            // Surfaced hazards over everything on the ground, under the aircraft.
+            if n == ground {
+                draw_strikes(batch, art, game, cam, tile, surface, &hazard_shows);
+            }
             let k = game.rules.kind(e.kind);
-            let (wx, wy) = at(e);
+            let carrier = e.carried_by.and_then(|c| game.state.entity(c));
+            let (wx, wy) = at(carrier.unwrap_or(e));
+            let up = lift(game, e) * tile * cam.zoom;
             // A soldier who just fired holds the firing pose.
             let firing = self.fx.fired.get(&e.id).map(|&t| tick.saturating_sub(t)).filter(|&age| age < FIRE_TICKS);
             let facing = *self.facing.get(&e.id).unwrap_or(&e.facing);
@@ -331,7 +350,7 @@ impl Scene {
                     };
                     // A soldier fires the way the unit aims.
                     let body = if firing.is_some() { e.facing } else { facing };
-                    let pose = Pose { facing: body, turret: body, anims, step, alpha: 255 };
+                    let pose = Pose { facing: body, turret: body, anims, step, alpha: 255, lift: 0.0 };
                     let cell = Rect::new(
                         sx - tile * cam.zoom / 2.0,
                         sy - tile * cam.zoom / 2.0,
@@ -346,26 +365,19 @@ impl Scene {
             let cell =
                 Rect::new(sx - tile * cam.zoom / 2.0, sy - tile * cam.zoom / 2.0, tile * cam.zoom, tile * cam.zoom);
             let turret = if e.target.is_some() || k.weapon.is_none() { e.facing } else { facing };
+            // Aircraft loop their idle frames (rotors, wings) while they are up.
             let pose = Pose {
                 facing,
                 turret,
-                anims: if moving { &["walk", "move"] } else { &["idle"] },
-                step: walk,
+                anims: if moving && !k.air { &["walk", "move"] } else { &["idle"] },
+                step: if k.air && e.altitude > 0 { tick / WALK_TICKS } else { walk },
                 alpha: 255,
+                lift: up,
             };
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), cell, &pose);
         }
-        // Hazards above the sand: the strike, then the sink, over everything on the ground.
-        for z in hazards(game).iter().filter(|z| z.surfaced > 0 && hazard_shows(z)) {
-            let up = surface.saturating_sub(z.surfaced);
-            let frame = up * (STRIKE_FRAMES + SINK_FRAMES) / surface;
-            let (anims, step): (&[&str], u32) = if frame < STRIKE_FRAMES {
-                (&["strike"], frame)
-            } else {
-                (&["sink"], (frame - STRIKE_FRAMES).min(SINK_FRAMES - 1))
-            };
-            let pose = Pose { facing: 0, turret: 0, anims, step, alpha: 255 };
-            draw_hazard(batch, art, cam, tile, (z.x as f32 * px, z.y as f32 * px), &pose);
+        if ground == total {
+            draw_strikes(batch, art, game, cam, tile, surface, &hazard_shows);
         }
         self.fx.draw_shots(batch, art, game, cam, alpha);
         self.fx.draw(batch, art, game, cam, alpha, false);
@@ -385,9 +397,9 @@ impl Scene {
                 let (sx, sy) = cam.to_screen(t.x as f32 * tile, t.y as f32 * tile);
                 Rect::new(sx, sy, k.width as f32 * tile * cam.zoom, k.height as f32 * tile * cam.zoom)
             } else {
-                let (wx, wy) = at(e);
+                let (wx, wy) = at(e.carried_by.and_then(|c| game.state.entity(c)).unwrap_or(e));
                 let (sx, sy) = cam.to_screen(wx - tile / 2.0, wy - tile / 2.0);
-                Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom)
+                Rect::new(sx, sy - lift(game, e) * tile * cam.zoom, tile * cam.zoom, tile * cam.zoom)
             };
             if selected {
                 batch.outline(r, 1.0, [240, 240, 240, 255]);
@@ -431,6 +443,43 @@ struct Pose<'a> {
     anims: &'a [&'a str],
     step: u32,
     alpha: u8,
+    /// Screen pixels the sprite is drawn above its ground point (aircraft); its shadow stays on the ground.
+    lift: f32,
+}
+
+/// How far above its shadow `e` is drawn, in tiles: an aircraft by its altitude, a unit being carried just under its
+/// carrier, anything else not at all. Drawing and picking with the mouse both use it.
+pub fn lift(game: &Game, e: &Entity) -> f32 {
+    let cruise = game.rules.air.cruise_altitude.max(1) as f32;
+    let up = |e: &Entity| e.altitude as f32 / cruise * CRUISE_LIFT;
+    match e.carried_by.and_then(|c| game.state.entity(c)) {
+        Some(c) => (up(c) - 0.25).max(0.0),
+        None => up(e),
+    }
+}
+
+/// Hazards above the sand: the strike, then the sink, over everything on the ground.
+fn draw_strikes(
+    batch: &mut SpriteBatch,
+    art: &Art,
+    game: &Game,
+    cam: &Camera,
+    tile: f32,
+    surface: u32,
+    shows: &dyn Fn(&Hazard) -> bool,
+) {
+    let px = tile / TILE as f32;
+    for z in hazards(game).iter().filter(|z| z.surfaced > 0 && shows(z)) {
+        let up = surface.saturating_sub(z.surfaced);
+        let frame = up * (STRIKE_FRAMES + SINK_FRAMES) / surface;
+        let (anims, step): (&[&str], u32) = if frame < STRIKE_FRAMES {
+            (&["strike"], frame)
+        } else {
+            (&["sink"], (frame - STRIKE_FRAMES).min(SINK_FRAMES - 1))
+        };
+        let pose = Pose { facing: 0, turret: 0, anims, step, alpha: 255, lift: 0.0 };
+        draw_hazard(batch, art, cam, tile, (z.x as f32 * px, z.y as f32 * px), &pose);
+    }
 }
 
 /// Draw `id` in `owner`'s colours: the studio's sprite with its pivot on the screen point `ground`, where the pack
@@ -447,37 +496,44 @@ fn draw_look(
     pose: &Pose,
 ) {
     let Some((sprite, tex)) = art.studio.get(id, owner) else {
+        // A placeholder strip has no shadow of its own: a lifted one gets a dark patch on the ground.
+        let up = Rect::new(cell.x, cell.y - pose.lift, cell.w, cell.h);
+        if pose.lift > 0.0 {
+            let shadow = Rect::new(cell.x + cell.w * 0.2, cell.y + cell.h * 0.4, cell.w * 0.6, cell.h * 0.3);
+            batch.fill(shadow, [0, 0, 0, (u32::from(SHADOW_ALPHA) * u32::from(pose.alpha) / 255) as u8]);
+        }
         match art.sprite(id, owner) {
-            Some(s) => batch.sprite(s.tex, s.facing_frame(pose.facing, pose.step), cell, [255, 255, 255, pose.alpha]),
-            None => draw_sprite(batch, None, 0, cell, owner),
+            Some(s) => batch.sprite(s.tex, s.facing_frame(pose.facing, pose.step), up, [255, 255, 255, pose.alpha]),
+            None => draw_sprite(batch, None, 0, up, owner),
         }
         return;
     };
     let k = zoom * art.tile / 32.0 / sprite.scale;
-    let put = |batch: &mut SpriteBatch, f: &Frame, tint: [u8; 4]| {
-        let dst = Rect::new(ground.0 - f.pivot.0 * k, ground.1 - f.pivot.1 * k, f.src.w * k, f.src.h * k);
+    // The shadow on the ground point, the rest lifted above it.
+    let put = |batch: &mut SpriteBatch, f: &Frame, tint: [u8; 4], lift: f32| {
+        let dst = Rect::new(ground.0 - f.pivot.0 * k, ground.1 - lift - f.pivot.1 * k, f.src.w * k, f.src.h * k);
         batch.sprite(tex, f.src, dst, tint);
     };
     let white = [255, 255, 255, pose.alpha];
     if let Some(a) = sprite.body().and_then(|p| p.anim(pose.anims)) {
         let i = a.index(pose.facing, pose.step);
         if let Some(sh) = a.shadow.get(i) {
-            put(batch, sh, [255, 255, 255, (u32::from(SHADOW_ALPHA) * u32::from(pose.alpha) / 255) as u8]);
+            put(batch, sh, [255, 255, 255, (u32::from(SHADOW_ALPHA) * u32::from(pose.alpha) / 255) as u8], 0.0);
         }
         if let Some(f) = a.frames.get(i) {
-            put(batch, f, white);
+            put(batch, f, white, pose.lift);
         }
     }
     if let Some(a) = sprite.turret().and_then(|p| p.anim(&["idle"]))
         && let Some(f) = a.frames.get(a.index(pose.turret, 0))
     {
-        put(batch, f, white);
+        put(batch, f, white, pose.lift);
     }
     for part in sprite.overlays() {
         if let Some(a) = part.anim(&["idle"])
             && let Some(f) = a.frames.get(a.index(0, pose.step))
         {
-            put(batch, f, white);
+            put(batch, f, white, pose.lift);
         }
     }
 }
