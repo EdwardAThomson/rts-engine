@@ -332,3 +332,37 @@ fn combat_replays_from_the_command_log() {
     assert!(live.events.iter().any(|e| matches!(e, Event::Hit { .. })));
     assert_eq!(replay.hash(), live.hash());
 }
+
+#[test]
+fn a_missile_tank_backs_off_to_fire_at_a_target_inside_its_minimum_range() {
+    // Its artillery reaches 8 tiles but not under 2: a tank one tile away can't be hit until it drives clear.
+    let mut g = game(None);
+    let m = g.spawn(kind(&g, "missile_tank"), 0, 10, 6);
+    let t = tank(&mut g, 1, 11, 6);
+    let i = g.state.entities.iter().position(|e| e.id == t).unwrap();
+    g.state.entities[i].health = 100_000;
+    g.state.entities[i].reload = 10_000;
+    g.order(0, &[m], CommandOrder::Attack { target: t });
+    g.step(400);
+    let at = g.state.entity(m).unwrap().tile();
+    let gap = (at.x - 11).abs().max((at.y - 6).abs());
+    println!("the missile tank stood at {at:?}, {gap} tiles off, and fired {} times", fired_by(&g, m));
+    assert!(fired_by(&g, m) > 0);
+    assert!(gap >= 2, "outside its minimum range");
+}
+
+#[test]
+fn a_siege_tank_outranges_a_battle_tank_and_a_rifleman_dies_to_a_few_shots() {
+    let g = game(None);
+    let r = |id: &str| g.rules.weapon(g.rules.kind(kind(&g, id)).weapon.unwrap()).range;
+    assert!(r("siege_tank") > r("battle_tank"));
+    assert!(r("missile_tank") > r("siege_tank"));
+    // A battle tank parked in the open against a single rifleman: the shells win quickly.
+    let mut g = game(None);
+    let a = tank(&mut g, 0, 6, 6);
+    let b = g.spawn(kind(&g, "infantry"), 1, 9, 6);
+    g.step(300);
+    println!("tank {:?}, infantry {:?}", health(&g, a), health(&g, b));
+    assert!(health(&g, b).is_none(), "the rifleman died");
+    assert!(health(&g, a).is_some_and(|h| h > 250), "after barely scratching the tank");
+}
