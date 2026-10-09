@@ -5,16 +5,18 @@ use rts_core::hash::hash_of;
 use rts_core::replay::{CommandQueue, Logged};
 use rts_core::rng::seed_state;
 
+use crate::capture;
 use crate::hazard::{self, Hazards};
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, ProduceError, QueueEntry};
+use crate::sell;
 use crate::storage;
 use crate::units::{Kind, Rules};
 use crate::vision::{self, TileView, Vision};
-use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
+use crate::world::{self, CaptureError, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
 pub struct GameOptions<'a> {
     /// ASCII map text (see `map.rs`).
@@ -53,6 +55,12 @@ pub struct EntityView {
     pub path_left: usize,
     /// A producing building's queue, the head first.
     pub queue: Vec<QueueEntry>,
+    /// What a capture or repair-pad order heads for.
+    pub goal: Option<u32>,
+    /// Repair is on.
+    pub repairing: bool,
+    /// Ticks until a building being sold goes; 0 when not being sold.
+    pub selling: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -208,6 +216,18 @@ impl Game {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
     }
 
+    /// Whether `player` may send capturers against building `id` now. Changes nothing.
+    pub fn can_capture(&self, player: u32, id: u32) -> Result<(), CaptureError> {
+        let b = self.state.entity(id).ok_or(CaptureError::NotCapturable)?;
+        capture::can_capture(&self.rules, player, b)
+    }
+
+    /// What selling building `id` would pay back now, its queue included; 0 while the rules have selling off.
+    pub fn sell_refund(&self, id: u32) -> i64 {
+        let Some(e) = self.state.entity(id).filter(|_| self.rules.sell.is_some()) else { return 0 };
+        sell::refund(&self.rules, e) + e.queue.iter().map(|q| q.paid).sum::<i64>()
+    }
+
     /// One whole tick as plain data, for agents and tools to read.
     pub fn snapshot(&self) -> Snapshot {
         let s = &self.state;
@@ -232,6 +252,9 @@ impl Game {
                     cargo: e.cargo,
                     path_left: e.path.len(),
                     queue: e.queue.clone(),
+                    goal: e.goal,
+                    repairing: e.repairing,
+                    selling: e.selling,
                 })
                 .collect(),
             resource_left: s.resource.iter().sum(),

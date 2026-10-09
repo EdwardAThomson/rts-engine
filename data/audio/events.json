@@ -9,6 +9,12 @@
     { "event": "destroyed", "armour": "infantry", "sound": "sfx_infantry_die" },
     { "event": "destroyed", "building": false, "sound": "sfx_explode_small" },
     { "event": "building_placed", "local": true, "sound": "sfx_build" },
+    { "event": "repair_started", "local": true, "sound": "sfx_repair" },
+    { "event": "unit_repaired", "local": true, "sound": "sfx_repair" },
+    { "event": "sell_started", "local": true, "sound": "sfx_sell" },
+    { "event": "building_sold", "local": true, "sound": "ui_credits" },
+    { "event": "captured", "local": true, "sound": "sfx_build" },
+    { "event": "capture_refused", "local": true, "sound": "ui_error" },
     { "event": "building_ready", "local": true, "sound": "ui_ready" },
     { "event": "unit_built", "local": true, "sound": "ui_unit_ready" },
     { "event": "placement_rejected", "local": true, "sound": "ui_error" },
@@ -34,6 +40,7 @@
     "unit_yielded",
     "unit_stuck",
     "storage_full",
-    "credits_lost"
+    "credits_lost",
+    "repair_stopped"
   ]
 }

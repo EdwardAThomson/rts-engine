@@ -1,5 +1,5 @@
 {
-  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number is off unless a pack turns its feature on; the pack loader sets `on` from setting.json's \"features\".",
+  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number takes that number's default (the hazard and fog off, selling and capture on) unless a pack's setting.json \"features\" says otherwise; the pack loader sets `on` from it.",
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
@@ -111,6 +111,31 @@
         "leave_ticks": { "default": 60, "min": 1, "max": 600 },
         "mining_noise": { "default": 6, "min": 0, "max": 64 },
         "firing_noise": { "default": 2, "min": 0, "max": 64 }
+      }
+    },
+    "repair": {
+      "status": "built",
+      "numbers": {
+        "every_ticks": { "default": 5, "min": 1, "max": 150 },
+        "step_div": { "default": 50, "min": 1, "max": 1000 },
+        "cost_percent": { "default": 50, "min": 0, "max": 200 },
+        "pad_every_ticks": { "default": 3, "min": 1, "max": 150 },
+        "pad_step": { "default": 8, "min": 1, "max": 1000 }
+      }
+    },
+    "sell": {
+      "status": "built",
+      "numbers": {
+        "on": { "default": 1, "min": 0, "max": 1 },
+        "refund_percent": { "default": 50, "min": 0, "max": 100 },
+        "ticks": { "default": 15, "min": 1, "max": 300 }
+      }
+    },
+    "capture": {
+      "status": "built",
+      "numbers": {
+        "on": { "default": 1, "min": 0, "max": 1 },
+        "below_percent": { "default": 25, "min": 1, "max": 100 }
       }
     },
     "blooms": { "status": "planned" },

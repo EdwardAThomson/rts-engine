@@ -19,6 +19,12 @@
     "harvester_attacked": "{name} under attack",
     "hazard_sighted": "Hazard sighted",
     "storage_full": "Storage full: build silos",
+    "repairing": "Repairing {name}",
+    "repaired": "{name} repaired",
+    "building_sold": "{name} sold",
+    "building_captured": "{name} captured",
+    "building_taken": "{name} taken by the enemy",
+    "cannot_capture": "Cannot capture {name} yet",
     "enemy_wave": "Enemy forces approaching",
     "game_won": "Battle won",
     "game_lost": "Battle lost"

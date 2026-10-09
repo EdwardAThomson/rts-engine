@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause.
+`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -99,6 +99,9 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/units.rs` | Kinds and the typed rules the tick reads: every built unit and building in the rules data is a kind, and its roles say which mechanics it joins. |
 | `crates/classic-sim/src/power.rs` | Each player's power supply and demand, worked out from the buildings standing; producers give power in proportion to their health. |
 | `crates/classic-sim/src/storage.rs` | Each player's storage cap, from the refineries and silos standing; a delivery fills credits only up to the cap, and the rest is lost and counted. |
+| `crates/classic-sim/src/repair.rs` | Repair: an own building mends a step at a time for credits while repair is on, slower when its owner is short of power and waiting while they can't pay; a repair pad mends its owner's damaged vehicles parked beside it, one at a time. |
+| `crates/classic-sim/src/sell.rs` | Selling (on unless a pack turns it off): a building sold stops working for a moment, then goes and pays back half its cost scaled by health, plus what its queue had paid. |
+| `crates/classic-sim/src/capture.rs` | Capture (on unless a pack turns it off): infantry walk up to an enemy building below a quarter of its health and take it over, going inside; walls, turrets and the palace can't be taken. |
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/vision.rs` | Fog of war, when a pack turns the `fog` module on (the generic pack does): each player's explored tiles and a count of their sight sources over each tile, kept up to date by adding and removing discs as entities appear, move tile and die, from a building's edges. Fog hides enemy units out of sight and keeps a ghost of each enemy building as last seen (or, with `hide` off, shroud only: explored ground shows everything, as the original did). Targets must be in their owner's sight, attack orders need a target in sight or a ghost, and a unit that fires is shown to the player it fires at for a moment. Hashed while on. |
@@ -156,6 +159,18 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   450 ticks while every loss is counted. The advisor says "Storage full" once for a fill and the loss after it, the
   readout shows credits out of storage, and the computer opponent puts a silo first when credits it has no plans
   for pass 80% of its storage.
+- Repair, sell and capture (`crates/classic-sim/tests/repair.rs`, `sell.rs`, `capture.rs`): a refinery mends 18
+  health every 5 ticks for 4 credits a step and turns repair off when whole; repair waits with no credits (and
+  credits never go negative), resumes when paid, slows under a power shortfall and can be turned off; a repair pad
+  mends one vehicle at a time while the other waits its turn, charges 8 health's share of each vehicle's cost per
+  step, keeps every unit out of its footprint and sends a mended harvester back to work; a sold power plant gives no
+  power at once, goes after 15 ticks and pays back 120 for 300 at 80% health, and its tiles open again; a yard sold
+  mid-build pays back what its queue paid and builds nothing more; a building destroyed while being sold pays
+  nothing and a turret being sold holds fire; infantry take an enemy plant below 25% health, its power comes over
+  and the new owner's tank stops shooting it; a captured yard loses its queue with no refund; a building at 25%, a
+  turret, an own building or a tank refuse capture with their reasons, a tank can't capture, a building healed on
+  the way sends the infantry back to guard, an unseen building can't be named under fog, and a pack can switch
+  selling and capture off. Each replays to the same hash, and no earlier hash moved.
 - Power adds up from the buildings standing, a damaged plant gives less, the power factor stops at its 25%
   floor, `power_changed` reports supply, demand and shortfall only when they change, and a pack's tuning changes
   the numbers and the floor.
