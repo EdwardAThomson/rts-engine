@@ -56,3 +56,14 @@
 {"id": "infantry", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [179, 169], "seconds": 108.1, "cores": 4, "partial": false, "date": "2026-10-08"}
 {"id": "rocket_infantry", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [192, 180], "seconds": 120.8, "cores": 4, "partial": false, "date": "2026-10-08"}
 {"id": "saboteur", "category": "infantry", "style": "detailed", "render_scale": 4, "samples": 48, "images": 192, "render_size": [160, 152], "seconds": 88.4, "cores": 4, "partial": false, "date": "2026-10-08"}
+{"id": "battle_tank", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [293, 270], "seconds": 147.3, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "harvester", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [292, 266], "seconds": 123.6, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "mcv", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [302, 276], "seconds": 130.2, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "missile_tank", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [241, 224], "seconds": 139.5, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "quad", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [167, 156], "seconds": 45.2, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "raider_bike", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [127, 119], "seconds": 25.7, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "scout_bike", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [122, 114], "seconds": 23.8, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "siege_tank", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [345, 310], "seconds": 228.3, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "super_a", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 48, "render_size": [269, 247], "seconds": 135.4, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "super_h", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [348, 316], "seconds": 266.0, "cores": 4, "partial": false, "date": "2026-10-09"}
+{"id": "super_o", "category": "vehicles", "style": "detailed", "render_scale": 4, "samples": 48, "images": 80, "render_size": [269, 249], "seconds": 167.1, "cores": 4, "partial": false, "date": "2026-10-09"}

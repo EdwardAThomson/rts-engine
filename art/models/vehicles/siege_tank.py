@@ -1,6 +1,6 @@
 """Siege tank: long-range tracked artillery in the house style. A low, long hull with a broad flat turret over the
-middle, one long heavy barrel with a muzzle brake (the identifying feature, kept long and thick so it reads at
-32 px), and two folded recoil spades across the rear. Team colour on the side skirts, the fenders and two bands on
+middle, one heavy barrel with a muzzle brake (the identifying feature, kept thick so it reads at 32 px, and
+longer than the battle tank's without dwarfing the hull), and two folded recoil spades across the rear. Team colour on the side skirts, the fenders and two bands on
 the turret roof. About 7.5 m long from the folded spades to the glacis, facing north (+y). The turret ring sits on
 the origin and the turret is built in the vehicle's frame (TURRET_HEIGHT 0), so turret frames share the hull's
 pivot; the hull runs a little further forward than back so the ring stays at its centre of mass."""
@@ -112,7 +112,7 @@ def build_turret(root):
         st.block((0.1, 0.2, 0.15), (x, -1.2, z + 0.95), mat=steel, bevel=0.01, parent=root, name="lifting_eye")
     # rail around the bustle roof
     st.block((2.0, 0.06, 0.06), (0, -2.15, z + 0.95), mat=steel, bevel=0, parent=root, name="rail")
-    # gun: a deep mantlet, a thick cradle with recoil cylinders, then the long barrel
+    # gun: a deep mantlet, a thick cradle with recoil cylinders, then the barrel
     gun = st.group("gun", (0, 1.05, GUN_Z), parent=root)
     gun.rotation_euler = (GUN_PITCH, 0, 0)
     st.block((1.2, 0.6, 0.85), (0, 0.1, 0), mat=paint, bevel=0.06, parent=gun, name="mantlet")
@@ -121,12 +121,12 @@ def build_turret(root):
     for x in (-0.28, 0.28):
         st.cylinder(0.09, 1.0, (x, 0.85, 0.36), rot=(math.pi / 2, 0, 0), mat=dark, verts=10, parent=gun,
                     name="recoil")
-    st.cylinder(0.28, 4.6, (0, 3.75, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun, name="barrel")
+    st.cylinder(0.28, 3.0, (0, 2.95, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, parent=gun, name="barrel")
     st.cylinder(0.38, 0.6, (0, 3.1, 0), rot=(math.pi / 2, 0, 0), mat=steel, verts=16, bevel=0.03, parent=gun,
                 name="evacuator")
-    st.block((1.0, 0.65, 0.44), (0, 6.1, 0), mat=dark, bevel=0.05, parent=gun, name="muzzle_brake")
+    st.block((1.0, 0.65, 0.44), (0, 4.5, 0), mat=dark, bevel=0.05, parent=gun, name="muzzle_brake")
     for x in (-0.36, 0.36):
-        st.block((0.14, 0.46, 0.5), (x, 6.12, 0), mat=steel, bevel=0.01, parent=gun, name="muzzle_brake")
+        st.block((0.14, 0.46, 0.5), (x, 4.52, 0), mat=steel, bevel=0.01, parent=gun, name="muzzle_brake")
 
 
 def wreck(rng, root):

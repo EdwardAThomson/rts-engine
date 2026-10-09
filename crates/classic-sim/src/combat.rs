@@ -157,7 +157,7 @@ fn scan(state: &GameState, rules: &Rules, i: usize) -> Option<u32> {
         if e.last_attacker.is_some_and(|(id, at)| id == t.id && state.tick < at + 45) {
             score += 300;
         }
-        if d2 <= w.range * w.range {
+        if d2 <= w.range * w.range && d2 >= w.min_range * w.min_range {
             score += 200;
         }
         if tk.building {
@@ -177,7 +177,8 @@ fn scan(state: &GameState, rules: &Rules, i: usize) -> Option<u32> {
 /// Where an attacker heads to reach `target`: its tile, or for a building the open tile beside it nearest the
 /// attacker, then nearest the middle of the map. When the target can't be reached from where the attacker stands (a
 /// building boxed in by others, or a unit walled in behind them), the nearest reachable tile it could fire from
-/// instead, so a unit doesn't stand still out of range.
+/// instead, so a unit doesn't stand still out of range. A weapon with a minimum range (artillery) always heads for
+/// the nearest reachable tile it could fire from, backing off when the target is too close.
 fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> Option<Tile> {
     let k = rules.kind(target.kind);
     let t = target.tile();
@@ -188,18 +189,19 @@ fn approach(pf: &Pathfinder, rules: &Rules, from: &Entity, target: &Entity) -> O
     // A unit off the passable grid (still stepping out of a factory) can't be judged; it heads for the target as
     // before.
     let off_grid = !pf.passable(here.x, here.y);
-    if !k.building {
+    let w_rules = rules.weapon(rules.kind(from.kind).weapon?);
+    let artillery = w_rules.min_range > 0 && !off_grid;
+    if !artillery && !k.building {
         if off_grid || pf.connected((here.x, here.y), (t.x, t.y)) {
             return Some(t);
         }
-    } else {
+    } else if !artillery {
         let ring = (t.y - 1..=t.y + k.height).flat_map(|y| (t.x - 1..=t.x + k.width).map(move |x| Tile { x, y }));
         let ring: Vec<Tile> = ring.filter(|r| pf.passable(r.x, r.y)).collect();
         if off_grid || ring.iter().any(|r| pf.connected((here.x, here.y), (r.x, r.y))) {
             return ring.into_iter().filter(|r| off_grid || pf.connected((here.x, here.y), (r.x, r.y))).min_by_key(key);
         }
     }
-    let w_rules = rules.weapon(rules.kind(from.kind).weapon?);
     let reach = (w_rules.range / TILE) as i32 + 1;
     let fires_from = |r: &Tile| {
         let (cx, cy) = (r.x as i64 * TILE + TILE / 2, r.y as i64 * TILE + TILE / 2);
