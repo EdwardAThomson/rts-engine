@@ -39,6 +39,9 @@
     "move_ended",
     "unit_yielded",
     "unit_stuck",
+    "carrier_pickup",
+    "carrier_dropoff",
+    "carrier_lost_cargo",
     "storage_full",
     "credits_lost",
     "repair_stopped"

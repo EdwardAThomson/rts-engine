@@ -50,6 +50,8 @@ pub struct Settings {
     /// Harvesters wanted for each refinery, and the most in all.
     pub harvesters_per_refinery: usize,
     pub max_harvesters: usize,
+    /// Harvesters for each carrier it keeps once it can build them, to lift them on long trips; 0 means none.
+    pub harvesters_per_carrier: usize,
     /// Most entries kept in one factory's queue.
     pub factory_queue: usize,
     /// Combat units are only queued while credits are at least this, so the base keeps growing.
@@ -93,6 +95,7 @@ impl Settings {
             ("gun_turret", 2),
             ("heavy_factory", 2),
             ("gun_turret", 4),
+            ("air_factory", 1),
         ];
         let mix = [
             ("battle_tank", 6),
@@ -115,6 +118,7 @@ impl Settings {
             repair_reserve: 200,
             harvesters_per_refinery: 3,
             max_harvesters: 9,
+            harvesters_per_carrier: 3,
             factory_queue: 2,
             unit_reserve: 300,
             unit_mix: mix.iter().map(|&(id, n)| (id.to_string(), n)).collect(),

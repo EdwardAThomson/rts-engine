@@ -75,7 +75,8 @@ pub fn send(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, player: u
         let Some(i) = index(state, id) else { continue };
         let e = &state.entities[i];
         let k = rules.kind(e.kind);
-        if e.owner != player || !k.vehicle || e.health >= k.max_health {
+        // A unit in a carrier's hold takes no orders until it is set down.
+        if e.owner != player || !k.vehicle || e.health >= k.max_health || e.carried_by.is_some() {
             continue;
         }
         let e = &mut state.entities[i];
@@ -129,7 +130,7 @@ pub(crate) fn spot_beside(
     let taken = |d: Tile| {
         state.entities.iter().enumerate().any(|(j, e)| {
             j != me
-                && !rules.kind(e.kind).building
+                && world::on_ground(rules, e)
                 && (e.tile() == d || movement::step_tile(e) == Some(d) || e.path.back() == Some(&d))
         })
     };

@@ -6,6 +6,7 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+pub mod air;
 pub mod capture;
 pub mod combat;
 pub mod game;
@@ -23,12 +24,13 @@ pub mod units;
 pub mod vision;
 pub mod world;
 
+pub use air::{Ferry, Stage};
 pub use game::{Game, GameOptions, hash_state};
 pub use hazard::{Hazard, Hazards, LeftReason};
 pub use map::{MapData, Terrain, Tile, parse_map};
 pub use placement::PlaceError;
 pub use power::Power;
 pub use production::{EntryState, ProduceError, QueueEntry};
-pub use units::{CaptureRules, FogRules, HazardRules, Kind, RepairRules, Rules, SellRules, WeaponId};
+pub use units::{AirRules, CaptureRules, FogRules, HazardRules, Kind, RepairRules, Rules, SellRules, WeaponId};
 pub use vision::{Ghost, TileView, Vision};
 pub use world::{CaptureError, Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};

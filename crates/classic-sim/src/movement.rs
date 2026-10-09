@@ -61,6 +61,15 @@ pub fn route(pf: &mut Pathfinder, e: &Entity, goal: Tile) -> VecDeque<Tile> {
     }
 }
 
+/// Stop: an aircraft where it is, a ground unit after the step it is on.
+pub fn stop(rules: &Rules, e: &mut Entity) {
+    if rules.kind(e.kind).air {
+        e.path.clear();
+    } else {
+        halt(e);
+    }
+}
+
 /// Stop after the step the unit is on.
 pub fn halt(e: &mut Entity) {
     let next = heading(e);
@@ -79,7 +88,7 @@ impl Holders {
     fn build(pf: &Pathfinder, state: &GameState, rules: &Rules) -> Holders {
         let (w, h) = pf.size();
         let mut hs = Holders { w, h, by: vec![None; (w * h) as usize] };
-        for e in state.entities.iter().filter(|e| !rules.kind(e.kind).building) {
+        for e in state.entities.iter().filter(|e| world::on_ground(rules, e)) {
             hs.hold(e);
         }
         hs
@@ -172,10 +181,11 @@ fn index(state: &GameState, id: u32) -> Option<usize> {
 }
 
 /// The movement phase: every ground unit, in id order, answers a request to step aside, then moves along its path.
+/// Aircraft move in the air phase (`air.rs`).
 pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &mut Vec<Event>) {
     let mut hs = Holders::build(pf, state, rules);
     for i in 0..state.entities.len() {
-        if rules.kind(state.entities[i].kind).building {
+        if !world::on_ground(rules, &state.entities[i]) {
             continue;
         }
         answer_yield(pf, state, rules, &mut hs, i, events);
@@ -306,7 +316,7 @@ fn blocked(
     let avoid: Vec<usize> = state
         .entities
         .iter()
-        .filter(|o| o.id != state.entities[i].id && !rules.kind(o.kind).building && still(o))
+        .filter(|o| o.id != state.entities[i].id && world::on_ground(rules, o) && still(o))
         .flat_map(Holders::tiles)
         .filter_map(|t| hs.index(t))
         .collect();
