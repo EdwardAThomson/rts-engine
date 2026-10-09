@@ -12,7 +12,7 @@ use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{CaptureError, Event, IdleReason, MoveEnd};
-use classic_sim::{Game, Kind, ProduceError, StarportError};
+use classic_sim::{Game, Kind, ProduceError, StarportError, SuperpowerError};
 
 use crate::lines::{Lines, Moment, Speech, VOICES};
 use crate::platform::Files;
@@ -323,6 +323,22 @@ impl Feed {
                 Event::StarportOrderRefunded { player, .. } if player == local => {
                     self.say(game, "starport_refunded", None, Tone::Bad)
                 }
+                Event::SuperpowerReady { player, .. } if player == local => {
+                    self.say(game, "superpower_ready", None, Tone::Good)
+                }
+                Event::SuperpowerRefused { player, reason: SuperpowerError::NotReady, .. } if player == local => {
+                    self.say(game, "superpower_charging", None, Tone::Warn)
+                }
+                // Everyone hears a missile go up but the one who sent it.
+                Event::MissileLaunched { player, .. } if player != local => {
+                    self.say(game, "missile_warning", None, Tone::Bad)
+                }
+                Event::GuerrillasArrived { player, units, .. } if player == local && units > 0 => {
+                    self.say(game, "guerrillas_arrived", None, Tone::Good)
+                }
+                Event::SaboteurArrived { player, .. } if player == local => {
+                    self.say(game, "saboteur_ready", None, Tone::Good)
+                }
                 // A local unit gave up on its way: it can't get there.
                 Event::MoveEnded { unit, reason: MoveEnd::Blocked, .. } if Self::owner(game, unit) == Some(local) => {
                     self.reply(game, Moment::Cant, &[unit])
@@ -378,6 +394,12 @@ impl Feed {
                 | Event::SapperDetonated { .. }
                 | Event::Expired { .. }
                 | Event::MarketPricesChanged { .. }
+                | Event::SuperpowerReady { .. }
+                | Event::SuperpowerRefused { .. }
+                | Event::MissileLaunched { .. }
+                | Event::MissileImpact { .. }
+                | Event::GuerrillasArrived { .. }
+                | Event::SaboteurArrived { .. }
                 | Event::StarportRefused { .. }
                 | Event::StarportOrderPlaced { .. }
                 | Event::SupplyShipLanded { .. }

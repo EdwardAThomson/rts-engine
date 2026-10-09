@@ -1,5 +1,5 @@
 {
-  "about": "Every weapon the engine knows, by generic id. Weapons are data: a `warhead` (its row in the combat module's damage table) and tunable numbers. Distances are sub-tile units (256 per tile), times are ticks. `speed` 0 means an instant hit; otherwise a projectile flies that far each tick and lands within `scatter` of where it was aimed. `splash` is the blast radius: full damage within half of it, half damage within all of it. `hits_air` and `hits_ground` say what it may aim at: aircraft in flight, or anything on the ground (landed aircraft included). A `beam` weapon (its width) hits at once everything along a line `range` long, firer and its own kind excepted; `converts` (ticks) makes a projectile turn enemy vehicles to its side for that long instead of hurting them. Our own numbers, from our own simulation runs.",
+  "about": "Every weapon the engine knows, by generic id. Weapons are data: a `warhead` (its row in the combat module's damage table) and tunable numbers. Distances are sub-tile units (256 per tile), times are ticks. `speed` 0 means an instant hit; otherwise a projectile flies that far each tick and lands within `scatter` of where it was aimed. `splash` is the blast radius: full damage within half of it, half damage within all of it. `hits_air` and `hits_ground` say what it may aim at: aircraft in flight, or anything on the ground (landed aircraft included). A `beam` weapon (its width) hits at once everything along a line `range` long, firer and its own kind excepted; `converts` (ticks) makes a projectile turn enemy vehicles to its side for that long instead of hurting them. Our own numbers, from our own simulation runs. `missile_strike` names the palace missile's hits; its damage by ring is the superpowers module's.",
   "weapons": {
     "mg_light": {
       "warhead": "bullet",
@@ -301,6 +301,23 @@
         "scatter": { "default": 0, "min": 0, "max": 512 },
         "splash": { "default": 0, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "missile_strike": {
+      "warhead": "blast",
+      "numbers": {
+        "range": { "default": 0, "min": 0, "max": 0 },
+        "min_range": { "default": 0, "min": 0, "max": 0 },
+        "reload": { "default": 1, "min": 1, "max": 1 },
+        "damage": { "default": 800, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 0 },
+        "scatter": { "default": 0, "min": 0, "max": 0 },
+        "splash": { "default": 0, "min": 0, "max": 0 },
+        "needs_power": { "default": 0, "min": 0, "max": 0 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
         "hits_ground": { "default": 1, "min": 0, "max": 1 },
         "beam": { "default": 0, "min": 0, "max": 0 },

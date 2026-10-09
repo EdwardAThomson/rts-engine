@@ -885,6 +885,8 @@ impl ApplicationHandler for App {
                         KeyCode::KeyH if !event.repeat => self.centre_on_base(),
                         KeyCode::KeyZ if !event.repeat => self.building_key(Mode::Sell),
                         KeyCode::KeyC if !event.repeat => self.building_key(Mode::Repair),
+                        // F: aim the charged palace power (or put it back).
+                        KeyCode::KeyF if !event.repeat => self.hud.aim(&self.game),
                         // Ctrl+X: the selected units that can blow themselves up start their countdown.
                         KeyCode::KeyX
                             if !event.repeat

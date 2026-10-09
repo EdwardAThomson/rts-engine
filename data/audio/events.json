@@ -25,7 +25,10 @@
     { "event": "hazard_surfaced", "sound": "sfx_hazard_strike" },
     { "event": "hazard_spawned", "sound": "sfx_hazard_rumble" },
     { "event": "hazard_left", "sound": "sfx_hazard_rumble" },
-    { "event": "hazard_ate", "sound": "sfx_hazard_eat" }
+    { "event": "hazard_ate", "sound": "sfx_hazard_eat" },
+    { "event": "power_missile_launched", "sound": "sfx_rocket" },
+    { "event": "power_missile_impact", "sound": "sfx_explode_large" },
+    { "event": "superpower_refused", "local": true, "sound": "ui_error" }
   ],
   "silent": [
     "harvester_idle",
@@ -56,6 +59,9 @@
     "starport_order_placed",
     "supply_ship_landed",
     "starport_order_refunded",
-    "supply_ship_left"
+    "supply_ship_left",
+    "superpower_ready",
+    "guerrillas_arrived",
+    "saboteur_arrived"
   ]
 }

@@ -6,12 +6,13 @@
 //! It is deterministic: integer maths, entities in id order, no clock and no randomness of its own, so the same game
 //! always gets the same orders and two AIs playing each other give the same hash every run.
 //!
-//! This first version is one "normal" opponent with three managers that share a small memory (`Ai`):
+//! This first version is one "normal" opponent with four managers that share a small memory (`Ai`):
 //! - the base (`base.rs`): power, a build order of generic ids, where each building goes, and repairing buildings
 //!   once the fighting round them stops;
 //! - production and the economy: harvesters to fill its refineries, then combat units in a weighted mix;
 //! - the army (`army.rs`): gathers new units at a rally point, defends the base, and sends attack waves that grow
-//!   each time.
+//!   each time;
+//! - the palace power (`power.rs`): once charged, used on the best target it knows of, if worth it.
 //!
 //! Under fog of war (the `fog` module) it reads only what its own side can see: enemies in sight, and enemy
 //! buildings as it last saw them (`classic_sim::vision`). Knowing no enemy building, it guesses the other players'
@@ -23,6 +24,7 @@
 mod army;
 mod base;
 mod geo;
+mod power;
 
 use classic_sim::{Command, CommandOrder, Game, Kind, Tile, TileView, vision};
 use geo::Point;
@@ -97,6 +99,7 @@ impl Settings {
             ("gun_turret", 4),
             ("air_factory", 1),
             ("research_lab", 1),
+            ("palace", 1),
         ];
         let mix = [
             ("battle_tank", 6),
@@ -218,6 +221,7 @@ impl Ai {
         }
         army::think(self, game, &view, &mut out);
         army::scout(self, game, &view, &mut out);
+        power::think(self, game, &view, &mut out);
         out.list
     }
 }
@@ -236,6 +240,8 @@ impl Orders {
 
 /// What one think works from: indices into `game.state.entities`, in id order.
 pub(crate) struct View {
+    /// Its own entities, less those it can't command for long: units fighting on their own, and sappers, which go
+    /// for the building their palace power aimed them at.
     pub mine: Vec<usize>,
     /// The enemies it knows of: all of them with fog off; under fog, those in its sight and the buildings it keeps a
     /// ghost of.
@@ -252,7 +258,9 @@ pub(crate) struct View {
 impl View {
     fn new(game: &Game, player: u32) -> View {
         let es = &game.state.entities;
-        let mine: Vec<usize> = (0..es.len()).filter(|&i| es[i].owner == player).collect();
+        let mine: Vec<usize> = (0..es.len())
+            .filter(|&i| es[i].owner == player && es[i].autonomous.is_none() && !game.rules.kind(es[i].kind).sapper)
+            .collect();
         let enemies: Vec<usize> = (0..es.len())
             .filter(|&i| es[i].owner != player && vision::known(&game.state, &game.rules, player, &es[i]))
             .collect();

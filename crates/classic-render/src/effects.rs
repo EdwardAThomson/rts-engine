@@ -56,6 +56,14 @@ struct Lift {
     to: (f32, f32),
 }
 
+/// A palace missile drawn on its way: the simulation keeps only where and when it lands.
+struct Missile {
+    from: (f32, f32),
+    to: (f32, f32),
+    launched: u32,
+    arrive: u32,
+}
+
 #[derive(Default)]
 pub struct Effects {
     playing: Vec<Effect>,
@@ -72,6 +80,8 @@ pub struct Effects {
     smoked: u32,
     /// Units counting down to their own blast, which go up bigger than a vehicle's.
     fused: BTreeSet<u32>,
+    /// Palace missiles in flight: from, to (simulation units), launch and landing ticks.
+    missiles: Vec<Missile>,
     rng: u32,
 }
 
@@ -116,6 +126,8 @@ impl Effects {
                     | Event::Hit { .. }
                     | Event::Destroyed { .. }
                     | Event::BeamFired { .. }
+                    | Event::MissileLaunched { .. }
+                    | Event::MissileImpact { .. }
             ) {
                 self.pending.push(ev.clone());
             }
@@ -133,6 +145,7 @@ impl Effects {
         }
         self.fired.retain(|id, t| tick.saturating_sub(*t) < 60 && game.state.entity(*id).is_some());
         self.lift.retain(|id, _| game.state.projectiles.iter().any(|p| p.id == *id));
+        self.missiles.retain(|m| m.arrive + 5 >= tick);
     }
 
     /// Turn what happened since the last draw into effects, and smoke what is damaged.
@@ -188,6 +201,25 @@ impl Effects {
                         let t = i as f32 / steps;
                         let (x, y) = (x1 as f32 + (x2 - x1) as f32 * t, y1 as f32 + (y2 - y1) as f32 * t);
                         self.burst("hit_spark", x, y - 32.0, tick + i / 2, 1.4);
+                    }
+                }
+                Event::MissileLaunched { tick, palace, to_x, to_y, arrive, .. } => {
+                    let Some(e) = game.state.entity(palace) else { continue };
+                    let half = TILE as f32 / 2.0;
+                    let to = (to_x as f32 * TILE as f32 + half, to_y as f32 * TILE as f32 + half);
+                    self.missiles.push(Missile { from: centre(game, e), to, launched: tick, arrive });
+                    self.burst("explosion_medium", centre(game, e).0, centre(game, e).1, tick, 0.8);
+                }
+                // The missile's blast covers its rings: a great burst in the middle, then more round it.
+                Event::MissileImpact { tick, x, y, .. } => {
+                    let half = TILE as f32 / 2.0;
+                    let (cx, cy) = (x as f32 * TILE as f32 + half, y as f32 * TILE as f32 + half);
+                    self.missiles.retain(|m| m.arrive != tick || m.to != (cx, cy));
+                    self.burst("explosion_large", cx, cy, tick, 2.6);
+                    for i in 0..10 {
+                        let (fx, fy) = (self.random() - 0.5, self.random() - 0.5);
+                        let spread = TILE as f32 * 6.0;
+                        self.burst("explosion_large", cx + fx * spread, cy + fy * spread, tick + 1 + i, 1.0);
                     }
                 }
                 Event::Destroyed { tick, entity, x, y, .. } if self.fused.remove(&entity) => {
@@ -313,9 +345,25 @@ impl Effects {
         }
     }
 
-    /// Draw the shells and rockets in flight, from their barrel tips down to where they land.
+    /// Draw the shells and rockets in flight, from their barrel tips down to where they land, and palace missiles
+    /// on their high arc.
     pub fn draw_shots(&self, batch: &mut SpriteBatch, art: &Art, game: &Game, cam: &Camera, alpha: f32) {
         let px = art.tile / TILE as f32;
+        let now = game.state.tick as f32 + alpha;
+        for m in &self.missiles {
+            let t = ((now - m.launched as f32) / (m.arrive - m.launched).max(1) as f32).clamp(0.0, 1.0);
+            let (x, y) = (m.from.0 + (m.to.0 - m.from.0) * t, m.from.1 + (m.to.1 - m.from.1) * t);
+            // Up and over: highest half way, as far up as the flight is long, at most four tiles.
+            let peak = ((m.to.0 - m.from.0).hypot(m.to.1 - m.from.1) / 2.0).min(TILE as f32 * 4.0);
+            let lift = peak * 4.0 * t * (1.0 - t);
+            let (sx, sy) = cam.to_screen(x * px, (y - lift) * px);
+            let dy = (m.to.1 - m.from.1) as i64 - (peak * 4.0 * (1.0 - 2.0 * t)) as i64;
+            let facing = facing_to((m.to.0 - m.from.0) as i64, dy);
+            let frame = game.state.tick % effect_length(art, "rocket").max(1);
+            if !draw_effect(batch, art, cam.zoom, "rocket", (sx, sy), facing, frame, 1.8, 255) {
+                batch.fill(Rect::new(sx - 3.0, sy - 3.0, 6.0, 6.0), [255, 230, 120, 255]);
+            }
+        }
         for p in &game.state.projectiles {
             let (ox, oy) = self.prev.get(&p.id).copied().unwrap_or((p.x, p.y));
             let x = ox as f32 + (p.x - ox) as f32 * alpha;

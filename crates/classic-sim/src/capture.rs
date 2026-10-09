@@ -55,7 +55,7 @@ pub fn order(
     for &id in ids {
         let Some(i) = index(state, id) else { continue };
         let e = &state.entities[i];
-        if e.owner != player || !rules.kind(e.kind).capturer {
+        if e.owner != player || !rules.kind(e.kind).capturer || e.autonomous.is_some() {
             continue;
         }
         sent = true;

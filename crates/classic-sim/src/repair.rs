@@ -75,8 +75,10 @@ pub fn send(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, player: u
         let Some(i) = index(state, id) else { continue };
         let e = &state.entities[i];
         let k = rules.kind(e.kind);
-        // A unit in a carrier's hold takes no orders until it is set down, and one counting down to its blast none.
-        if e.owner != player || !k.vehicle || e.health >= k.max_health || e.carried_by.is_some() || e.fuse.is_some() {
+        // A unit in a carrier's hold takes no orders until it is set down, and one counting down to its blast or
+        // fighting on its own none.
+        let busy = e.carried_by.is_some() || e.fuse.is_some() || e.autonomous.is_some();
+        if e.owner != player || !k.vehicle || e.health >= k.max_health || busy {
             continue;
         }
         let e = &mut state.entities[i];
