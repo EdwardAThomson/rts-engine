@@ -96,6 +96,7 @@ impl Settings {
             ("heavy_factory", 2),
             ("gun_turret", 4),
             ("air_factory", 1),
+            ("research_lab", 1),
         ];
         let mix = [
             ("battle_tank", 6),

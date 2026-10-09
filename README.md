@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them.
+`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -275,6 +275,20 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   its build order and keeps a carrier for every three harvesters: in 16 games on `skirmish-01` and `mirror-01`
   carriers made about 300 lifts a game, and in 8 games on `mirror-01` the two sides lifted and delivered within 4%
   of each other.
+- Faction specials (`crates/classic-sim/tests/specials.rs`): no golden game has a faction set or a special in it, so
+  every golden hash is unchanged. A player builds only their own faction's special (`super_a` for `faction_a`,
+  `super_h` for `faction_b`, `super_o` for `faction_c`, each needing a heavy factory and a research lab), and a
+  player with no faction builds none; nobody builds `guerrilla` or `saboteur`, which come with the palace powers.
+  The beam (`sonic_wave`) hits everything on a 5-tile line at once, its own side at half and its own kind not at all.
+  Converting gas (`convert_gas`) takes an enemy vehicle over for 375 ticks without hurting it, never infantry or a
+  special, and the vehicle goes back after. A self-destruct order counts down 30 ticks, during which the unit won't
+  move or fire, then leaves `blast_large` (300, splash 640), as it also does if killed during the countdown. The
+  sapper (`saboteur`) is hidden from a player with nothing within 2 tiles of it, fires only at buildings, and
+  spends itself to destroy a power plant; it disappears after 2,700 ticks. Games with the specials replay to the
+  same hash. The player tells the game each player's faction, and the computer opponent now builds a research lab
+  last, so it makes its faction's special and gunships. In 120 games on `mirror-01` (20 seeds for each ordered
+  pair of factions, 60,000 ticks) the 98 decided games went 38, 33 and 27 to `faction_a`, `faction_b` and
+  `faction_c`, after the beam's damage went from 55 to 70 and `super_h`'s health from 600 to 500.
 
 ## Not verified / not built yet
 
@@ -286,7 +300,7 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
 - Collision covers vehicles only (aircraft have none, by design): no infantry positions, crushing, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank fires one rocket for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
+- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or tech levels; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
@@ -307,11 +321,16 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   because the starting base doesn't turn with them.
 - No tech levels, factory upgrades or starport. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
   3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
-  way; the supply ship is built but nothing sends it yet (the starport, issue #75). The computer opponent builds no
-  gunships (no research lab in its build order). Carriers make the economy faster, so fields run dry and more AI games end:
+  way; the supply ship is built but nothing sends it yet (the starport, issue #75). Carriers make the economy faster, so fields run dry and more AI games end:
   of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
   (8 for the right start), so that lean is older than aircraft and wants a look of its own. Aircraft were checked in tests and a rendered
   frame, not yet by a person playing.
+- Faction specials: the beam and the self-destruct blast have stand-in effects (sparks along the line, a large
+  explosion) and no sounds of their own; a converted unit isn't drawn any differently. `guerrilla` has numbers but
+  no use until the palace powers (issue #76), and its hiding on rough ground isn't built. The computer opponent
+  never orders a self-destruct and sends its specials in waves like any other unit. A converted harvester goes back
+  to work for its new side, which wasn't tested. Balance comes from computer games only, and not yet played by a
+  person: `faction_a` beat `faction_c` 23 to 12, a lean these runs can't yet tell from noise.
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,

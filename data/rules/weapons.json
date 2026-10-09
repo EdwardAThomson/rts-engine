@@ -1,5 +1,5 @@
 {
-  "about": "Every weapon the engine knows, by generic id. Weapons are data: a `warhead` (its row in the combat module's damage table) and tunable numbers. Distances are sub-tile units (256 per tile), times are ticks. `speed` 0 means an instant hit; otherwise a projectile flies that far each tick and lands within `scatter` of where it was aimed. `splash` is the blast radius: full damage within half of it, half damage within all of it. `hits_air` and `hits_ground` say what it may aim at: aircraft in flight, or anything on the ground (landed aircraft included). Our own numbers, from our own simulation runs.",
+  "about": "Every weapon the engine knows, by generic id. Weapons are data: a `warhead` (its row in the combat module's damage table) and tunable numbers. Distances are sub-tile units (256 per tile), times are ticks. `speed` 0 means an instant hit; otherwise a projectile flies that far each tick and lands within `scatter` of where it was aimed. `splash` is the blast radius: full damage within half of it, half damage within all of it. `hits_air` and `hits_ground` say what it may aim at: aircraft in flight, or anything on the ground (landed aircraft included). A `beam` weapon (its width) hits at once everything along a line `range` long, firer and its own kind excepted; `converts` (ticks) makes a projectile turn enemy vehicles to its side for that long instead of hurting them. Our own numbers, from our own simulation runs.",
   "weapons": {
     "mg_light": {
       "warhead": "bullet",
@@ -13,7 +13,9 @@
         "splash": { "default": 0, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "mg_twin": {
@@ -28,7 +30,9 @@
         "splash": { "default": 0, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "rifle_squad": {
@@ -43,7 +47,9 @@
         "splash": { "default": 0, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "rocket_light_squad": {
@@ -58,7 +64,9 @@
         "splash": { "default": 64, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 1, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "cannon": {
@@ -73,7 +81,9 @@
         "splash": { "default": 64, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "rifle": {
@@ -88,7 +98,9 @@
         "splash": { "default": 0, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "rocket_light": {
@@ -103,7 +115,9 @@
         "splash": { "default": 64, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 1, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "cannon_heavy": {
@@ -118,7 +132,9 @@
         "splash": { "default": 96, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "artillery": {
@@ -133,7 +149,9 @@
         "splash": { "default": 128, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "air_rocket": {
@@ -148,7 +166,9 @@
         "splash": { "default": 64, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "turret_gun": {
@@ -163,7 +183,9 @@
         "splash": { "default": 64, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 1 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "turret_rocket": {
@@ -178,7 +200,9 @@
         "splash": { "default": 96, "min": 0, "max": 1024 },
         "needs_power": { "default": 1, "min": 0, "max": 1 },
         "hits_air": { "default": 1, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     },
     "blast_vehicle": {
@@ -193,7 +217,111 @@
         "splash": { "default": 160, "min": 0, "max": 1024 },
         "needs_power": { "default": 0, "min": 0, "max": 0 },
         "hits_air": { "default": 0, "min": 0, "max": 1 },
-        "hits_ground": { "default": 1, "min": 0, "max": 1 }
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "rifle_elite": {
+      "warhead": "bullet",
+      "numbers": {
+        "range": { "default": 768, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 12, "min": 1, "max": 600 },
+        "damage": { "default": 22, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "cannon_twin": {
+      "warhead": "shell",
+      "numbers": {
+        "range": { "default": 1024, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 30, "min": 1, "max": 600 },
+        "damage": { "default": 75, "min": 0, "max": 10000 },
+        "speed": { "default": 160, "min": 0, "max": 1024 },
+        "scatter": { "default": 32, "min": 0, "max": 512 },
+        "splash": { "default": 64, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "sonic_wave": {
+      "warhead": "sonic",
+      "numbers": {
+        "range": { "default": 1280, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 45, "min": 1, "max": 600 },
+        "damage": { "default": 70, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 128, "min": 0, "max": 512 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "convert_gas": {
+      "warhead": "rocket",
+      "numbers": {
+        "range": { "default": 1280, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 120, "min": 1, "max": 600 },
+        "damage": { "default": 0, "min": 0, "max": 10000 },
+        "speed": { "default": 96, "min": 0, "max": 1024 },
+        "scatter": { "default": 64, "min": 0, "max": 512 },
+        "splash": { "default": 256, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 375, "min": 0, "max": 3000 }
+      }
+    },
+    "sabotage": {
+      "warhead": "blast",
+      "numbers": {
+        "range": { "default": 576, "min": 256, "max": 4096 },
+        "min_range": { "default": 0, "min": 0, "max": 2048 },
+        "reload": { "default": 1, "min": 1, "max": 600 },
+        "damage": { "default": 1500, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 1024 },
+        "scatter": { "default": 0, "min": 0, "max": 512 },
+        "splash": { "default": 0, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 1 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
+      }
+    },
+    "blast_large": {
+      "warhead": "blast",
+      "numbers": {
+        "range": { "default": 0, "min": 0, "max": 0 },
+        "min_range": { "default": 0, "min": 0, "max": 0 },
+        "reload": { "default": 1, "min": 1, "max": 1 },
+        "damage": { "default": 300, "min": 0, "max": 10000 },
+        "speed": { "default": 0, "min": 0, "max": 0 },
+        "scatter": { "default": 0, "min": 0, "max": 0 },
+        "splash": { "default": 640, "min": 0, "max": 1024 },
+        "needs_power": { "default": 0, "min": 0, "max": 0 },
+        "hits_air": { "default": 0, "min": 0, "max": 1 },
+        "hits_ground": { "default": 1, "min": 0, "max": 1 },
+        "beam": { "default": 0, "min": 0, "max": 0 },
+        "converts": { "default": 0, "min": 0, "max": 0 }
       }
     }
   }

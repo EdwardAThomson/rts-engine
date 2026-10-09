@@ -81,7 +81,8 @@
         "crush_vs_wall": { "default": 0, "min": 0, "max": 400 },
         "crush_vs_air": { "default": 0, "min": 0, "max": 400 },
         "own_splash_percent": { "default": 50, "min": 0, "max": 100 },
-        "scan_every_ticks": { "default": 8, "min": 1, "max": 60 }
+        "scan_every_ticks": { "default": 8, "min": 1, "max": 60 },
+        "self_destruct_ticks": { "default": 30, "min": 1, "max": 300 }
       }
     },
     "air": {

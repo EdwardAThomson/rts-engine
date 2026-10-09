@@ -289,13 +289,21 @@ fn ghosts(v: &mut Vision, state: &GameState, rules: &Rules) {
 }
 
 /// Whether `player` can see entity `e` now: its own always; another's when any tile it stands on shows
-/// (`Vision::shows`). Everything shows while the fog module is off.
+/// (`Vision::shows`). Everything shows while the fog module is off, except a cloaked unit (a kind with `cloak`),
+/// which shows to another player only while one of their units or buildings is within that distance, fog or not.
 pub fn visible(state: &GameState, rules: &Rules, player: u32, e: &Entity) -> bool {
-    let Some(v) = &state.vision else { return true };
     if e.owner == player {
         return true;
     }
-    let (k, t) = (rules.kind(e.kind), e.tile());
+    let k = rules.kind(e.kind);
+    if k.cloak > 0 {
+        let near = |o: &Entity| (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) <= k.cloak * k.cloak;
+        if !state.entities.iter().any(|o| o.owner == player && near(o)) {
+            return false;
+        }
+    }
+    let Some(v) = &state.vision else { return true };
+    let t = e.tile();
     (t.y..t.y + k.height).any(|y| (t.x..t.x + k.width).any(|x| v.shows(player, x, y)))
 }
 

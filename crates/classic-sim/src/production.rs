@@ -78,6 +78,8 @@ pub enum ProduceError {
         kind: Kind,
     },
     QueueFull,
+    /// Only other factions build this kind.
+    Faction,
     /// Cancel: no such entry in the queue.
     NotQueued,
 }
@@ -89,17 +91,24 @@ impl ProduceError {
             ProduceError::NoFactory => "no_factory",
             ProduceError::Requires { .. } => "requires",
             ProduceError::QueueFull => "queue_full",
+            ProduceError::Faction => "faction",
             ProduceError::NotQueued => "not_queued",
         }
     }
 }
 
-/// Whether `player` may build `item` now: something builds it, and they own every building it requires.
-/// (Tech levels, factions and factory upgrades come later.)
+/// Whether `player` may build `item` now: something builds it, their faction may (when the kind is limited to some),
+/// and they own every building it requires. (Tech levels and factory upgrades come later.)
 pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> Result<(), ProduceError> {
     let k = rules.kinds.get(item.0 as usize).ok_or(ProduceError::NotBuildable)?;
     if k.built_at.is_none() {
         return Err(ProduceError::NotBuildable);
+    }
+    if !k.factions.is_empty() {
+        let faction = state.players.iter().find(|p| p.id == player).and_then(|p| p.faction.as_deref());
+        if !faction.is_some_and(|f| k.factions.iter().any(|x| x == f)) {
+            return Err(ProduceError::Faction);
+        }
     }
     for &r in &k.requires {
         if !state.entities.iter().any(|e| e.owner == player && e.kind == r) {

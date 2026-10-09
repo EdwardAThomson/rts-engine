@@ -1,11 +1,13 @@
 //! Headless run from the command line:
 //!   cargo run --release --bin cli -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
-//!     [--ai 0,1]
+//!     [--ai 0,1] [--factions faction_a,faction_b]
 //! Prints the setting pack in use, one JSON line every --every ticks and the event counts at the end. No window, no
 //! graphics. `--ai` hands the listed players (0 is the map's start 1) to the computer opponent; the run then stops
-//! early when one player is left, and the last line names the winner. `--setting` (or the SETTING environment variable) takes a pack folder, a name under `settings/`, or
-//! a pack in the git-ignored `settings-private/` by its folder name under `packs/` or its id (`private` picks the
-//! first); the default is `generic`.
+//! early when one player is left, and the last line names the winner. `--factions` gives the players, in order, the
+//! pack's factions with those ids, which decide the faction-only units they may build. `--setting` (or the SETTING
+//! environment variable) takes a pack folder, a name under `settings/`, or a pack in the git-ignored
+//! `settings-private/` by its folder name under `packs/` or its id (`private` picks the first); the default is
+//! `generic`.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -49,6 +51,9 @@ fn main() {
 
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
     let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
+    if let Some(f) = arg("factions") {
+        game.set_factions(&f.split(',').map(str::trim).collect::<Vec<_>>());
+    }
     let t0 = Instant::now();
     let mut t = 0;
     let mut winner = None;
