@@ -12,6 +12,7 @@ use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, ProduceError, QueueEntry};
 use crate::units::{Kind, Rules};
+use crate::vision::{self, TileView, Vision};
 use crate::world::{self, Command, CommandOrder, Event, GameState, Order, Player, Task};
 
 pub struct GameOptions<'a> {
@@ -83,6 +84,7 @@ impl Game {
             weapon_ids: rules.weapons.iter().map(|w| w.id.clone()).collect::<Vec<_>>().into(),
             projectiles: Vec::new(),
             hazards: rules.hazard.as_ref().map(|h| Hazards { list: Vec::new(), next_spawn: h.first_tick }),
+            vision: None,
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in
@@ -113,6 +115,9 @@ impl Game {
         for e in &state.entities {
             world::occupy(&mut pathfinder, &rules, e, true);
         }
+        // Fog: each player starts seeing what its starting base sees.
+        state.vision = Vision::new(map.width, map.height, state.players.len(), &rules);
+        vision::tick(&mut state, &rules);
         let hazard_pathfinder = hazard::pathfinder(&map);
         Ok(Game {
             map,
@@ -144,6 +149,7 @@ impl Game {
     pub fn spawn(&mut self, kind: Kind, owner: u32, x: i32, y: i32) -> u32 {
         let id = world::spawn(&mut self.state, &self.rules, kind, owner, x, y);
         world::occupy(&mut self.pathfinder, &self.rules, self.state.entities.last().expect("just spawned"), true);
+        vision::tick(&mut self.state, &self.rules);
         id
     }
 
@@ -161,6 +167,21 @@ impl Game {
     /// A player's power now.
     pub fn power(&self, player: u32) -> Power {
         Power::of(&self.state, &self.rules, player)
+    }
+
+    /// What `player` knows of tile (x, y): everything is in sight while fog is off.
+    pub fn tile_view(&self, player: u32, x: i32, y: i32) -> TileView {
+        self.state.vision.as_ref().map_or(TileView::Visible, |v| v.tile(player, x, y))
+    }
+
+    /// Whether `player` can see entity `id` now (its own always; everything while fog is off).
+    pub fn visible(&self, player: u32, id: u32) -> bool {
+        self.state.entity(id).is_some_and(|e| vision::visible(&self.state, &self.rules, player, e))
+    }
+
+    /// Whether `player` knows entity `id` is there: it can see it, or keeps a ghost of it under fog.
+    pub fn known(&self, player: u32, id: u32) -> bool {
+        self.state.entity(id).is_some_and(|e| vision::known(&self.state, &self.rules, player, e))
     }
 
     /// Whether `player` may order `kind` built now. Changes nothing.

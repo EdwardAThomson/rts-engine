@@ -29,6 +29,9 @@ fn replace(dir: &Path, file: &str, from: &str, to: &str) {
     std::fs::write(dir.join(file), text.replacen(from, to, 1)).unwrap();
 }
 
+/// The generic pack's features, as its setting.json spells them.
+const FEATURES: &str = "\"features\": { \"fog\": true }";
+
 /// A short game under a pack's rules, stopped while the tank is still on its way; returns the state hash.
 fn play(pack: &Pack) -> String {
     let rules = Rules::from_table(&pack.rules).unwrap();
@@ -49,7 +52,19 @@ fn the_generic_pack_names_every_id_and_loads_cleanly() {
     for id in rules.entities.keys() {
         assert_ne!(pack.name(id), id, "the generic pack names {id}");
     }
-    assert_eq!(pack.rules, rules, "the generic pack has no tuning");
+    // No tuning: the engine's own numbers, with the features it turns on.
+    let mut expect = rules.clone();
+    expect.modules.get_mut("fog").unwrap().numbers.get_mut("on").unwrap().value = 1;
+    assert_eq!(pack.rules, expect, "the generic pack has no tuning");
+}
+
+#[test]
+fn the_generic_pack_turns_fog_of_war_on() {
+    let rules = Rules::from_table(&setting::load("generic").unwrap().rules).unwrap();
+    assert_eq!(rules.fog.as_ref().map(|f| f.hide), Some(true), "fog that hides what is out of sight");
+    assert!(Rules::default().fog.is_none(), "off in the engine's own rules");
+    let g = Game::new(GameOptions { map: MAP, seed: 3, players: None, rules: Some(&rules) }).unwrap();
+    assert!(g.state.vision.is_some());
 }
 
 #[test]
@@ -100,7 +115,7 @@ fn a_pack_with_problems_reports_every_one() {
         std::fs::write(d.join("run.sh"), "echo hi\n").unwrap();
         std::fs::write(d.join("tuning.json"), r#"{ "harvester": { "capacity": 0 } }"#).unwrap();
         replace(d, "names.json", "\"refinery\": \"Refinery\",", "\"dragon\": \"Dragon\",");
-        replace(d, "setting.json", "\"features\": {}", "\"features\": { \"teleport\": true }");
+        replace(d, "setting.json", FEATURES, "\"features\": { \"teleport\": true }");
     });
     let errors = Pack::load(&dir, &RulesTable::builtin()).unwrap_err();
     let expect = [
@@ -139,7 +154,7 @@ fn a_pack_offers_its_own_maps_and_each_must_be_in_it() {
     let dir = variant("maps", |d| {
         std::fs::create_dir_all(d.join("maps")).unwrap();
         std::fs::write(d.join("maps/dunes.txt"), MAP).unwrap();
-        replace(d, "setting.json", "\"features\": {}", "\"maps\": [\"maps/dunes.txt\"],\n  \"features\": {}");
+        replace(d, "setting.json", FEATURES, "\"maps\": [\"maps/dunes.txt\"],\n  \"features\": {}");
     });
     let pack = Pack::load(&dir, &RulesTable::builtin()).unwrap();
     assert_eq!(pack.maps, ["maps/dunes.txt"]);
@@ -160,7 +175,7 @@ fn a_pack_offers_its_own_maps_and_each_must_be_in_it() {
 #[test]
 fn a_pack_turns_the_hazard_on_with_its_features() {
     assert!(Rules::from_table(&setting::load("generic").unwrap().rules).unwrap().hazard.is_none(), "off by default");
-    let dir = variant("hazard", |d| replace(d, "setting.json", "\"features\": {}", "\"features\": {\"hazard\": true}"));
+    let dir = variant("hazard", |d| replace(d, "setting.json", FEATURES, "\"features\": {\"hazard\": true}"));
     let pack = Pack::load(&dir, &RulesTable::builtin()).unwrap();
     assert_eq!(pack.rules.module_number("hazard", "on"), Some(1));
     assert_ne!(pack.rules.hash(), RulesTable::builtin().hash(), "replays see the switch in the rules hash");

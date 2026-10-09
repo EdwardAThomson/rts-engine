@@ -82,6 +82,9 @@ pub struct KindRules {
     pub turn_rate: i64,
     /// How far it looks for targets, in sub-tile units: its sight, or its weapon's range if it has no sight.
     pub sight: i64,
+    /// How far it uncovers the map for its owner while the fog module is on, in tiles: from a building's edge, from
+    /// a unit's tile.
+    pub vision: i32,
     /// Credits, paid while it builds.
     pub cost: i64,
     /// Ticks to build at full power.
@@ -170,6 +173,18 @@ pub struct HazardRules {
     pub firing_noise: i64,
 }
 
+/// Fog of war (rules-world.md, sections 2 and 3; the `fog` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FogRules {
+    /// Fog hides enemy units on explored ground out of sight, and shows enemy buildings there as last seen. Off, it
+    /// is shroud only: once explored, ground and everything on it stays in view, as in the original.
+    pub hide: bool,
+    /// Ticks a unit that fires stays in view of the player it fired at.
+    pub reveal_ticks: u32,
+    /// A test switch: every tile starts explored.
+    pub start_explored: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
@@ -189,6 +204,8 @@ pub struct Rules {
     pub combat: CombatRules,
     /// Set when a setting pack turns the hazard on.
     pub hazard: Option<HazardRules>,
+    /// Set when a setting pack turns fog of war on.
+    pub fog: Option<FogRules>,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -237,6 +254,7 @@ impl Rules {
                 death: None,
                 turn_rate: t.number(id, "turn_rate").unwrap_or(0),
                 sight: t.number(id, "sight").unwrap_or(0) * crate::map::TILE,
+                vision: t.number(id, "vision").unwrap_or(2) as i32,
                 noise: t.number(id, "noise").unwrap_or(0),
             });
         }
@@ -312,6 +330,16 @@ impl Rules {
         } else {
             None
         };
+        let fg = |name: &str| module("fog", name);
+        let fog = if fg("on")? != 0 {
+            Some(FogRules {
+                hide: fg("hide")? != 0,
+                reveal_ticks: fg("reveal_ticks")? as u32,
+                start_explored: fg("start_explored")? != 0,
+            })
+        } else {
+            None
+        };
         Ok(Rules {
             kinds,
             regrowth: Regrowth {
@@ -346,6 +374,7 @@ impl Rules {
             },
             weapons,
             hazard,
+            fog,
             hash: t.hash(),
         })
     }

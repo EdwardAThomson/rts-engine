@@ -16,6 +16,7 @@ use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
 use crate::units::{Kind, Rules, WeaponId};
+use crate::vision::{self, Vision, VisionCanon};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Order {
@@ -184,6 +185,8 @@ pub struct GameState {
     pub projectiles: Vec<Projectile>,
     /// Set when the rules turn the hazard on.
     pub hazards: Option<Hazards>,
+    /// Each player's explored and seen tiles; set when the rules turn fog of war on.
+    pub vision: Option<Vision>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -205,6 +208,8 @@ impl Canon for GameState {
             .field("resource", &self.resource)
             .field("rng", &self.rng)
             .field("tick", &self.tick)
+            // Written only when fog is on, so a game without it hashes as it did before.
+            .opt("vision", self.vision.as_ref().map(|v| VisionCanon(v, &self.kind_ids)).as_ref())
             .end();
     }
 }
@@ -656,9 +661,10 @@ pub fn apply_command(
     }
     // An attack names a target that must still be there; the units go after it in the combat phase.
     let attack = match cmd.order {
+        // Under fog, only a target the player can see, or a building it keeps a ghost of.
         CommandOrder::Attack { target } => match state.entity(target) {
-            Some(_) => Some(target),
-            None => return,
+            Some(t) if vision::known(state, rules, cmd.player, t) => Some(target),
+            _ => return,
         },
         _ => None,
     };
@@ -706,7 +712,7 @@ pub fn step(
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat, movement, crush (not built yet), the hazard, economy, world.
+    // commands, combat, movement, crush (not built yet), the hazard, economy, world; then each player's sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
@@ -716,6 +722,7 @@ pub fn step(
     hazard::tick(map, hazard_pf, state, rules, events);
     economy(map, pf, state, rules, events);
     regrow(map, pf, state, rules, events);
+    vision::tick(state, rules);
     report_power(state, rules, &power_before, events);
     state.tick += 1;
 }

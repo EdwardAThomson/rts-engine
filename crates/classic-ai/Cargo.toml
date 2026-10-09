@@ -9,3 +9,6 @@ publish.workspace = true
 [dependencies]
 classic-sim = { path = "../classic-sim" }
 rts-core = { workspace = true }
+
+[dev-dependencies]
+classic-data = { path = "../classic-data" }

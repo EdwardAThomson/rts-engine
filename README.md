@@ -49,7 +49,8 @@ The desktop player opens on the title screen, where you pick the map (a pack's o
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
-                                                              # --map plays one map, --faction 1 starts on the second faction
+                                                              # --map plays one map, --faction 1 starts on the second faction,
+                                                              # --fog on|shroud|off overrides the pack's fog of war
 xvfb-run -a cargo run --bin play -- --frames 60               # smoke run on a machine with no display
 ```
 
@@ -99,17 +100,18 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/power.rs` | Each player's power supply and demand, worked out from the buildings standing; producers give power in proportion to their health. |
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
+| `crates/classic-sim/src/vision.rs` | Fog of war, when a pack turns the `fog` module on (the generic pack does): each player's explored tiles and a count of their sight sources over each tile, kept up to date by adding and removing discs as entities appear, move tile and die, from a building's edges. Fog hides enemy units out of sight and keeps a ghost of each enemy building as last seen (or, with `hide` off, shroud only: explored ground shows everything, as the original did). Targets must be in their owner's sight, attack orders need a target in sight or a ghost, and a unit that fires is shown to the player it fires at for a moment. Hashed while on. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
-| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (tanks, quads, scout bikes, infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target leaves the wave), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (tanks, quads, scout bikes, infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target leaves the wave), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Under fog it reads only what its side can see, guesses the other players' start positions and sends its fastest idle fighter to look at the nearest one it hasn't explored. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
-| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, effects (`effects.rs`: muzzle flashes, shells and rockets, smoke trails, explosions, smoke and fire on damaged things), selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
+| `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, effects (`effects.rs`: muzzle flashes, shells and rockets, smoke trails, explosions, smoke and fire on damaged things), selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `fog` draws the local player's shroud and fog with soft edges, the minimap shows them too, enemies out of sight are hidden and enemy buildings in fog drawn as last seen, and sounds from the world play only where the player can see; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
 | `web/play/` | The page for the browser build of the player: a full-window canvas. `check.mjs` opens it in headless Chromium on WebGPU and on WebGL2. |
 | `web/viewer/` | A browser page that plays a game from the WebAssembly build and draws it with coloured shapes: terrain, resource fields, buildings, harvesters and tanks moving between ticks. Play, pause, step, speed, seed; click a unit to inspect it, right-click to move it. No dependencies or build step. |
 | `maps/test-01.txt` | Two players, six resource fields, a cliff ridge. The tests' map. |
 | `maps/skirmish-01.txt` | 64 x 40, two large rock plateaus with room to build, near, far and contested resource fields, outcrops and cliff ridges. The desktop player's map. |
 | `maps/mirror-01.txt` | The left half of `skirmish-01` and its mirror image, starts included: the map the fairness tests play, where neither side should be favoured. |
-| `settings/generic/` | The public setting pack: plain names for every id, two factions. Generic placeholder art will live here too. |
+| `settings/generic/` | The public setting pack: plain names for every id, two factions, generic placeholder art and sounds, fog of war on. |
 
 How the engine works, and how setting packs keep the code generic, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
@@ -224,14 +226,29 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   computer, 90 game minutes, 200 seeds each way round), left-right mirrored maps split evenly: `mirror-01` 169 to
   143 wins for the left side, and three more mirrored maps 99 to 101, 102 to 97 and 101 to 98.
 
+- Fog of war (`crates/classic-sim/tests/fog.rs`): off in the engine's own rules, so every golden hash is unchanged;
+  sight discs from a building's edge, explored ground staying explored, fog hiding units (and shroud only showing
+  them), ghosts kept until their empty ground is seen, attack orders and auto-targets limited to what a side sees,
+  firing showing the shooter, the `start_explored` switch, and the running counts equal to a fresh count every 50
+  ticks of a game. Two computer opponents under fog play the same game every run, every attack order they give names
+  a target they know, and one finds and beats a player who does nothing by tick 8,714 with fog and with shroud only
+  (`crates/classic-ai/tests/fog.rs`). The renderer test draws a fogged map and checks the enemy base is black and the
+  player's own lit; a sound test checks a fight in the shroud is silent for the player who can't see it.
+
 ## Not verified / not built yet
 
+- Fog of war has no radar yet (the minimap shows explored ground without one), and paths are still planned with the
+  whole map known, so a path can give away ground nobody has seen (rules-world.md wants unexplored tiles treated as
+  passable). Sight counts work on whole tiles with a loop over each disc's square, not the precomputed row spans and
+  changed-tiles list performance.md plans; the bench runs with fog off. Effects (shots, explosions) in fog are still
+  drawn, dimmed by it; in shroud they are covered. The computer opponent knows a ghost building's real health, and
+  that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
 - Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
 - Combat has infantry squads, rocket squads, scout bikes and quads (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them), but no single infantry, crushing, aircraft or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
-  in `data/ai/`, scouting (there is no fog yet, so it sees the whole map, as every player does), retreat by
+  in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
   value, not the hashed game state, so a save would not carry it yet. With the mixed army and factory exits on
   any side (20 seeds, 90 game minutes), two AIs on `skirmish-01` win 8 to 8 with 4 stalls and games last about 40

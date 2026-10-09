@@ -16,6 +16,7 @@ use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
 
 use crate::art::Art;
 use crate::feed::{Feed, Tone};
+use crate::fog;
 use crate::lines::Lines;
 use crate::platform::{Files, Rect, SpriteBatch};
 use crate::scene::Camera;
@@ -788,13 +789,33 @@ impl Hud {
                         Terrain::Cliff => cliff,
                     }
                 };
-                batch.fill(Rect::new(m.x + tx as f32 * bw, m.y + ty as f32 * bh, bw, bh), colour);
+                // Shroud and fog as in the world.
+                let shade = 1.0 - fog::darkness(game.tile_view(self.player, tx, ty));
+                let colour = [0, 1, 2].map(|c| (f32::from(colour[c]) * shade) as u8);
+                batch.fill(
+                    Rect::new(m.x + tx as f32 * bw, m.y + ty as f32 * bh, bw, bh),
+                    [colour[0], colour[1], colour[2], 255],
+                );
             }
         }
-        for e in &game.state.entities {
-            let k = game.rules.kind(e.kind);
-            let t = e.tile();
-            let [r, g, b] = art.owner_colour(e.owner);
+        // What the player can see, and enemy buildings out of sight as they last saw them.
+        let ghosts = game.state.vision.as_ref().and_then(|v| v.players.get(self.player as usize)).map(|s| &s.ghosts);
+        let marks = game
+            .state
+            .entities
+            .iter()
+            .filter(|e| game.visible(self.player, e.id))
+            .map(|e| (e.kind, e.owner, e.tile()))
+            .chain(
+                ghosts
+                    .into_iter()
+                    .flatten()
+                    .filter(|g| !game.visible(self.player, g.id))
+                    .map(|g| (g.kind, g.owner, classic_sim::Tile { x: g.x, y: g.y })),
+            );
+        for (kind, owner, t) in marks {
+            let k = game.rules.kind(kind);
+            let [r, g, b] = art.owner_colour(owner);
             let (w, h) = if k.building { (k.width as f32, k.height as f32) } else { (1.0, 1.0) };
             // Units a little larger than a tile, so they stay visible.
             let grow = if k.building { 0.0 } else { 0.5 };

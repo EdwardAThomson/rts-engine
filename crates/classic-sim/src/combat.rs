@@ -17,6 +17,7 @@ use crate::movement;
 use crate::path::Pathfinder;
 use crate::power::Power;
 use crate::units::{Rules, WeaponId};
+use crate::vision;
 use crate::world::{self, Entity, Event, GameState, Order};
 
 /// `TABLE[i]` is the facing of the direction (i, -64), i from 0 to 64: `round(atan(i / 64) * 128 / pi)`, made
@@ -141,7 +142,8 @@ fn scan(state: &GameState, rules: &Rules, i: usize) -> Option<u32> {
     let mut best: Option<(i64, u32)> = None;
     for t in &state.entities {
         let tk = rules.kind(t.kind);
-        if tk.wall || !can_hit(rules, e, t) {
+        // Under fog, only what its owner can see.
+        if tk.wall || !can_hit(rules, e, t) || !vision::visible(state, rules, e.owner, t) {
             continue;
         }
         let d2 = dist2(e, t.x, t.y);
@@ -220,8 +222,13 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         let k = rules.kind(state.entities[i].kind);
         let Some(wid) = k.weapon else { continue };
         let w = rules.weapon(wid);
-        // Drop a target that has gone; an attack order ends with it.
-        let target = state.entities[i].target.and_then(|id| index(state, id));
+        // Drop a target that has gone, or a unit that has slipped out of its owner's sight under fog (a building
+        // stays a target as its owner last saw it); an attack order ends with it.
+        let owner = state.entities[i].owner;
+        let target = state.entities[i].target.and_then(|id| index(state, id)).filter(|&t| {
+            let t = &state.entities[t];
+            rules.kind(t.kind).building || vision::visible(state, rules, owner, t)
+        });
         if target.is_none() {
             let e = &mut state.entities[i];
             e.target = None;
@@ -271,8 +278,12 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             continue;
         }
         e.reload = w.reload;
-        let (unit, owner) = (e.id, e.owner);
+        let (unit, owner, at) = (e.id, e.owner, e.tile());
         events.push(Event::Fired { tick, unit, weapon: wid, target: tid });
+        // Firing shows the shooter to the player it fired at, so a long gun can't hide in the fog.
+        if let (Some(v), Some(fog)) = (state.vision.as_mut(), rules.fog.as_ref()) {
+            v.reveal(state.entities[t].owner, at, tick, fog.reveal_ticks);
+        }
         if w.speed == 0 {
             damage.push(Damage { target: tid, attacker: unit, owner, weapon: wid, band: 100 });
             continue;

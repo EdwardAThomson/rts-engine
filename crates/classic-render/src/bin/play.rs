@@ -1,6 +1,6 @@
 //! The desktop player: a window onto a skirmish.
 //!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
-//!     [--ai 1 | --ai none] [--start]
+//!     [--ai 1 | --ai none] [--fog on | shroud | off] [--start]
 //!
 //! It opens on the title screen, with the map waiting behind it: Start plays, and the opponents switch says whether
 //! every other player is a computer opponent (`--ai` lists which ones, or says `none`). `--start` skips the title.
@@ -17,6 +17,10 @@
 //! a right click on it orders the selected units there. Escape puts the building back, then clears the selection,
 //! then opens the pause menu (resume, restart, back to the title, quit). Space pauses without the menu, M mutes the
 //! sound (or start with `--mute`). `--frames N` quits after N frames, for smoke tests.
+//!
+//! Fog of war is on when the pack turns it on (the generic pack does): the map starts black, units uncover it, and
+//! enemies out of sight are hidden, their buildings shown as last seen. `--fog` overrides the pack: `shroud` keeps
+//! what has been uncovered in view, as the original did, and `off` shows the whole map.
 //!
 //! The same program runs in the browser (`web/play/`, see the README), drawing with WebGPU or WebGL2 into the
 //! page's canvas. There the options come from the page address instead (`?setting=generic&seed=3&ai=none&mute&start`), the
@@ -202,7 +206,7 @@ impl App {
             menu,
             maps,
             pack_files,
-            scene: Scene::default(),
+            scene: Scene::for_player(player),
             hud,
             pack,
             art_files,
@@ -243,7 +247,7 @@ impl App {
         let scale = self.hud.scale;
         self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player, self.menu.faction);
         self.hud.scale = scale;
-        self.scene = Scene::default();
+        self.scene = Scene::for_player(self.player);
         self.owed = Duration::ZERO;
         self.paused = false;
         self.centre_on_base();
@@ -388,7 +392,8 @@ impl App {
     }
 
     /// The entity under a screen point: a unit within half a tile of its centre, or a building whose footprint
-    /// holds the point. Units win over buildings.
+    /// holds the point. Units win over buildings. Under fog, only what the player can see, or a building they keep
+    /// a ghost of.
     fn pick(&self, sx: f32, sy: f32) -> Option<u32> {
         let (wx, wy) = self.cam.to_world(sx, sy);
         let px = self.world_px();
@@ -396,6 +401,9 @@ impl App {
         let mut found = None;
         for e in &self.game.state.entities {
             let k = self.game.rules.kind(e.kind);
+            if !self.game.known(self.player, e.id) {
+                continue;
+            }
             if k.building {
                 let t = e.tile();
                 let tile = TILE as f32 * px;
@@ -406,7 +414,10 @@ impl App {
                 if inside && found.is_none() {
                     found = Some(e.id);
                 }
-            } else if (e.x as f32 * px - wx).abs() <= half && (e.y as f32 * px - wy).abs() <= half {
+            } else if self.game.visible(self.player, e.id)
+                && (e.x as f32 * px - wx).abs() <= half
+                && (e.y as f32 * px - wy).abs() <= half
+            {
                 return Some(e.id);
             }
         }
@@ -967,8 +978,25 @@ fn opponents(game: &Game, player: u32, on: bool) -> Vec<Ai> {
     }
 }
 
+/// A game of `pack` on `map`. `--fog on`, `shroud` (shroud only, nothing hidden once explored) or `off` overrides the
+/// pack's fog of war.
 fn new_game(pack: &classic_data::Pack, map: &str) -> Game {
-    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
+    let mut table = pack.rules.clone();
+    if let Some(fog) = arg("fog")
+        && let Some(m) = table.modules.get_mut("fog")
+    {
+        let (on, hide) = match fog.as_str() {
+            "off" => (0, 1),
+            "shroud" => (1, 0),
+            _ => (1, 1),
+        };
+        for (name, value) in [("on", on), ("hide", hide)] {
+            if let Some(n) = m.numbers.get_mut(name) {
+                n.value = value;
+            }
+        }
+    }
+    let rules = Rules::from_table(&table).expect("pack rules match the simulation");
     let seed = arg("seed").and_then(|s| s.parse().ok()).unwrap_or(1);
     Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map")
 }

@@ -370,3 +370,41 @@ fn the_hazard_is_drawn_where_it_lies_and_when_it_strikes() {
     let up = frame(&mut r, &mut scene, &cam);
     assert_ne!(up, empty);
 }
+
+#[test]
+fn fog_of_war_hides_what_the_viewer_has_not_seen() {
+    let mut r = rig();
+    assert!(r.game.state.vision.is_some(), "the generic pack turns fog on");
+    // The whole map, as player 0 sees it at the start, and with no viewer.
+    let zoom = W as f32 / (r.game.map.width as f32 * 32.0);
+    let cam = Camera { x: 0.0, y: 0.0, zoom };
+    let mut fogged = Scene::for_player(0);
+    let seen = frame(&mut r, &mut fogged, &cam);
+    let png = classic_tools::art::png::encode(W as usize, H as usize, &seen);
+    let out = setting::root().join("target/fog-test.png");
+    std::fs::write(&out, png).unwrap();
+    println!("wrote {}", out.display());
+    let all = frame(&mut r, &mut Scene::default(), &cam);
+    // The middle of each base's yard, in screen pixels.
+    let yard = |owner: u32| {
+        let e = r.game.state.entities.iter().find(|e| e.owner == owner).unwrap();
+        let t = e.tile();
+        (((t.x as f32 + 1.0) * 32.0 * zoom) as u32, ((t.y as f32 + 1.0) * 32.0 * zoom) as u32)
+    };
+    let black = |image: &[u8], (x, y): (u32, u32)| {
+        let area = (x.saturating_sub(4), y.saturating_sub(4), 8, 8);
+        count(image, area, &[[0, 0, 0]])
+    };
+    let (mine, theirs) = (yard(0), yard(1));
+    println!(
+        "black pixels round player 0's yard {}, round player 1's {} (fogged) {} (no viewer)",
+        black(&seen, mine),
+        black(&seen, theirs),
+        black(&all, theirs)
+    );
+    assert_eq!(black(&seen, theirs), 64, "the enemy base is under shroud");
+    assert!(black(&seen, mine) < 32, "its own base is in sight");
+    assert!(black(&all, theirs) < 32, "with no viewer, everything shows");
+    let shroud = seen.chunks_exact(4).filter(|p| p[..3] == [0, 0, 0]).count();
+    assert!(shroud * 2 > seen.len() / 4, "most of an unexplored map is black: {shroud}");
+}

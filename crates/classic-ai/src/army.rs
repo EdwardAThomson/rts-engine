@@ -248,6 +248,33 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     }
 }
 
+/// Under fog, knowing no enemy building: send the fastest fighter at home (idle and not in a wave) to look at the
+/// nearest other player's start position it has not explored, unless one is already on its way.
+pub(crate) fn scout(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
+    let Some(spot) = view.unexplored_start else {
+        ai.scout = None;
+        return;
+    };
+    let on_way = |id: u32| game.state.entity(id).is_some_and(|e| e.owner == ai.player && e.order == Order::Move);
+    if ai.scout.is_some_and(on_way) {
+        return;
+    }
+    let in_wave = |id: u32| ai.wave.as_ref().is_some_and(|w| w.units.contains(&id));
+    let es = &game.state.entities;
+    let pick = view
+        .mine
+        .iter()
+        .map(|&i| &es[i])
+        .filter(|e| fighter(game, e) && e.order == Order::Idle && !in_wave(e.id))
+        .max_by_key(|e| (game.rules.kind(e.kind).speed, std::cmp::Reverse(e.id)));
+    // The start tile holds the enemy's yard when it is there: go to the nearest tile a unit can stand on.
+    let Some(to) = standable(game, centre(spot)) else { return };
+    ai.scout = pick.map(|e| e.id);
+    if let Some(e) = pick {
+        out.push(vec![e.id], CommandOrder::Move { x: to.x, y: to.y });
+    }
+}
+
 fn armed(game: &Game, e: &Entity) -> bool {
     game.rules.kind(e.kind).weapon.is_some()
 }
