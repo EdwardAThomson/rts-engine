@@ -39,6 +39,11 @@ pub struct WeaponRules {
     pub hits_air: bool,
     /// May aim at anything on the ground, landed aircraft included.
     pub hits_ground: bool,
+    /// A beam's width in sub-tile units: when it fires it hits at once everything along a line `range` long towards
+    /// its target, except the firer and units of its own kind. 0 for every other weapon.
+    pub beam: i64,
+    /// Ticks an enemy vehicle in its burst changes sides for, instead of being hurt. 0 for every other weapon.
+    pub converts: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +54,8 @@ pub struct CombatRules {
     pub own_splash_percent: i64,
     /// Armed units look for targets once every this many ticks, staggered by id.
     pub scan_every: u32,
+    /// Ticks from a self-destruct order to the blast.
+    pub self_destruct_ticks: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,6 +103,20 @@ pub struct KindRules {
     pub weapon: Option<WeaponId>,
     /// The blast it leaves when destroyed.
     pub death: Option<WeaponId>,
+    /// The blast it leaves instead when destroyed after its owner ordered it to destroy itself; `None` for kinds
+    /// that can't.
+    pub self_destruct: Option<WeaponId>,
+    /// False for kinds with the `unconvertible` role, which a converting weapon never takes over.
+    pub convertible: bool,
+    /// Kinds with the `sapper` role go only for buildings, and are used up by the one shot that hits.
+    pub sapper: bool,
+    /// Sub-tile units: another player sees it only while one of their units or buildings is this close. 0 for
+    /// kinds that don't hide.
+    pub cloak: i64,
+    /// Ticks it lasts before it disappears on its own; 0 for kinds that last until destroyed.
+    pub lifetime: u32,
+    /// The generic faction ids that may build it; empty for every faction.
+    pub factions: Vec<String>,
     /// Facing units per tick its weapon turns (256 to a full turn).
     pub turn_rate: i64,
     /// How far it looks for targets, in sub-tile units: its sight, or its weapon's range if it has no sight.
@@ -334,6 +355,11 @@ impl Rules {
                 capturer: !building && role("capturer"),
                 repair_pad: building && role("repair_pad"),
                 vehicle: !building && matches!(e.armour.as_deref(), Some("light" | "heavy")),
+                convertible: !role("unconvertible"),
+                sapper: role("sapper"),
+                cloak: t.number(id, "cloak").unwrap_or(0) * crate::map::TILE,
+                lifetime: t.number(id, "lifetime").unwrap_or(0) as u32,
+                factions: e.factions.clone(),
                 power: if building { num("power")? } else { 0 },
                 cost: t.number(id, "cost").unwrap_or(0),
                 build_ticks: t.number(id, "build_ticks").unwrap_or(0),
@@ -345,6 +371,7 @@ impl Rules {
                     .ok_or(format!("{id} has no armour"))?,
                 weapon: None,
                 death: None,
+                self_destruct: None,
                 turn_rate: t.number(id, "turn_rate").unwrap_or(0),
                 sight: t.number(id, "sight").unwrap_or(0) * crate::map::TILE,
                 vision: t.number(id, "vision").unwrap_or(2) as i32,
@@ -384,6 +411,8 @@ impl Rules {
                 needs_power: n("needs_power")? != 0,
                 hits_air: n("hits_air")? != 0,
                 hits_ground: n("hits_ground")? != 0,
+                beam: n("beam")?,
+                converts: n("converts")? as u32,
             });
         }
         let weapon_index =
@@ -392,6 +421,7 @@ impl Rules {
             let e = &t.entities[&k.id];
             k.weapon = e.weapon.as_deref().and_then(weapon_index);
             k.death = e.death.as_deref().and_then(weapon_index);
+            k.self_destruct = e.self_destruct.as_deref().and_then(weapon_index);
             if k.sight == 0 {
                 k.sight = k.weapon.map_or(0, |w| weapons[w.0 as usize].range);
             }
@@ -491,6 +521,7 @@ impl Rules {
                 table,
                 own_splash_percent: module("combat", "own_splash_percent")?,
                 scan_every: module("combat", "scan_every_ticks")? as u32,
+                self_destruct_ticks: (module("combat", "self_destruct_ticks")? as u32).max(1),
             },
             weapons,
             hazard,

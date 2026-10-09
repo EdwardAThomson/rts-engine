@@ -36,6 +36,10 @@ pub struct Entry {
     pub weapon: Option<String>,
     /// The blast it leaves when destroyed, if any.
     pub death: Option<String>,
+    /// The blast it leaves when it destroys itself on its owner's order, if it can.
+    pub self_destruct: Option<String>,
+    /// The generic faction ids (`faction_a`, ...) that may build it; empty means every faction.
+    pub factions: Vec<String>,
     pub numbers: BTreeMap<String, Number>,
 }
 
@@ -68,12 +72,35 @@ pub const ARMOURS: [&str; 6] = ["infantry", "light", "heavy", "building", "wall"
 pub const WARHEADS: [&str; 6] = ["bullet", "shell", "rocket", "sonic", "blast", "crush"];
 const KINDS: [&str; 5] = ["building", "unit", "power", "feature", "terrain"];
 /// Roles the simulation has code for. A new role is an engine change first.
-pub const ROLES: [&str; 9] =
-    ["harvester", "refinery", "wall", "air", "carrier", "untargetable", "capturable", "capturer", "repair_pad"];
+pub const ROLES: [&str; 11] = [
+    "harvester",
+    "refinery",
+    "wall",
+    "air",
+    "carrier",
+    "untargetable",
+    "capturable",
+    "capturer",
+    "repair_pad",
+    "unconvertible",
+    "sapper",
+];
 
 /// The numbers every weapon has.
-pub const WEAPON_NUMBERS: [&str; 10] =
-    ["range", "min_range", "reload", "damage", "speed", "scatter", "splash", "needs_power", "hits_air", "hits_ground"];
+pub const WEAPON_NUMBERS: [&str; 12] = [
+    "range",
+    "min_range",
+    "reload",
+    "damage",
+    "speed",
+    "scatter",
+    "splash",
+    "needs_power",
+    "hits_air",
+    "hits_ground",
+    "beam",
+    "converts",
+];
 
 /// A generic id: lowercase ASCII letters, digits and underscores.
 pub fn is_generic_id(id: &str) -> bool {
@@ -203,10 +230,30 @@ impl RulesTable {
                 .collect();
             let text = |k: &str| v.get(k).and_then(Value::as_str).map(String::from);
             let (armour, weapon, death) = (text("armour"), text("weapon"), text("death"));
+            let self_destruct = text("self_destruct");
+            let mut factions = Vec::new();
+            for f in v.get("factions").and_then(Value::as_array).unwrap_or_default() {
+                match f.as_str() {
+                    Some(f) if is_generic_id(f) => factions.push(f.to_string()),
+                    _ => errors.push(format!("{at}: \"factions\" must be a list of generic faction ids")),
+                }
+            }
             let numbers = numbers(v, &at, built, &mut errors);
             table.entities.insert(
                 id.clone(),
-                Entry { kind: kind.into(), built, roles, built_at, requires, armour, weapon, death, numbers },
+                Entry {
+                    kind: kind.into(),
+                    built,
+                    roles,
+                    built_at,
+                    requires,
+                    armour,
+                    weapon,
+                    death,
+                    self_destruct,
+                    factions,
+                    numbers,
+                },
             );
         }
         if table.entities.is_empty() {
@@ -245,7 +292,7 @@ impl RulesTable {
             if !e.armour.as_deref().is_some_and(|a| ARMOURS.contains(&a)) {
                 errors.push(format!("{at}: \"armour\" must be one of {}", ARMOURS.join(", ")));
             }
-            for w in e.weapon.iter().chain(&e.death) {
+            for w in e.weapon.iter().chain(&e.death).chain(&e.self_destruct) {
                 if !table.weapons.contains_key(w) {
                     errors.push(format!("{at}: no weapon \"{w}\" in weapons.json"));
                 }

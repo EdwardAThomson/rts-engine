@@ -20,6 +20,7 @@
 //! rules <the rules table's hash>
 //! player 0
 //! faction 0
+//! factions faction_a,faction_b
 //! ai 1 normal
 //! tick 4500
 //! hash <the state hash at that tick>
@@ -48,6 +49,9 @@ pub struct Save {
     /// The local player and the faction they picked.
     pub player: u32,
     pub faction: usize,
+    /// The faction id each player was given, in player order (`-` in the file for none), which decides the
+    /// faction-only kinds they may build. Loading gives them out again before the first tick.
+    pub factions: Vec<Option<String>>,
     /// Each computer player and its difficulty.
     pub ais: Vec<(u32, Difficulty)>,
     pub tick: u32,
@@ -79,6 +83,7 @@ impl Save {
             rules: game.rules.hash.clone(),
             player: game_info.player,
             faction: game_info.faction,
+            factions: game.state.players.iter().map(|p| p.faction.clone()).collect(),
             ais: ais.to_vec(),
             tick: game.state.tick,
             hash: game.hash(),
@@ -96,6 +101,10 @@ impl Save {
         out += &format!("setting {}\nmap {}\nmap_hash {}\n", self.setting, self.map, self.map_hash);
         out += &format!("seed {}\nfog {}\nrules {}\n", self.seed, self.fog, self.rules);
         out += &format!("player {}\nfaction {}\n", self.player, self.faction);
+        if !self.factions.is_empty() {
+            let ids: Vec<&str> = self.factions.iter().map(|f| f.as_deref().unwrap_or("-")).collect();
+            out += &format!("factions {}\n", ids.join(","));
+        }
         for (p, d) in &self.ais {
             out += &format!("ai {p} {}\n", d.id());
         }
@@ -121,6 +130,7 @@ impl Save {
             rules: String::new(),
             player: 0,
             faction: 0,
+            factions: Vec::new(),
             ais: Vec::new(),
             tick: 0,
             hash: String::new(),
@@ -143,6 +153,7 @@ impl Save {
                 "rules" => s.rules = value.into(),
                 "player" => s.player = num(value)? as u32,
                 "faction" => s.faction = num(value)? as usize,
+                "factions" => s.factions = value.split(',').map(|f| Some(f.to_string()).filter(|f| f != "-")).collect(),
                 "ai" => {
                     let (p, d) =
                         value.split_once(' ').ok_or_else(|| bad("an ai line needs a player and a difficulty"))?;
@@ -174,6 +185,12 @@ impl Save {
         }
         if game.rules.hash != self.rules {
             return Err("this save was made under other rules or another tuning".into());
+        }
+        if self.factions.len() > game.state.players.len() {
+            return Err("the save has more players than the map".into());
+        }
+        for (p, f) in game.state.players.iter_mut().zip(&self.factions) {
+            p.faction = f.clone();
         }
         let mut ais: Vec<Ai> = self.ais.iter().map(|&(p, d)| Ai::new(p, d.settings())).collect();
         let mut next = 0;
@@ -240,6 +257,7 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::Sell => "sell".to_string(),
         CommandOrder::Capture { target } => format!("capture {target}"),
         CommandOrder::RepairAt { pad } => format!("repair_at {pad}"),
+        CommandOrder::SelfDestruct => "self_destruct".to_string(),
     };
     format!("{} {ids} {order}", c.player)
 }
@@ -273,6 +291,7 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("sell") => CommandOrder::Sell,
         Some("capture") => CommandOrder::Capture { target: num(3)? as u32 },
         Some("repair_at") => CommandOrder::RepairAt { pad: num(3)? as u32 },
+        Some("self_destruct") => CommandOrder::SelfDestruct,
         other => return Err(format!("unknown order {other:?}")),
     };
     Ok(Command { player, ids, order })

@@ -97,6 +97,7 @@ impl Settings {
             ("heavy_factory", 2),
             ("gun_turret", 4),
             ("air_factory", 1),
+            ("research_lab", 1),
         ];
         let mix = [
             ("battle_tank", 6),
@@ -169,7 +170,8 @@ impl Settings {
     /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast, only
     /// attacks where it would win clearly, and keeps a carrier for every two harvesters. AI-versus-AI runs on the
     /// skirmish map found that more harvesters, a third refinery or thinking more often made it no stronger; bigger,
-    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0.
+    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0 (11 to 1
+    /// once faction specials came).
     /// The carriers alone, with normal's waves, lost 4 to 7.
     pub fn hard() -> Settings {
         Settings {

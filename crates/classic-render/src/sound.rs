@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 37] = [
+pub const EVENT_NAMES: [&str; 43] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -111,6 +111,12 @@ pub const EVENT_NAMES: [&str; 37] = [
     "building_sold",
     "captured",
     "capture_refused",
+    "beam_fired",
+    "converted",
+    "reverted",
+    "self_destruct_started",
+    "sapper_detonated",
+    "expired",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
@@ -386,7 +392,18 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         | Event::MoveEnded { unit, .. }
         | Event::UnitYielded { unit, .. }
         | Event::UnitStuck { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
-        Event::HazardAte { owner, x, y, .. } => Facts { owner: Some(owner), at: Some((x, y)), ..none },
+        Event::HazardAte { owner, x, y, .. } | Event::Expired { owner, x, y, .. } => {
+            Facts { owner: Some(owner), at: Some((x, y)), ..none }
+        }
+        Event::BeamFired { unit, weapon, x1, y1, .. } => {
+            Facts { owner: owner_of(unit), weapon: Some(weapon), at: Some((x1, y1)), ..none }
+        }
+        Event::Converted { unit, to, .. } | Event::Reverted { unit, to, .. } => {
+            Facts { owner: Some(to), at: at_of(unit), ..none }
+        }
+        Event::SelfDestructStarted { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
+        // The sapper is gone by the time this is read; the building it hit is where it happened.
+        Event::SapperDetonated { unit, target, .. } => Facts { owner: owner_of(unit), at: at_of(target), ..none },
         Event::CarrierPickup { unit, .. }
         | Event::CarrierDropoff { unit, .. }
         | Event::CarrierLostCargo { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },

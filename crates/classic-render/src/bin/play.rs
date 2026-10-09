@@ -203,7 +203,7 @@ impl App {
     ) -> App {
         let seed = arg("seed").and_then(|s| s.parse::<i32>().ok()).unwrap_or(1);
         let fog = arg("fog");
-        let game = new_game(&pack, &maps[0].1, seed, fog.as_deref());
+        let mut game = new_game(&pack, &maps[0].1, seed, fog.as_deref());
         let player = arg("player").and_then(|s| s.parse().ok()).unwrap_or(0);
         let mut mixer = Mixer::new(48_000);
         mixer.muted = flag("mute");
@@ -212,6 +212,7 @@ impl App {
             say(&format!("sound: {w}"));
         }
         let faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % pack.factions.len().max(1);
+        give_factions(&mut game, &pack, player, faction);
         let hud = Hud::new(&pack, &pack_files, &game, player, faction);
         for w in &hud.feed.warnings {
             say(&format!("messages and lines: {w}"));
@@ -288,7 +289,8 @@ impl App {
 
     /// Start a game on the map, faction and opponents the menu shows, and play it.
     fn restart(&mut self) {
-        let game = new_game(&self.pack, &self.maps[self.menu.map].1, self.seed, self.fog.as_deref());
+        let mut game = new_game(&self.pack, &self.maps[self.menu.map].1, self.seed, self.fog.as_deref());
+        give_factions(&mut game, &self.pack, self.player, self.menu.faction);
         let ais = opponents(&game, self.player, self.menu.opponents, self.menu.difficulty());
         self.begin(game, ais, Score::default());
     }
@@ -1028,6 +1030,15 @@ impl ApplicationHandler for App {
                                 self.scene.selected.clear();
                             }
                         }
+                        // Ctrl+X: the selected units that can blow themselves up start their countdown.
+                        KeyCode::KeyX
+                            if !event.repeat
+                                && (self.keys.contains(&KeyCode::ControlLeft)
+                                    || self.keys.contains(&KeyCode::ControlRight)) =>
+                        {
+                            let ids = self.scene.selected.clone();
+                            self.game.order(self.player, &ids, CommandOrder::SelfDestruct);
+                        }
                         _ if event.repeat => {}
                         _ if digit(code).is_some() => self.group_key(digit(code).unwrap_or(0)),
                         _ => match bind {
@@ -1224,6 +1235,17 @@ fn opponents(game: &Game, player: u32, on: bool, difficulty: Difficulty) -> Vec<
             .map(|p| Ai::new(p.trim().parse().expect("a player number"), difficulty.settings()))
             .collect(),
     }
+}
+
+/// Tell the game which of the pack's factions each player has, the local one on `chosen`, as the colours are dealt,
+/// so each builds its own faction's specials.
+fn give_factions(game: &mut Game, pack: &classic_data::Pack, local: u32, chosen: usize) {
+    let players = game.state.players.len();
+    let ids: Vec<&str> = art::player_factions(pack.factions.len(), players, local as usize, chosen)
+        .into_iter()
+        .filter_map(|f| pack.factions.get(f).map(|f| f.id.as_str()))
+        .collect();
+    game.set_factions(&ids);
 }
 
 /// A game of `pack` on `map`. `fog` (`--fog`) is `on`, `shroud` (shroud only, nothing hidden once explored) or `off`

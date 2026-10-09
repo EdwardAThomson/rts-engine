@@ -66,13 +66,19 @@ fn a_save_loads_into_the_same_game_and_plays_on_the_same() {
     const SAVED: u32 = 8000;
     const END: u32 = 14_000;
     // Uninterrupted: the player and a hard opponent play to the end.
-    let mut straight = game(4);
+    // Each side has its faction, which the load gives out again into a fresh game that has none.
+    let factioned = || {
+        let mut g = game(4);
+        g.set_factions(&["faction_b", "faction_a"]);
+        g
+    };
+    let mut straight = factioned();
     let mut ais = [Ai::new(1, Difficulty::Normal.settings())];
     while straight.state.tick < END {
         tick(&mut straight, &mut ais, SAVED);
     }
     // Saved part way, with a click queued on the saved tick, then loaded from the text.
-    let mut live = game(4);
+    let mut live = factioned();
     let mut ais = [Ai::new(1, Difficulty::Normal.settings())];
     while live.state.tick < SAVED {
         tick(&mut live, &mut ais, SAVED);
@@ -90,10 +96,12 @@ fn a_save_loads_into_the_same_game_and_plays_on_the_same() {
     assert!(human >= 5 && human < live.command_log().len(), "only the player's own commands are kept");
     let save = Save::parse(&text, &live.rules).unwrap();
     assert_eq!(save.to_text(&live.rules), text, "the text reads back as it was written");
+    assert!(text.contains("\nfactions faction_b,faction_a\n"));
     let mut ticks = 0;
     let (mut loaded, mut ais) = save.replay(game(4), |_| ticks += 1).unwrap();
     assert_eq!(ticks, SAVED);
     assert_eq!(loaded.hash(), live.hash());
+    assert_eq!(loaded.state.players[0].faction.as_deref(), Some("faction_b"));
     // The saved tick's click was queued again by the load, so this first step has no clicks of its own.
     for ai in &mut ais {
         ai.tick(&mut loaded);
@@ -168,6 +176,7 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::Sell,
         CommandOrder::Capture { target: 9 },
         CommandOrder::RepairAt { pad: 12 },
+        CommandOrder::SelfDestruct,
     ] {
         for ids in [vec![], vec![7], vec![7, 8, 9]] {
             let c = Command { player: 1, ids, order };
