@@ -289,6 +289,16 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   last, so it makes its faction's special and gunships. In 120 games on `mirror-01` (20 seeds for each ordered
   pair of factions, 60,000 ticks) the 98 decided games went 38, 33 and 27 to `faction_a`, `faction_b` and
   `faction_c`, after the beam's damage went from 55 to 70 and `super_h`'s health from 600 to 500.
+- Starport market (`crates/classic-sim/tests/starport.rs`): no golden game has a starport, and the market opens only
+  when the first one stands, so every golden hash is unchanged. An order of up to 5 units is paid in full at the
+  prices of the moment, or refused whole and left open to change; a supply ship flies in from the nearest map edge,
+  lands on the starport 600 ticks later (1,200 if its owner was short of power when paying), sets one unit down
+  every 15 ticks and flies off the map again, taking no orders on the way. Prices drift every 900 ticks within 75%
+  to 150% of base, the same in every run of a seed. Each player has their own stock of 3 (2 for the dearer kinds),
+  which grows back one every 1,800 ticks. A starport lost before the ship lands refunds the whole order. Games with
+  a starport replay to the same hash. In the player the starport has a sidebar tab: icons show today's price or
+  SOLD OUT, left click (shift for as many as allowed) adds to the order, right click takes one out, the queue row
+  shows the order and SEND pays (`crates/classic-render/tests/hud.rs`).
 
 ## Not verified / not built yet
 
@@ -319,9 +329,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
   acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
   because the starting base doesn't turn with them.
-- No tech levels, factory upgrades or starport. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
+- No tech levels or factory upgrades. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
   3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
-  way; the supply ship is built but nothing sends it yet (the starport, issue #75). Carriers make the economy faster, so fields run dry and more AI games end:
+  way. Carriers make the economy faster, so fields run dry and more AI games end:
   of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
   (8 for the right start), so that lean is older than aircraft and wants a look of its own. Aircraft were checked in tests and a rendered
   frame, not yet by a person playing.
@@ -331,6 +341,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   never orders a self-destruct and sends its specials in waves like any other unit. A converted harvester goes back
   to work for its new side, which wasn't tested. Balance comes from computer games only, and not yet played by a
   person: `faction_a` beat `faction_c` 23 to 12, a lean these runs can't yet tell from noise.
+- Starport: the computer opponent never builds one or buys from it, prices and stock show only on the starport's
+  tab, and the supply ship has no landing or take-off effect or sound. It was checked in tests, not yet by a person
+  playing.
 - The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
   load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
   no tabs by category, pause per item or primary factory choice yet,

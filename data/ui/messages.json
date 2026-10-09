@@ -25,6 +25,10 @@
     "building_captured": "{name} captured",
     "building_taken": "{name} taken by the enemy",
     "cannot_capture": "Cannot capture {name} yet",
+    "starport_ordered": "Order placed: delivery on its way",
+    "starport_funds": "Not enough credits for the order",
+    "starport_out_of_stock": "{name} out of stock",
+    "starport_refunded": "Starport lost: order refunded",
     "enemy_wave": "Enemy forces approaching",
     "game_won": "Battle won",
     "game_lost": "Battle lost"

@@ -287,26 +287,38 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
                 }
             }
         }
-        let exit = |state: &GameState| {
-            if k.air { air_exit(map, pf, state, rules, i) } else { exit_tile(map, pf, state, rules, i) }
-        };
-        if entry.state == EntryState::Blocked
-            && let Some(t) = exit(state)
-        {
+        if entry.state == EntryState::Blocked && deliver(map, pf, state, rules, i, head.item, events).is_some() {
             state.entities[i].queue.remove(0);
-            let entity = world::spawn(state, rules, head.item, owner, t.x, t.y);
-            events.push(Event::UnitBuilt { tick, factory, entity, kind: head.item });
-            // A harvester goes about its work; anything else drives clear of the exit.
-            if k.harvester.is_none()
-                && !k.air
-                && let Some(to) = clear_of_exit(map, pf, state, rules, factory_rect(state, rules, i), t)
-            {
-                let e = state.entities.last_mut().expect("just spawned");
-                e.path = world::path_or_empty(pf, t, to);
-                e.order = world::Order::Move;
-            }
             continue;
         }
         state.entities[i].queue[0] = entry;
     }
+}
+
+/// Put a new unit of `kind`, its owner's, out of the building `state.entities[i]` by its exit, as a factory does
+/// (`unit_built`): a harvester goes about its work, an aircraft waits, anything else drives clear of the exit.
+/// `None`, and nothing done, while every exit is taken.
+pub(crate) fn deliver(
+    map: &MapData,
+    pf: &mut Pathfinder,
+    state: &mut GameState,
+    rules: &Rules,
+    i: usize,
+    kind: Kind,
+    events: &mut Vec<Event>,
+) -> Option<u32> {
+    let k = rules.kind(kind);
+    let t = if k.air { air_exit(map, pf, state, rules, i) } else { exit_tile(map, pf, state, rules, i) }?;
+    let (factory, owner) = (state.entities[i].id, state.entities[i].owner);
+    let entity = world::spawn(state, rules, kind, owner, t.x, t.y);
+    events.push(Event::UnitBuilt { tick: state.tick, factory, entity, kind });
+    if k.harvester.is_none()
+        && !k.air
+        && let Some(to) = clear_of_exit(map, pf, state, rules, factory_rect(state, rules, i), t)
+    {
+        let e = state.entities.last_mut().expect("just spawned");
+        e.path = world::path_or_empty(pf, t, to);
+        e.order = world::Order::Move;
+    }
+    Some(entity)
 }

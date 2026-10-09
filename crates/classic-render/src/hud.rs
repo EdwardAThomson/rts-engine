@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use classic_sim::production::has_ready;
+use classic_sim::starport::{self, Stage};
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{Entity, Order, Task};
 use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
@@ -125,6 +126,8 @@ pub struct Layout {
     pub card: Rect,
     /// Where the map is drawn on the minimap: one block per tile, fitted into the square at the rail's foot.
     pub minimap: Rect,
+    /// On the starport's tab with an order open: the button that pays for it and sends for it.
+    pub send: Option<Rect>,
 }
 
 /// A building being placed: where its top-left tile would go, and whether the simulation would take it there.
@@ -183,6 +186,10 @@ impl Hud {
 
     /// Where `item` stands for this player.
     pub fn status(&self, game: &Game, item: Kind) -> Status {
+        if game.rules.kind(item).built_at.is_none() || self.market(game).contains(&item) && self.tab_is_market(game) {
+            let queued = self.order(game).map_or(0, |o| o.items.iter().filter(|(k, _)| *k == item).count());
+            return Status { needs: None, queued, head: None };
+        }
         let needs = match game.can_build(self.player, item) {
             Err(ProduceError::Requires { kind }) => Some(kind),
             _ => None,
@@ -212,12 +219,45 @@ impl Hud {
             .collect();
         let owned: BTreeSet<u16> =
             game.state.entities.iter().filter(|e| e.owner == self.player).map(|e| e.kind.0).collect();
-        makers.intersection(&owned).map(|&k| Kind(k)).collect()
+        let mut tabs: BTreeSet<u16> = makers.intersection(&owned).copied().collect();
+        // The starport sells rather than builds, but has a tab like a factory's.
+        if let Some(k) = game.kind("starport").filter(|k| owned.contains(&k.0) && !self.market(game).is_empty()) {
+            tabs.insert(k.0);
+        }
+        tabs.into_iter().map(Kind).collect()
+    }
+
+    /// Whether the open tab is the starport's.
+    fn tab_is_market(&self, game: &Game) -> bool {
+        let factories = self.factories(game);
+        self.tab
+            .filter(|t| factories.contains(t))
+            .or(factories.first().copied())
+            .is_some_and(|f| self.is_market(game, f))
+    }
+
+    /// Whether `factory` is the starport, whose tab is a market.
+    fn is_market(&self, game: &Game, factory: Kind) -> bool {
+        game.rules.kind(factory).id == "starport" && game.rules.starport.is_some()
+    }
+
+    /// What the starport sells that the pack uses.
+    fn market(&self, game: &Game) -> Vec<Kind> {
+        let catalogue = game.rules.starport.as_ref().map_or(&[][..], |s| &s.catalogue[..]);
+        catalogue.iter().copied().filter(|&k| !self.unused.contains(&game.rules.kind(k).id)).collect()
+    }
+
+    /// The local player's starport order, if they have one: its stage and what it holds.
+    fn order<'g>(&self, game: &'g Game) -> Option<&'g classic_sim::Delivery> {
+        game.state.deliveries.iter().find(|d| d.owner == self.player)
     }
 
     /// What the grid offers for `factory`: whatever the player can order now, and the next step of the tech tree
     /// (items whose missing buildings can themselves be ordered now), shown locked. The rest stays hidden.
     fn items(&self, game: &Game, factory: Kind) -> Vec<Kind> {
+        if self.is_market(game, factory) {
+            return self.market(game);
+        }
         (0..game.rules.kinds.len() as u16)
             .map(Kind)
             .filter(|&k| {
@@ -271,6 +311,7 @@ impl Hud {
         let card = Rect::new(x0 + 4.0 * s, queue_top - (12.0 + CARD_H) * s, rail.w - 8.0 * s, CARD_H * s);
         let mut icons = Vec::new();
         let mut queue = Vec::new();
+        let mut send = None;
         if let Some(factory) = open {
             let rows_fit = (((card.y - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
             let items = self.items(game, factory);
@@ -286,8 +327,17 @@ impl Hud {
                 );
                 icons.push(Icon { item, rect, status: self.status(game, item) });
             }
-            // The queue of the primary factory, the one orders go to.
-            if let Some(f) = game.state.entities.iter().find(|e| e.owner == self.player && e.kind == factory) {
+            // The queue of the primary factory, the one orders go to; at the starport, its order.
+            let slot =
+                |i: usize| Rect::new(x0 + (5.0 + i as f32 * (QUEUE_W + 2.0)) * s, queue_top, QUEUE_W * s, QUEUE_H * s);
+            if self.is_market(game, factory) {
+                if let Some(o) = self.order(game) {
+                    queue.extend(o.items.iter().enumerate().map(|(i, &(k, _))| (k, slot(i))));
+                    if o.stage == Stage::Open {
+                        send = Some(Rect::new(x0 + rail.w - 64.0 * s, queue_top - 13.0 * s, 59.0 * s, 12.0 * s));
+                    }
+                }
+            } else if let Some(f) = game.state.entities.iter().find(|e| e.owner == self.player && e.kind == factory) {
                 for (i, q) in f.queue.iter().enumerate() {
                     let rect =
                         Rect::new(x0 + (5.0 + i as f32 * (QUEUE_W + 2.0)) * s, queue_top, QUEUE_W * s, QUEUE_H * s);
@@ -295,7 +345,7 @@ impl Hud {
                 }
             }
         }
-        Layout { rail, tabs, open, icons, queue, readout, card, minimap }
+        Layout { rail, tabs, open, icons, queue, readout, card, minimap, send }
     }
 
     /// Whether a screen point is on the HUD rather than the world.
@@ -345,10 +395,20 @@ impl Hud {
             if let Some(t) = l.tabs.iter().find(|t| t.rect.contains(x, y)) {
                 self.tab = Some(t.factory);
                 self.scroll = 0;
+            } else if l.send.is_some_and(|r| r.contains(x, y)) {
+                game.order(self.player, &[], CommandOrder::StarportConfirm);
             } else if let Some(icon) = l.icons.iter().find(|i| i.rect.contains(x, y)) {
-                self.click_icon(game, icon, button, shift);
+                if l.open.is_some_and(|f| self.is_market(game, f)) {
+                    self.click_market(game, icon.item, button, shift);
+                } else {
+                    self.click_icon(game, icon, button, shift);
+                }
             } else if let Some(&(item, _)) = l.queue.iter().find(|(_, r)| r.contains(x, y)) {
-                game.order(self.player, &[], CommandOrder::Cancel { kind: item });
+                if l.open.is_some_and(|f| self.is_market(game, f)) {
+                    game.order(self.player, &[], CommandOrder::StarportRemove { kind: item });
+                } else {
+                    game.order(self.player, &[], CommandOrder::Cancel { kind: item });
+                }
             }
             return Click::Taken;
         }
@@ -362,6 +422,20 @@ impl Hud {
             Button::Right => self.placing = None,
         }
         Click::Taken
+    }
+
+    /// On the starport's tab a left click puts one into the order (shift: as many as the order and the stock allow),
+    /// and a right click takes one out.
+    fn click_market(&mut self, game: &mut Game, item: Kind, button: Button, shift: bool) {
+        match button {
+            Button::Right => game.order(self.player, &[], CommandOrder::StarportRemove { kind: item }),
+            Button::Left => {
+                let n = if shift { SHIFT_COUNT } else { 1 };
+                for _ in 0..n {
+                    game.order(self.player, &[], CommandOrder::StarportAdd { kind: item });
+                }
+            }
+        }
     }
 
     fn click_icon(&mut self, game: &mut Game, icon: &Icon, button: Button, shift: bool) {
@@ -501,8 +575,22 @@ impl Hud {
             skin.frame(batch, "inset", 0, r, s, self.theme.button);
             let st = icon.status;
             let id = &game.rules.kind(icon.item).id;
-            let tint = if st.needs.is_some() { [90, 90, 90, 255] } else { [255; 4] };
+            // At the starport: today's price along the bottom, and the icon dimmed when none are left to buy.
+            let market = l.open.is_some_and(|f| self.is_market(game, f));
+            let sold_out = market && starport::stock(&game.state, &game.rules, self.player, icon.item) == 0;
+            let tint = if st.needs.is_some() || sold_out { [90, 90, 90, 255] } else { [255; 4] };
             self.picture(batch, art, id, r, tint);
+            if market {
+                let (text, colour) = match starport::price(&game.state, &game.rules, icon.item) {
+                    _ if sold_out => ("SOLD OUT".to_string(), self.theme.dim),
+                    Some(p) => (p.to_string(), self.theme.text),
+                    None => (String::new(), self.theme.dim),
+                };
+                let w = skin.width(Style::Small, &text, s);
+                let band = Rect::new(r.x, r.y + r.h - 11.0 * s, r.w, 11.0 * s);
+                batch.fill(band, [0, 0, 0, 160]);
+                skin.text(batch, Style::Small, &text, r.x + (r.w - w) / 2.0, band.y + 2.0 * s, s, colour);
+            }
             match st.head {
                 Some((state @ (EntryState::Building | EntryState::Paused), share)) => {
                     batch.fill(Rect::new(r.x, r.y, r.w, r.h * (1.0 - share)), [0, 0, 0, 140]);
@@ -563,8 +651,19 @@ impl Hud {
             // Only where the font leaves room under the card.
             let y = first.y - skin.line(Style::Small, s) - s;
             if y >= l.card.y + l.card.h {
-                skin.text(batch, Style::Small, "QUEUE", first.x, y, s, self.theme.dim);
+                let label = match self.order(game).filter(|_| l.open.is_some_and(|f| self.is_market(game, f))) {
+                    Some(o) if o.stage == Stage::Open => "ORDER",
+                    Some(_) => "ON ITS WAY",
+                    None => "QUEUE",
+                };
+                skin.text(batch, Style::Small, label, first.x, y, s, self.theme.dim);
             }
+        }
+        if let Some(r) = l.send {
+            let hover = r.contains(mouse.0, mouse.1);
+            skin.frame(batch, "button", hover as usize, r, s, if hover { self.theme.hover } else { self.theme.button });
+            let w = skin.width(Style::Small, "SEND", s);
+            skin.text(batch, Style::Small, "SEND", r.x + (r.w - w) / 2.0, r.y + 2.0 * s, s, self.theme.text);
         }
         for (i, &(item, r)) in l.queue.iter().enumerate() {
             skin.frame(batch, "inset", 0, r, s, self.theme.button);
@@ -914,8 +1013,16 @@ impl Hud {
         let s = self.scale;
         let k = game.rules.kind(icon.item);
         let st = icon.status;
-        let mut lines =
-            vec![(self.name(game, icon.item), self.theme.text), (format!("COST {}", k.cost), self.theme.dim)];
+        let mut lines = vec![(self.name(game, icon.item), self.theme.text)];
+        if self.tab_is_market(game)
+            && let Some(p) = starport::price(&game.state, &game.rules, icon.item)
+        {
+            let left = starport::stock(&game.state, &game.rules, self.player, icon.item);
+            lines.push((format!("PRICE {p} (LIST {})", k.cost), self.theme.dim));
+            lines.push((format!("IN STOCK {left}"), if left == 0 { self.theme.warn } else { self.theme.dim }));
+        } else {
+            lines.push((format!("COST {}", k.cost), self.theme.dim));
+        }
         let state = match (st.needs, st.head) {
             (Some(need), _) => Some((format!("NEEDS {}", self.name(game, need)), self.theme.warn)),
             (_, Some((EntryState::Building, share))) => {

@@ -19,6 +19,7 @@ use crate::power::Power;
 use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
 use crate::repair;
 use crate::sell;
+use crate::starport::{self, Delivery, DeliveryCanon, Market, StarportError};
 use crate::storage;
 use crate::units::{Kind, Rules, WeaponId};
 use crate::vision::{self, Vision, VisionCanon};
@@ -264,6 +265,10 @@ pub struct GameState {
     pub hazards: Option<Hazards>,
     /// Each player's explored and seen tiles; set when the rules turn fog of war on.
     pub vision: Option<Vision>,
+    /// The starport market, from when the first starport stands.
+    pub market: Option<Market>,
+    /// Starport orders, by starport id.
+    pub deliveries: Vec<Delivery>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -275,10 +280,15 @@ impl Canon for GameState {
         let entities: Vec<EntityCanon> = self.entities.iter().map(|e| EntityCanon(e, &self.kind_ids)).collect();
         let projectiles: Vec<ProjectileCanon> =
             self.projectiles.iter().map(|p| ProjectileCanon(p, &self.weapon_ids)).collect();
+        let deliveries: Vec<DeliveryCanon> = self.deliveries.iter().map(|d| DeliveryCanon(d, &self.kind_ids)).collect();
+        // The market and starport orders are written only once they exist, so a game without a starport hashes as
+        // it did before them.
         w.object()
+            .opt("deliveries", (!deliveries.is_empty()).then_some(&deliveries))
             .array("entities", &entities)
             // Written only when the hazard is on, so a game without it hashes as it did before.
             .opt("hazards", self.hazards.as_ref())
+            .opt("market", self.market.as_ref())
             .field("nextId", &self.next_id)
             .field("players", &self.players)
             .opt("projectiles", (!projectiles.is_empty()).then_some(&projectiles))
@@ -340,6 +350,16 @@ pub enum CommandOrder {
     },
     /// Start the countdown to blowing up: units whose kind has a self-destruct blast only. It can't be called off.
     SelfDestruct,
+    /// Put one unit of this kind into the order at the starport in `ids`, or the player's first.
+    StarportAdd {
+        kind: Kind,
+    },
+    /// Take the last unit of this kind back out of that order.
+    StarportRemove {
+        kind: Kind,
+    },
+    /// Pay for that order and send for it.
+    StarportConfirm,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -713,6 +733,43 @@ pub enum Event {
         x: i64,
         y: i64,
     },
+    /// The starport market's prices moved (`starport::price` reads them).
+    MarketPricesChanged {
+        tick: u32,
+    },
+    /// A starport order, or one unit for it (`kind`), was refused.
+    StarportRefused {
+        tick: u32,
+        player: u32,
+        kind: Option<Kind>,
+        reason: StarportError,
+    },
+    /// A starport order was paid for; its ship lands on tick `arrive`.
+    StarportOrderPlaced {
+        tick: u32,
+        starport: u32,
+        player: u32,
+        cost: i64,
+        arrive: u32,
+    },
+    /// A supply ship came down on its starport to set its units down.
+    SupplyShipLanded {
+        tick: u32,
+        starport: u32,
+        ship: u32,
+    },
+    /// A starport was lost with units still to come, and what was paid for them came back.
+    StarportOrderRefunded {
+        tick: u32,
+        starport: u32,
+        player: u32,
+        refund: i64,
+    },
+    /// A supply ship flew off the map.
+    SupplyShipLeft {
+        tick: u32,
+        ship: u32,
+    },
 }
 
 impl Event {
@@ -761,6 +818,12 @@ impl Event {
             Event::SelfDestructStarted { .. } => "self_destruct_started",
             Event::SapperDetonated { .. } => "sapper_detonated",
             Event::Expired { .. } => "expired",
+            Event::MarketPricesChanged { .. } => "market_prices_changed",
+            Event::StarportRefused { .. } => "starport_refused",
+            Event::StarportOrderPlaced { .. } => "starport_order_placed",
+            Event::SupplyShipLanded { .. } => "supply_ship_landed",
+            Event::StarportOrderRefunded { .. } => "starport_order_refunded",
+            Event::SupplyShipLeft { .. } => "supply_ship_left",
         }
     }
 
@@ -801,7 +864,13 @@ impl Event {
             | Event::Reverted { tick, .. }
             | Event::SelfDestructStarted { tick, .. }
             | Event::SapperDetonated { tick, .. }
-            | Event::Expired { tick, .. } => tick,
+            | Event::Expired { tick, .. }
+            | Event::MarketPricesChanged { tick }
+            | Event::StarportRefused { tick, .. }
+            | Event::StarportOrderPlaced { tick, .. }
+            | Event::SupplyShipLanded { tick, .. }
+            | Event::StarportOrderRefunded { tick, .. }
+            | Event::SupplyShipLeft { tick, .. } => tick,
             Event::RepairStarted { tick, .. }
             | Event::RepairStopped { tick, .. }
             | Event::UnitRepaired { tick, .. }
@@ -951,6 +1020,11 @@ pub fn apply_command(
             return capture::order(pf, state, rules, cmd.player, &cmd.ids, target, events);
         }
         CommandOrder::RepairAt { pad } => return repair::send(pf, state, rules, cmd.player, &cmd.ids, pad),
+        CommandOrder::StarportAdd { kind } => return starport::add(state, rules, cmd.player, &cmd.ids, kind, events),
+        CommandOrder::StarportRemove { kind } => {
+            return starport::remove(state, rules, cmd.player, &cmd.ids, kind, events);
+        }
+        CommandOrder::StarportConfirm => return starport::confirm(state, rules, cmd.player, &cmd.ids, events),
         _ => {}
     }
     if let CommandOrder::Place { kind, x, y } = cmd.order {
@@ -979,6 +1053,10 @@ pub fn apply_command(
     };
     for &id in &cmd.ids {
         let Ok(i) = state.entities.binary_search_by_key(&id, |e| e.id) else { continue };
+        // A supply ship on a delivery flies itself.
+        if state.deliveries.iter().any(|d| d.ship == Some(id)) {
+            continue;
+        }
         let e = &mut state.entities[i];
         // A unit being carried takes no orders until it is set down, and one counting down to its blast none at all.
         if e.owner != cmd.player || rules.kind(e.kind).building || e.carried_by.is_some() || e.fuse.is_some() {
@@ -1031,7 +1109,10 @@ pub fn apply_command(
             | CommandOrder::Repair { .. }
             | CommandOrder::Sell
             | CommandOrder::Capture { .. }
-            | CommandOrder::RepairAt { .. } => {}
+            | CommandOrder::RepairAt { .. }
+            | CommandOrder::StarportAdd { .. }
+            | CommandOrder::StarportRemove { .. }
+            | CommandOrder::StarportConfirm => {}
         }
     }
 }
@@ -1089,6 +1170,7 @@ fn economy(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &Ru
         }
     }
     production::tick(map, pf, state, rules, events);
+    starport::tick(map, pf, state, rules, events);
 }
 
 fn harvest(

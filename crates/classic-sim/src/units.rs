@@ -117,6 +117,11 @@ pub struct KindRules {
     pub lifetime: u32,
     /// The generic faction ids that may build it; empty for every faction.
     pub factions: Vec<String>,
+    /// Its base price at the starport; 0 for kinds the starport doesn't sell.
+    pub starport_price: i64,
+    /// How many each player may buy at the starport before it restocks, and the ticks it takes to restock one.
+    pub starport_stock: u32,
+    pub starport_restock: u32,
     /// Facing units per tick its weapon turns (256 to a full turn).
     pub turn_rate: i64,
     /// How far it looks for targets, in sub-tile units: its sight, or its weapon's range if it has no sight.
@@ -234,6 +239,25 @@ pub struct AirRules {
     pub fall_damage_percent: i64,
 }
 
+/// The starport market (rules-economy-production.md, section 12; the `starport` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StarportRules {
+    /// What it sells: every kind with a starport price, in kind order.
+    pub catalogue: Vec<Kind>,
+    /// Ticks between price moves, and the most one move shifts a price, in percent of its base.
+    pub drift_every: u32,
+    pub drift_step: i64,
+    /// Prices stay within these percents of base.
+    pub min_percent: i64,
+    pub max_percent: i64,
+    /// Ticks from paying to the supply ship landing, doubled when its owner is short of power.
+    pub delivery_ticks: u32,
+    /// Ticks between units leaving a landed supply ship.
+    pub unload_every: u32,
+    /// The most units one order holds.
+    pub max_order: usize,
+}
+
 /// Fog of war (rules-world.md, sections 2 and 3; the `fog` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FogRules {
@@ -308,6 +332,8 @@ pub struct Rules {
     pub hazard: Option<HazardRules>,
     /// Set when a setting pack turns fog of war on.
     pub fog: Option<FogRules>,
+    /// Set while the starport module is on.
+    pub starport: Option<StarportRules>,
     pub repair: RepairRules,
     /// Set unless a setting pack turns selling off.
     pub sell: Option<SellRules>,
@@ -360,6 +386,9 @@ impl Rules {
                 cloak: t.number(id, "cloak").unwrap_or(0) * crate::map::TILE,
                 lifetime: t.number(id, "lifetime").unwrap_or(0) as u32,
                 factions: e.factions.clone(),
+                starport_price: t.number(id, "starport_price").unwrap_or(0),
+                starport_stock: t.number(id, "starport_stock").unwrap_or(0) as u32,
+                starport_restock: (t.number(id, "starport_restock_ticks").unwrap_or(1) as u32).max(1),
                 power: if building { num("power")? } else { 0 },
                 cost: t.number(id, "cost").unwrap_or(0),
                 build_ticks: t.number(id, "build_ticks").unwrap_or(0),
@@ -479,6 +508,24 @@ impl Rules {
         });
         let capture = (module("capture", "on")? != 0)
             .then_some(CaptureRules { below_percent: module("capture", "below_percent")?.max(1) });
+        let sp = |name: &str| module("starport", name);
+        let starport = if sp("on")? != 0 {
+            Some(StarportRules {
+                catalogue: (0..kinds.len())
+                    .filter(|&i| kinds[i].starport_price > 0 && !kinds[i].building)
+                    .map(|i| Kind(i as u16))
+                    .collect(),
+                drift_every: (sp("drift_every_ticks")? as u32).max(1),
+                drift_step: sp("drift_step_percent")?,
+                min_percent: sp("min_percent")?,
+                max_percent: sp("max_percent")?,
+                delivery_ticks: (sp("delivery_ticks")? as u32).max(1),
+                unload_every: (sp("unload_every_ticks")? as u32).max(1),
+                max_order: (sp("max_order")? as usize).max(1),
+            })
+        } else {
+            None
+        };
         Ok(Rules {
             kinds,
             regrowth: Regrowth {
@@ -529,6 +576,7 @@ impl Rules {
             repair,
             sell,
             capture,
+            starport,
             hash: t.hash(),
         })
     }
