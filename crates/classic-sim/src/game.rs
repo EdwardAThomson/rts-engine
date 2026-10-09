@@ -96,6 +96,8 @@ impl Game {
             projectiles: Vec::new(),
             hazards: rules.hazard.as_ref().map(|h| Hazards { list: Vec::new(), next_spawn: h.first_tick }),
             vision: None,
+            market: None,
+            deliveries: Vec::new(),
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in

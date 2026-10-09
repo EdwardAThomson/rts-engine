@@ -177,6 +177,9 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::Capture { target: 9 },
         CommandOrder::RepairAt { pad: 12 },
         CommandOrder::SelfDestruct,
+        CommandOrder::StarportAdd { kind: k("battle_tank") },
+        CommandOrder::StarportRemove { kind: k("quad") },
+        CommandOrder::StarportConfirm,
     ] {
         for ids in [vec![], vec![7], vec![7, 8, 9]] {
             let c = Command { player: 1, ids, order };

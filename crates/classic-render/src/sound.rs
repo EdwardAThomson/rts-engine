@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 43] = [
+pub const EVENT_NAMES: [&str; 49] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -117,6 +117,12 @@ pub const EVENT_NAMES: [&str; 43] = [
     "self_destruct_started",
     "sapper_detonated",
     "expired",
+    "market_prices_changed",
+    "starport_refused",
+    "starport_order_placed",
+    "supply_ship_landed",
+    "starport_order_refunded",
+    "supply_ship_left",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
@@ -402,6 +408,13 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             Facts { owner: Some(to), at: at_of(unit), ..none }
         }
         Event::SelfDestructStarted { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
+        Event::MarketPricesChanged { .. } => none,
+        Event::StarportRefused { player, .. }
+        | Event::StarportOrderPlaced { player, .. }
+        | Event::StarportOrderRefunded { player, .. } => Facts { owner: Some(player), ..none },
+        Event::SupplyShipLanded { ship, .. } | Event::SupplyShipLeft { ship, .. } => {
+            Facts { owner: owner_of(ship), at: at_of(ship), ..none }
+        }
         // The sapper is gone by the time this is read; the building it hit is where it happened.
         Event::SapperDetonated { unit, target, .. } => Facts { owner: owner_of(unit), at: at_of(target), ..none },
         Event::CarrierPickup { unit, .. }

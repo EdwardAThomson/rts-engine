@@ -153,7 +153,19 @@
       }
     },
     "blooms": { "status": "planned" },
-    "starport": { "status": "planned" },
+    "starport": {
+      "status": "built",
+      "numbers": {
+        "on": { "default": 1, "min": 0, "max": 1 },
+        "drift_every_ticks": { "default": 900, "min": 1, "max": 100000 },
+        "drift_step_percent": { "default": 10, "min": 0, "max": 50 },
+        "min_percent": { "default": 75, "min": 1, "max": 100 },
+        "max_percent": { "default": 150, "min": 100, "max": 400 },
+        "delivery_ticks": { "default": 600, "min": 1, "max": 10000 },
+        "unload_every_ticks": { "default": 15, "min": 1, "max": 300 },
+        "max_order": { "default": 5, "min": 1, "max": 20 }
+      }
+    },
     "superpowers": { "status": "planned" },
     "decay": { "status": "planned" }
   }

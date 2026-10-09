@@ -258,6 +258,9 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::Capture { target } => format!("capture {target}"),
         CommandOrder::RepairAt { pad } => format!("repair_at {pad}"),
         CommandOrder::SelfDestruct => "self_destruct".to_string(),
+        CommandOrder::StarportAdd { kind: k } => format!("starport_add {}", kind(k)),
+        CommandOrder::StarportRemove { kind: k } => format!("starport_remove {}", kind(k)),
+        CommandOrder::StarportConfirm => "starport_confirm".to_string(),
     };
     format!("{} {ids} {order}", c.player)
 }
@@ -292,6 +295,9 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("capture") => CommandOrder::Capture { target: num(3)? as u32 },
         Some("repair_at") => CommandOrder::RepairAt { pad: num(3)? as u32 },
         Some("self_destruct") => CommandOrder::SelfDestruct,
+        Some("starport_add") => CommandOrder::StarportAdd { kind: kind(3)? },
+        Some("starport_remove") => CommandOrder::StarportRemove { kind: kind(3)? },
+        Some("starport_confirm") => CommandOrder::StarportConfirm,
         other => return Err(format!("unknown order {other:?}")),
     };
     Ok(Command { player, ids, order })

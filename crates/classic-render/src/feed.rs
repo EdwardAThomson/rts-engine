@@ -12,7 +12,7 @@ use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{CaptureError, Event, IdleReason, MoveEnd};
-use classic_sim::{Game, Kind, ProduceError};
+use classic_sim::{Game, Kind, ProduceError, StarportError};
 
 use crate::lines::{Lines, Moment, Speech, VOICES};
 use crate::platform::Files;
@@ -307,6 +307,22 @@ impl Feed {
                         self.say(game, "storage_full", None, Tone::Warn);
                     }
                 }
+                Event::StarportOrderPlaced { player, .. } if player == local => {
+                    self.say(game, "starport_ordered", None, Tone::Good)
+                }
+                Event::StarportRefused { player, kind, reason, .. } if player == local => match reason {
+                    StarportError::Funds => self.say(game, "starport_funds", None, Tone::Warn),
+                    StarportError::OutOfStock => self.say(game, "starport_out_of_stock", kind, Tone::Warn),
+                    // The sidebar never offers these; a script might.
+                    StarportError::NotSold
+                    | StarportError::NoStarport
+                    | StarportError::Busy
+                    | StarportError::Full
+                    | StarportError::NotInOrder => {}
+                },
+                Event::StarportOrderRefunded { player, .. } if player == local => {
+                    self.say(game, "starport_refunded", None, Tone::Bad)
+                }
                 // A local unit gave up on its way: it can't get there.
                 Event::MoveEnded { unit, reason: MoveEnd::Blocked, .. } if Self::owner(game, unit) == Some(local) => {
                     self.reply(game, Moment::Cant, &[unit])
@@ -361,6 +377,12 @@ impl Feed {
                 | Event::SelfDestructStarted { .. }
                 | Event::SapperDetonated { .. }
                 | Event::Expired { .. }
+                | Event::MarketPricesChanged { .. }
+                | Event::StarportRefused { .. }
+                | Event::StarportOrderPlaced { .. }
+                | Event::SupplyShipLanded { .. }
+                | Event::StarportOrderRefunded { .. }
+                | Event::SupplyShipLeft { .. }
                 | Event::Regrowth { .. }
                 | Event::CarrierPickup { .. }
                 | Event::CarrierDropoff { .. }
