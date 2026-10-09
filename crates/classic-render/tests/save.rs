@@ -163,6 +163,11 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::Produce { kind: k("harvester") },
         CommandOrder::Attack { target: 42 },
         CommandOrder::Cancel { kind: k("battle_tank") },
+        CommandOrder::Repair { on: true },
+        CommandOrder::Repair { on: false },
+        CommandOrder::Sell,
+        CommandOrder::Capture { target: 9 },
+        CommandOrder::RepairAt { pad: 12 },
     ] {
         for ids in [vec![], vec![7], vec![7, 8, 9]] {
             let c = Command { player: 1, ids, order };

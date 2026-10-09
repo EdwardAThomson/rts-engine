@@ -12,6 +12,8 @@
     "sfx_hazard_strike": { "files": ["audio/sfx/hazard_strike_1.wav"] },
     "sfx_hazard_rumble": { "files": ["audio/sfx/hazard_rumble_1.wav"] },
     "sfx_build": { "files": ["audio/sfx/build_1.wav"] },
+    "sfx_repair": { "files": ["audio/sfx/repair_1.wav"] },
+    "sfx_sell": { "files": ["audio/sfx/sell_1.wav"] },
     "ui_ready": { "files": ["audio/ui/ready_1.wav"] },
     "ui_unit_ready": { "files": ["audio/ui/unit_ready_1.wav"] },
     "ui_error": { "files": ["audio/ui/error_1.wav"] },

@@ -1,10 +1,11 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md).",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. Roles: `capturable` buildings can be taken by `capturer` units (the capture module), a `repair_pad` mends its owner's vehicles beside it (the repair module). `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md).",
   "entities": {
     "construction_yard": {
       "kind": "building",
       "status": "built",
       "armour": "building",
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 1200, "min": 1, "max": 100000 },
@@ -21,6 +22,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": [],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 500, "min": 1, "max": 100000 },
@@ -37,7 +39,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
-      "roles": ["refinery"],
+      "roles": ["refinery", "capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 900, "min": 1, "max": 100000 },
@@ -55,6 +57,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant", "refinery"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 400, "min": 1, "max": 100000 },
@@ -72,6 +75,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 6, "min": 0, "max": 16 },
         "max_health": { "default": 600, "min": 1, "max": 100000 },
@@ -88,6 +92,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["power_plant"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 500, "min": 1, "max": 100000 },
@@ -104,6 +109,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["barracks"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 600, "min": 1, "max": 100000 },
@@ -120,6 +126,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["refinery"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 700, "min": 1, "max": 100000 },
@@ -136,6 +143,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["light_factory"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 900, "min": 1, "max": 100000 },
@@ -152,6 +160,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 900, "min": 1, "max": 100000 },
@@ -168,6 +177,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
+      "roles": ["capturable", "repair_pad"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 600, "min": 1, "max": 100000 },
@@ -184,6 +194,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["heavy_factory"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 1000, "min": 1, "max": 100000 },
@@ -200,6 +211,7 @@
       "armour": "building",
       "built_at": "construction_yard",
       "requires": ["radar"],
+      "roles": ["capturable"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "max_health": { "default": 700, "min": 1, "max": 100000 },
@@ -287,6 +299,7 @@
       "armour": "infantry",
       "built_at": "barracks",
       "requires": [],
+      "roles": ["capturer"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "speed": { "default": 8, "min": 1, "max": 128 },
@@ -305,6 +318,7 @@
       "armour": "infantry",
       "built_at": "barracks",
       "requires": [],
+      "roles": ["capturer"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "speed": { "default": 7, "min": 1, "max": 128 },
@@ -323,6 +337,7 @@
       "armour": "infantry",
       "built_at": "barracks",
       "requires": [],
+      "roles": ["capturer"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "speed": { "default": 7, "min": 1, "max": 128 },
@@ -341,6 +356,7 @@
       "armour": "infantry",
       "built_at": "barracks",
       "requires": [],
+      "roles": ["capturer"],
       "numbers": {
         "vision": { "default": 2, "min": 0, "max": 16 },
         "speed": { "default": 7, "min": 1, "max": 128 },
@@ -492,7 +508,7 @@
       }
     },
     "resource_bloom": { "kind": "feature", "status": "planned" },
-    "hazard": { "kind": "feature", "status": "planned" },
+    "hazard": { "kind": "feature", "status": "built" },
 
     "rock": { "kind": "terrain", "status": "built" },
     "open": { "kind": "terrain", "status": "built" }

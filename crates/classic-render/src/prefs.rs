@@ -29,10 +29,12 @@ pub enum Bind {
     Mute,
     Base,
     NextTab,
+    Sell,
+    Repair,
 }
 
 impl Bind {
-    pub const ALL: [Bind; 8] = [
+    pub const ALL: [Bind; 10] = [
         Bind::ScrollUp,
         Bind::ScrollDown,
         Bind::ScrollLeft,
@@ -41,6 +43,8 @@ impl Bind {
         Bind::Mute,
         Bind::Base,
         Bind::NextTab,
+        Bind::Sell,
+        Bind::Repair,
     ];
 
     /// Its name in the settings file.
@@ -54,6 +58,8 @@ impl Bind {
             Bind::Mute => "mute",
             Bind::Base => "centre_on_base",
             Bind::NextTab => "next_tab",
+            Bind::Sell => "sell",
+            Bind::Repair => "repair",
         }
     }
 
@@ -68,6 +74,8 @@ impl Bind {
             Bind::Mute => "MUTE",
             Bind::Base => "CENTRE ON BASE",
             Bind::NextTab => "NEXT TAB",
+            Bind::Sell => "SELL",
+            Bind::Repair => "REPAIR",
         }
     }
 
@@ -82,6 +90,8 @@ impl Bind {
             Bind::Mute => "KeyM",
             Bind::Base => "KeyH",
             Bind::NextTab => "Tab",
+            Bind::Sell => "KeyZ",
+            Bind::Repair => "KeyC",
         }
     }
 }
@@ -108,7 +118,7 @@ pub struct Prefs {
     /// Scroll speed in percent of the normal speed.
     pub scroll: u32,
     /// The key for each `Bind`, in `Bind::ALL` order.
-    pub keys: [String; 8],
+    pub keys: [String; 10],
     /// The opponent's strength for the next game.
     pub difficulty: Difficulty,
 }

@@ -236,6 +236,10 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::Produce { kind: k } => format!("produce {}", kind(k)),
         CommandOrder::Attack { target } => format!("attack {target}"),
         CommandOrder::Cancel { kind: k } => format!("cancel {}", kind(k)),
+        CommandOrder::Repair { on } => format!("repair {}", on as u8),
+        CommandOrder::Sell => "sell".to_string(),
+        CommandOrder::Capture { target } => format!("capture {target}"),
+        CommandOrder::RepairAt { pad } => format!("repair_at {pad}"),
     };
     format!("{} {ids} {order}", c.player)
 }
@@ -265,6 +269,10 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("produce") => CommandOrder::Produce { kind: kind(3)? },
         Some("attack") => CommandOrder::Attack { target: num(3)? as u32 },
         Some("cancel") => CommandOrder::Cancel { kind: kind(3)? },
+        Some("repair") => CommandOrder::Repair { on: num(3)? != 0 },
+        Some("sell") => CommandOrder::Sell,
+        Some("capture") => CommandOrder::Capture { target: num(3)? as u32 },
+        Some("repair_at") => CommandOrder::RepairAt { pad: num(3)? as u32 },
         other => return Err(format!("unknown order {other:?}")),
     };
     Ok(Command { player, ids, order })
