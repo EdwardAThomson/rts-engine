@@ -92,6 +92,8 @@ pub struct KindRules {
     pub requires: Vec<Kind>,
     /// Added to the owner's power supply when positive, drawn from it when negative; zero for units.
     pub power: i64,
+    /// Noise it makes each tick it moves on open ground, which draws the hazard; 0 for silent kinds.
+    pub noise: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,6 +137,39 @@ pub struct MovementRules {
     pub nodes_local: u32,
 }
 
+/// The hazard's numbers (rules-world.md, section 7; the `hazard` module). Distances are in tiles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HazardRules {
+    /// The most in play at once.
+    pub max: u32,
+    /// The first tick one may appear.
+    pub first_tick: u32,
+    /// Ticks after one leaves before the next may appear.
+    pub respawn_ticks: u32,
+    /// Tiles a new one keeps from every building.
+    pub spawn_clearance: i32,
+    /// Sub-tile units per tick, underground.
+    pub speed: i64,
+    /// Ticks between looks for a victim; also how often noise halves and the way is found again.
+    pub scan_every: u32,
+    /// How far it looks for a victim.
+    pub scan_range: i64,
+    /// How far a victim may get before it gives up.
+    pub give_up_range: i64,
+    /// How far it roams when nothing draws it.
+    pub wander_range: i32,
+    /// Ticks it stays up after a strike.
+    pub surface_ticks: u32,
+    /// Units it eats before it leaves; 0 means it never leaves.
+    pub appetite: u32,
+    /// Ticks a full one takes to go.
+    pub leave_ticks: u32,
+    /// Noise a harvester makes each tick it mines.
+    pub mining_noise: i64,
+    /// Noise a unit makes on a tick it fires.
+    pub firing_noise: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowerRules {
     /// The lowest power factor, in percent, however short a player is.
@@ -152,6 +187,8 @@ pub struct Rules {
     pub movement: MovementRules,
     pub weapons: Vec<WeaponRules>,
     pub combat: CombatRules,
+    /// Set when a setting pack turns the hazard on.
+    pub hazard: Option<HazardRules>,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -200,6 +237,7 @@ impl Rules {
                 death: None,
                 turn_rate: t.number(id, "turn_rate").unwrap_or(0),
                 sight: t.number(id, "sight").unwrap_or(0) * crate::map::TILE,
+                noise: t.number(id, "noise").unwrap_or(0),
             });
         }
         if kinds.len() > u16::MAX as usize {
@@ -253,6 +291,27 @@ impl Rules {
             }
         }
         let every = num("resource", "regrow_every_ticks")?;
+        let hz = |name: &str| module("hazard", name);
+        let hazard = if hz("on")? != 0 && hz("max")? > 0 {
+            Some(HazardRules {
+                max: hz("max")? as u32,
+                first_tick: hz("first_tick")? as u32,
+                respawn_ticks: hz("respawn_ticks")? as u32,
+                spawn_clearance: hz("spawn_clearance")? as i32,
+                speed: hz("speed")?,
+                scan_every: (hz("scan_every_ticks")? as u32).max(1),
+                scan_range: hz("scan_range")?,
+                give_up_range: hz("give_up_range")?,
+                wander_range: hz("wander_range")? as i32,
+                surface_ticks: (hz("surface_ticks")? as u32).max(1),
+                appetite: hz("appetite")? as u32,
+                leave_ticks: (hz("leave_ticks")? as u32).max(1),
+                mining_noise: hz("mining_noise")?,
+                firing_noise: hz("firing_noise")?,
+            })
+        } else {
+            None
+        };
         Ok(Rules {
             kinds,
             regrowth: Regrowth {
@@ -286,6 +345,7 @@ impl Rules {
                 scan_every: module("combat", "scan_every_ticks")? as u32,
             },
             weapons,
+            hazard,
             hash: t.hash(),
         })
     }

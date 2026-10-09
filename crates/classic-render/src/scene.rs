@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use classic_sim::combat::facing_to;
 use classic_sim::map::{RESOURCE_PER_TILE, TILE};
-use classic_sim::{Entity, Game, Terrain};
+use classic_sim::{Entity, Game, Hazard, Terrain};
 
 use crate::art::{Art, Strip};
 use crate::effects::{Effects, FIRE_TICKS};
@@ -51,12 +51,18 @@ const WALK_TICKS: u32 = 3;
 const FALL_TICKS: u32 = 48;
 /// Ticks each frame of a building's overlay (a pump, a turning dish) stays on screen.
 const OVERLAY_TICKS: u32 = 4;
+/// Ticks each frame of the hazard's ripple stays on screen.
+const RIPPLE_TICKS: u32 = 3;
+/// Frames in the hazard's strike, then its sink, played out over the ticks it stays surfaced (the studio's
+/// `creatures/hazard` anims; a pack with shorter ones just holds their last frame).
+const STRIKE_FRAMES: u32 = 12;
+const SINK_FRAMES: u32 = 6;
 
 #[derive(Default)]
 pub struct Scene {
     /// Body facing per unit, 0 to 255 clockwise from north.
     facing: BTreeMap<u32, i64>,
-    /// Positions before the latest tick, for drawing between ticks.
+    /// Positions before the latest tick, for drawing between ticks; hazards' too.
     prev: BTreeMap<u32, (i64, i64)>,
     /// Muzzle flashes, shots, explosions and smoke.
     pub fx: Effects,
@@ -105,6 +111,7 @@ impl Scene {
     /// Call before each tick: remember where everything is.
     pub fn before_step(&mut self, game: &Game) {
         self.prev = game.state.entities.iter().map(|e| (e.id, (e.x, e.y))).collect();
+        self.prev.extend(hazards(game).iter().map(|z| (z.id, (z.x, z.y))));
         self.fx.before_step(game);
     }
 
@@ -211,6 +218,17 @@ impl Scene {
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), dst, &pose);
         }
         units.sort_by_key(|e| (e.y, e.id));
+        // Hazards under the sand: a ripple, under the units.
+        let surface = game.rules.hazard.as_ref().map_or(1, |h| h.surface_ticks.max(1));
+        for z in hazards(game).iter().filter(|z| z.surfaced == 0) {
+            let (ox, oy) = self.prev.get(&z.id).copied().unwrap_or((z.x, z.y));
+            let x = (ox as f32 + (z.x - ox) as f32 * alpha) * px;
+            let y = (oy as f32 + (z.y - oy) as f32 * alpha) * px;
+            // A full one fades as it goes deep.
+            let fade = z.leaving.map_or(255, |left| (255 * left.min(30) / 30) as u8);
+            let pose = Pose { facing: 0, turret: 0, anims: &["ripple"], step: tick / RIPPLE_TICKS, alpha: fade };
+            draw_hazard(batch, art, cam, tile, (x, y), &pose);
+        }
         // Squad members lost since the last frame fall where they stood, fading under the units still standing.
         for e in &units {
             let k = game.rules.kind(e.kind);
@@ -305,6 +323,18 @@ impl Scene {
             };
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), cell, &pose);
         }
+        // Hazards above the sand: the strike, then the sink, over everything on the ground.
+        for z in hazards(game).iter().filter(|z| z.surfaced > 0) {
+            let up = surface.saturating_sub(z.surfaced);
+            let frame = up * (STRIKE_FRAMES + SINK_FRAMES) / surface;
+            let (anims, step): (&[&str], u32) = if frame < STRIKE_FRAMES {
+                (&["strike"], frame)
+            } else {
+                (&["sink"], (frame - STRIKE_FRAMES).min(SINK_FRAMES - 1))
+            };
+            let pose = Pose { facing: 0, turret: 0, anims, step, alpha: 255 };
+            draw_hazard(batch, art, cam, tile, (z.x as f32 * px, z.y as f32 * px), &pose);
+        }
         self.fx.draw_shots(batch, art, game, cam, alpha);
         self.fx.draw(batch, art, game, cam, alpha, false);
         // Selection boxes, and health bars on whatever is selected or hurt.
@@ -338,6 +368,18 @@ impl Scene {
             batch.fill(Rect::new(r.x, r.y - 4.0, r.w * share, 3.0), colour);
         }
     }
+}
+
+fn hazards(game: &Game) -> &[Hazard] {
+    game.state.hazards.as_ref().map_or(&[], |h| &h.list)
+}
+
+/// A hazard at world pixel `at`: the studio's creature where the pack has one, else its placeholder (a warning
+/// sign in the generic pack) on its tile.
+fn draw_hazard(batch: &mut SpriteBatch, art: &Art, cam: &Camera, tile: f32, at: (f32, f32), pose: &Pose) {
+    let (sx, sy) = cam.to_screen(at.0, at.1);
+    let cell = Rect::new(sx - tile * cam.zoom / 2.0, sy - tile * cam.zoom / 2.0, tile * cam.zoom, tile * cam.zoom);
+    draw_look(batch, art, cam.zoom, "hazard", 0, (sx, sy), cell, pose);
 }
 
 /// The frame of an eight-facing strip for a facing of 0 to 255 clockwise from north.

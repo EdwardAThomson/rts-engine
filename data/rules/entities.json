@@ -1,5 +1,5 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn) and `sight` in tiles.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles, and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md).",
   "entities": {
     "construction_yard": {
       "kind": "building",
@@ -271,6 +271,7 @@
       "requires": [],
       "numbers": {
         "speed": { "default": 7, "min": 1, "max": 128 },
+        "noise": { "default": 1, "min": 0, "max": 32 },
         "max_health": { "default": 140, "min": 1, "max": 100000 },
         "cost": { "default": 200, "min": 0, "max": 100000 },
         "build_ticks": { "default": 300, "min": 1, "max": 100000 },
@@ -288,6 +289,7 @@
       "requires": [],
       "numbers": {
         "speed": { "default": 7, "min": 1, "max": 128 },
+        "noise": { "default": 1, "min": 0, "max": 32 },
         "max_health": { "default": 160, "min": 1, "max": 100000 },
         "cost": { "default": 300, "min": 0, "max": 100000 },
         "build_ticks": { "default": 375, "min": 1, "max": 100000 },
@@ -305,6 +307,7 @@
       "requires": [],
       "numbers": {
         "speed": { "default": 32, "min": 1, "max": 128 },
+        "noise": { "default": 3, "min": 0, "max": 32 },
         "max_health": { "default": 100, "min": 1, "max": 100000 },
         "cost": { "default": 250, "min": 0, "max": 100000 },
         "build_ticks": { "default": 300, "min": 1, "max": 100000 },
@@ -323,6 +326,7 @@
       "requires": [],
       "numbers": {
         "speed": { "default": 26, "min": 1, "max": 128 },
+        "noise": { "default": 3, "min": 0, "max": 32 },
         "max_health": { "default": 150, "min": 1, "max": 100000 },
         "cost": { "default": 400, "min": 0, "max": 100000 },
         "build_ticks": { "default": 375, "min": 1, "max": 100000 },
@@ -340,6 +344,7 @@
       "roles": ["harvester"],
       "numbers": {
         "speed": { "default": 14, "min": 1, "max": 128 },
+        "noise": { "default": 4, "min": 0, "max": 32 },
         "max_health": { "default": 450, "min": 1, "max": 100000 },
         "capacity": { "default": 200, "min": 1, "max": 10000 },
         "mine_rate": { "default": 4, "min": 1, "max": 1000 },
@@ -359,6 +364,7 @@
       "requires": [],
       "numbers": {
         "speed": { "default": 22, "min": 1, "max": 128 },
+        "noise": { "default": 4, "min": 0, "max": 32 },
         "max_health": { "default": 300, "min": 1, "max": 100000 },
         "cost": { "default": 600, "min": 0, "max": 100000 },
         "build_ticks": { "default": 450, "min": 1, "max": 100000 },

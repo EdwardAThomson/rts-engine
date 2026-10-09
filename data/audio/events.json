@@ -13,7 +13,10 @@
     { "event": "production_rejected", "local": true, "sound": "ui_error" },
     { "event": "delivered", "local": true, "sound": "ui_credits" },
     { "event": "power_changed", "local": true, "power": "short", "sound": "ui_power_down" },
-    { "event": "power_changed", "local": true, "power": "restored", "sound": "ui_power_up" }
+    { "event": "power_changed", "local": true, "power": "restored", "sound": "ui_power_up" },
+    { "event": "hazard_surfaced", "sound": "sfx_hazard_strike" },
+    { "event": "hazard_spawned", "sound": "sfx_hazard_rumble" },
+    { "event": "hazard_left", "sound": "sfx_hazard_rumble" }
   ],
   "silent": [
     "harvester_idle",
@@ -26,6 +29,7 @@
     "hit",
     "move_ended",
     "unit_yielded",
-    "unit_stuck"
+    "unit_stuck",
+    "hazard_ate"
   ]
 }

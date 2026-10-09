@@ -128,6 +128,32 @@ const RECIPES: &[Recipe] = &[
             layer(Sine, 45.0, 20.0, 0.4, 0.6).at(0.2),
         ],
     },
+    // The hazard bursting up: a deep swelling roar of sand, a low growl under it, and a hiss as the sand falls.
+    Recipe {
+        id: "sfx_hazard_strike",
+        folder: "sfx",
+        seconds: 2.0,
+        takes: 1,
+        drive: 2.0,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.6, 1.0).tone(0.06, 0.25).rise(0.25),
+            layer(Saw, 48.0, 34.0, 0.7, 0.6).tone(0.12, 0.05).rise(0.2),
+            layer(Sine, 70.0, 28.0, 0.5, 0.8).rise(0.15),
+            layer(Noise, 0.0, 0.0, 0.5, 0.4).tone(0.4, 0.1).at(0.8),
+        ],
+    },
+    // The hazard moving under the sand: a long low rumble that swells and fades.
+    Recipe {
+        id: "sfx_hazard_rumble",
+        folder: "sfx",
+        seconds: 1.6,
+        takes: 1,
+        drive: 1.0,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.6, 1.0).tone(0.03, 0.02).rise(0.5),
+            layer(Sine, 38.0, 32.0, 0.6, 0.7).rise(0.5),
+        ],
+    },
     // A building set down: a low thud and a little grit.
     Recipe {
         id: "sfx_build",
