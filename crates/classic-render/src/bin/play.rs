@@ -54,7 +54,7 @@ use classic_render::score::Score;
 use classic_render::skin::{self, Mode, Pointer, Skin, SkinFiles};
 use classic_render::sound::Cue;
 use classic_render::store::Store;
-use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View, feed};
+use classic_render::{Camera, Hud, Listener, Scene, SoundBoard, View, feed, scene};
 use classic_sim::map::TILE;
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::{CommandOrder, Game, GameOptions, Rules};
@@ -619,7 +619,8 @@ impl App {
                 }
             } else if self.game.visible(self.player, e.id)
                 && (e.x as f32 * px - wx).abs() <= half
-                && (e.y as f32 * px - wy).abs() <= half
+                // An aircraft is picked where it is drawn, above its shadow.
+                && (e.y as f32 * px - scene::lift(&self.game, e) * 2.0 * half - wy).abs() <= half
             {
                 return Some(e.id);
             }

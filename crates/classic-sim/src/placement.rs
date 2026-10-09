@@ -106,7 +106,9 @@ pub fn check(
             }
             let heading_here =
                 |e: &crate::world::Entity| crate::movement::step_tile(e).is_some_and(|t| t.x == tx && t.y == ty);
-            if state.entities.iter().any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
+            // Aircraft don't block a building: one landed there takes off again.
+            let solid = |e: &&crate::world::Entity| rules.kind(e.kind).building || crate::world::on_ground(rules, e);
+            if state.entities.iter().filter(solid).any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
                 return Err(PlaceError::Blocked { x: tx, y: ty });
             }
         }

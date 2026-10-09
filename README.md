@@ -221,7 +221,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   offers another game; the menus shade the whole screen and draw nothing while playing, and never change the
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
 - Difficulty: easy, normal and hard are presets of the computer's settings. On `skirmish-01`, over seeds 1 to 6 from
-  both starts, hard beat normal 8 to 2 and normal beat easy 8 to 1, the rest stalemates when the resource ran out.
+  both starts, hard beat normal 12 to 0 and normal beat easy 11 to 0, the rest stalemates when the resource ran out (with
+  aircraft; before them, waves alone gave hard 8 to 2, and they gave 7 to 4 once carriers came).
 - Settings, saves and the score: the settings screen steps each bus's volume and the scroll speed (right click steps
   down), the keys screen puts a key on an action and swaps one that clashes, and the settings file reads back as
   written and skips lines it can't use, with a warning. A game saved at tick 8000, mid-attack, with a click queued
@@ -269,6 +270,21 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   a target they know, and one finds and beats a player who does nothing by tick 8,714 with fog and with shroud only
   (`crates/classic-ai/tests/fog.rs`). The renderer test draws a fogged map and checks the enemy base is black and the
   player's own lit; a sound test checks a fight in the shroud is silent for the player who can't see it.
+- Aircraft (`crates/classic-sim/tests/air.rs`, the `air` module): no aircraft in any golden game, so every golden
+  hash is unchanged. An aircraft climbs before it moves, flies a straight line over a cliff wall a ground unit
+  would go round, slows over its last 2 tiles and lands; aircraft share tiles with each other and with ground units,
+  and hover instead of landing over a building or a cliff. Only weapons that hit air (rocket infantry, rocket
+  squads, the rocket turret) aim at an aircraft in flight, and their shots home in on it; a tank drops an attack
+  order on one, but shells a landed one. A gunship crosses the cliff and fires on a tank only from the air. A burst
+  on the ground never splashes an aircraft above it, and nothing aims at the untargetable supply ship. An air
+  factory builds a carrier, which waits landed beside it; a gunship needs a research lab. An idle carrier lifts a
+  full harvester 26 tiles from home and it delivers sooner than by road; aboard, it can't be shot and takes no
+  orders, and its carrier finishes the lift before obeying a move; a carrier shot down drops it to the ground with
+  half its full health gone. Games with aircraft replay to the same hash. The renderer test draws a carrier and a
+  gunship lifted above the shadows they leave on the ground. The computer opponent builds an air factory last in
+  its build order and keeps a carrier for every three harvesters: in 16 games on `skirmish-01` and `mirror-01`
+  carriers made about 300 lifts a game, and in 8 games on `mirror-01` the two sides lifted and delivered within 4%
+  of each other.
 
 ## Not verified / not built yet
 
@@ -278,16 +294,16 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   changed-tiles list performance.md plans; the bench runs with fog off. Effects (shots, explosions) in fog are still
   drawn, dimmed by it; in shroud they are covered. The computer opponent knows a ghost building's real health, and
   that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
-- Collision covers vehicles only: no infantry positions, crushing, air units, group formations, keep-clear tiles or
+- Collision covers vehicles only (aircraft have none, by design): no infantry positions, crushing, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank fires one rocket for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet), aircraft or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
+- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank fires one rocket for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or special weapons; non-turreted units still fire on the move, there are no factions to limit who builds what, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent has three levels (easy, normal, hard) with numbers in code: no brutal level, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
   value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
-  differs from normal only in its waves (twice the size, surer odds): in our runs a richer economy alone made it no
-  stronger. With the mixed army and factory exits on
+  differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
+  three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
   any side (20 seeds, 90 game minutes), two AIs on `skirmish-01` win 8 to 8 with 4 stalls and games last about 40
   minutes; on `mirror-01` (10 seeds) 4 to 4 with 2 stalls. Mixed armies trade evenly, so games run longer than
   with tanks alone, and Twin Plateaus in the private pack still stalls in about 4 games of 10. In the desktop player it was checked only
@@ -301,7 +317,13 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
   acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
   because the starting base doesn't turn with them.
-- No storage cap, tech levels, factory upgrades or starport.
+- No tech levels, factory upgrades or starport. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
+  3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
+  way; the supply ship is built but nothing sends it yet (the starport, issue #75). The computer opponent builds no
+  gunships (no research lab in its build order). Carriers make the economy faster, so fields run dry and more AI games end:
+  of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
+  (8 for the right start), so that lean is older than aircraft and wants a look of its own. Aircraft were checked in tests and a rendered
+  frame, not yet by a person playing.
 - The menus have one save per setting pack (no slots, autosave, thumbnails or quick keys), and loading replays
   every tick from the start, which on a long game takes a moment rather than an instant (about 0.2 s for 30 game
   minutes of two computer players in a native release build; slower in the browser, not measured there). The settings have no

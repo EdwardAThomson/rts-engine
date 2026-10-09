@@ -51,6 +51,8 @@ pub struct Settings {
     /// Harvesters wanted for each refinery, and the most in all.
     pub harvesters_per_refinery: usize,
     pub max_harvesters: usize,
+    /// Harvesters for each carrier it keeps once it can build them, to lift them on long trips; 0 means none.
+    pub harvesters_per_carrier: usize,
     /// Most entries kept in one factory's queue.
     pub factory_queue: usize,
     /// Combat units are only queued while credits are at least this, so the base keeps growing.
@@ -94,6 +96,7 @@ impl Settings {
             ("gun_turret", 2),
             ("heavy_factory", 2),
             ("gun_turret", 4),
+            ("air_factory", 1),
         ];
         let mix = [
             ("battle_tank", 6),
@@ -116,6 +119,7 @@ impl Settings {
             repair_reserve: 200,
             harvesters_per_refinery: 3,
             max_harvesters: 9,
+            harvesters_per_carrier: 3,
             factory_queue: 2,
             unit_reserve: 300,
             unit_mix: mix.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
@@ -162,11 +166,20 @@ impl Settings {
         }
     }
 
-    /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast and only
-    /// attacks where it would win clearly. AI-versus-AI runs on the skirmish map found that a richer economy (more
-    /// harvesters, a third refinery, thinking more often) alone made it no stronger, but bigger, surer waves did.
+    /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast, only
+    /// attacks where it would win clearly, and keeps a carrier for every two harvesters. AI-versus-AI runs on the
+    /// skirmish map found that more harvesters, a third refinery or thinking more often made it no stronger; bigger,
+    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0.
+    /// The carriers alone, with normal's waves, lost 4 to 7.
     pub fn hard() -> Settings {
-        Settings { first_wave: 8, wave_growth: 4, wave_cap: 30, attack_margin: 200, ..Settings::normal() }
+        Settings {
+            first_wave: 8,
+            wave_growth: 4,
+            wave_cap: 30,
+            attack_margin: 200,
+            harvesters_per_carrier: 2,
+            ..Settings::normal()
+        }
     }
 }
 

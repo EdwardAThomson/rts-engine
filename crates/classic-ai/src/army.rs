@@ -309,10 +309,14 @@ fn broke(ai: &Ai, game: &Game) -> bool {
     credits < cheapest && ai.dry(game)
 }
 
-/// Damage per 1000 ticks one armed entity does to another, from its weapon and the damage table.
+/// Damage per 1000 ticks one armed entity does to another, from its weapon and the damage table; none to an aircraft
+/// from a weapon that can't hit air, or to anything else from one that only hits air.
 fn rate(game: &Game, from: &Entity, to: &Entity) -> i64 {
     let rules = &game.rules;
     let Some(w) = rules.kind(from.kind).weapon.map(|w| rules.weapon(w)) else { return 0 };
+    if !(if rules.kind(to.kind).air { w.hits_air } else { w.hits_ground }) {
+        return 0;
+    }
     w.damage * rules.combat.table[w.warhead][rules.kind(to.kind).armour] * 10 / w.reload.max(1) as i64
 }
 

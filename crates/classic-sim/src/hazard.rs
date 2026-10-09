@@ -132,10 +132,11 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
     state.hazards = Some(hz);
 }
 
-/// Whether a ground unit stands where the hazard could take it: on open ground, not a building.
+/// Whether a ground unit stands where the hazard could take it: on open ground, not a building, an aircraft or a
+/// unit being carried.
 fn exposed(map: &MapData, rules: &Rules, e: &Entity) -> bool {
     let t = e.tile();
-    !rules.kind(e.kind).building && map.in_bounds(t.x, t.y) && map.terrain[map.index(t.x, t.y)] == Terrain::Open
+    crate::world::on_ground(rules, e) && map.in_bounds(t.x, t.y) && map.terrain[map.index(t.x, t.y)] == Terrain::Open
 }
 
 /// Step 1: every unit's noise decays by half each scan window and grows by what it makes this tick.
