@@ -45,7 +45,8 @@ sweeps; nothing sampled from anywhere) and written by `cargo run --bin sounds`. 
 change the recipe and rerun it. A test fails when the files and the recipes disagree.
 
 - `audio/sounds.json` lists the files for each sound id; an id with several takes picks one at random each time.
-- `audio/sfx/` holds weapons, impacts, explosions and the building thud; `audio/ui/` holds interface sounds.
+- `audio/sfx/` holds weapons (cannon, rockets, machine guns and rifles), impacts, explosions, a soldier falling, the
+  hazard's sounds and the building thud; `audio/ui/` holds interface sounds.
 - `audio/provenance.jsonl` records each file's source.
 
 Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack

@@ -88,6 +88,36 @@ fn a_battle_sounds_like_one_and_the_game_never_notices() {
 }
 
 #[test]
+fn guns_infantry_deaths_and_the_hazard_eating_each_have_a_sound() {
+    use classic_sim::world::Event;
+    let mut game = game();
+    let quad = game.kind("quad").unwrap();
+    let squad = game.kind("infantry_squad").unwrap();
+    // A quad (machine guns) against an infantry squad, close enough to fight at once.
+    game.spawn(quad, 0, 10, 6);
+    game.spawn(squad, 1, 12, 6);
+    let mut mixer = Mixer::new(48_000);
+    let mut b = board(&mut mixer);
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for _ in 0..900 {
+        game.step(1);
+        for Cue { id, .. } in b.after_step(&game, &everything()) {
+            *counts.entry(id).or_default() += 1;
+        }
+    }
+    let hazard_ate = Event::HazardAte { tick: game.state.tick, hazard: 1, unit: 1, kind: quad, owner: 0, x: 0, y: 0 };
+    game.events.push(hazard_ate);
+    for Cue { id, .. } in b.after_step(&game, &everything()) {
+        *counts.entry(id).or_default() += 1;
+    }
+    println!("heard {counts:?}");
+    for id in ["sfx_gun", "sfx_infantry_die", "sfx_hazard_eat"] {
+        assert!(counts.contains_key(id), "no {id}");
+    }
+    assert!(!counts.contains_key("sfx_explode_small"), "the squad falls without a blast, and the quad lives");
+}
+
+#[test]
 fn a_big_battle_stays_within_the_voice_limits() {
     let mut g = game();
     battle(&mut g, 20);

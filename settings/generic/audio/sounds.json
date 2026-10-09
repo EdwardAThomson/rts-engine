@@ -3,6 +3,9 @@
   "sounds": {
     "sfx_cannon": { "files": ["audio/sfx/cannon_1.wav", "audio/sfx/cannon_2.wav"] },
     "sfx_rocket": { "files": ["audio/sfx/rocket_1.wav", "audio/sfx/rocket_2.wav"] },
+    "sfx_gun": { "files": ["audio/sfx/gun_1.wav", "audio/sfx/gun_2.wav", "audio/sfx/gun_3.wav"] },
+    "sfx_infantry_die": { "files": ["audio/sfx/infantry_die_1.wav", "audio/sfx/infantry_die_2.wav"] },
+    "sfx_hazard_eat": { "files": ["audio/sfx/hazard_eat_1.wav"] },
     "sfx_impact": { "files": ["audio/sfx/impact_1.wav", "audio/sfx/impact_2.wav"] },
     "sfx_explode_small": { "files": ["audio/sfx/explode_small_1.wav", "audio/sfx/explode_small_2.wav"] },
     "sfx_explode_large": { "files": ["audio/sfx/explode_large_1.wav", "audio/sfx/explode_large_2.wav"] },
