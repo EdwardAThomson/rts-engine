@@ -385,7 +385,8 @@ mod tests {
         let r = RulesTable::builtin();
         assert_eq!(r.number("harvester", "capacity"), Some(200));
         assert!(r.entities["battle_tank"].built);
-        assert!(!r.entities["hazard"].built);
+        assert!(r.entities["hazard"].built);
+        assert!(!r.entities["resource_bloom"].built);
         assert_eq!(r.entities["refinery"].roles, ["refinery"]);
         assert!(r.modules["harvesting"].built);
         assert_eq!(r.module_number("placement", "max_gap"), Some(0));

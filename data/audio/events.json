@@ -32,6 +32,8 @@
     "hit",
     "move_ended",
     "unit_yielded",
-    "unit_stuck"
+    "unit_stuck",
+    "storage_full",
+    "credits_lost"
   ]
 }
