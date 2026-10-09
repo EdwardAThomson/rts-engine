@@ -190,3 +190,132 @@ fn sounds_fetched_into_memory_load_as_they_do_from_the_pack_folder() {
         }
     }
 }
+
+/// A pack in memory: the generic pack's sound index, and a voice index whose takes are generic sounds of known
+/// lengths, so each test can tell which take played.
+fn voiced(mixer: &mut Mixer) -> SoundBoard {
+    let generic = setting::root().join("settings/generic");
+    let read = |f: &str| std::fs::read(generic.join(f)).unwrap();
+    let index = r#"{ "voices": { "faction_a": {
+        "advisor": { "low_power": ["audio/sfx/cannon_1.wav", "audio/sfx/explode_large_1.wav"] },
+        "vehicle": { "select": ["audio/ui/select_1.wav", "audio/ui/order_1.wav"] } } } }"#;
+    let mut files = BTreeMap::new();
+    files.insert(classic_render::sound::VOICE_INDEX.to_string(), index.as_bytes().to_vec());
+    for f in classic_render::sound::voice_files_named(index) {
+        files.insert(f.clone(), read(&f));
+    }
+    let pack = classic_render::platform::Files::Memory { label: "voiced".into(), files };
+    let b = SoundBoard::from_files(&[classic_render::platform::Files::Dir(generic), pack], 0, 1, mixer);
+    assert!(b.warnings.is_empty(), "{:?}", b.warnings);
+    b
+}
+
+#[test]
+fn spoken_lines_play_the_take_the_screen_shows_and_no_reply_talks_over_the_advisor() {
+    use classic_render::lines::Speech;
+    use classic_render::platform::Played;
+    let mut mixer = Mixer::new(48_000);
+    let mut b = voiced(&mut mixer);
+    let say = |who: &'static str, key: &str, variant| Speech { who, key: key.into(), variant };
+    let advisor = b.speak("faction_a", &say("advisor", "low_power", 1), &mixer).unwrap();
+    let generic = setting::root().join("settings/generic");
+    let decode = |f: &str| classic_render::platform::wav::decode(&std::fs::read(generic.join(f)).unwrap()).unwrap();
+    let take = mixer.clip(advisor.sound.clip).seconds();
+    assert_eq!(take, decode("audio/sfx/explode_large_1.wav").seconds(), "the second take for the second line");
+    assert_eq!(advisor.sound.bus, Bus::Voice);
+    // No voice for another faction, a line the pack didn't voice, or a variant past its takes.
+    assert!(b.speak("faction_b", &say("advisor", "low_power", 0), &mixer).is_none());
+    assert!(b.speak("faction_a", &say("advisor", "base_attacked", 0), &mixer).is_none());
+    assert!(b.speak("faction_a", &say("vehicle", "select", 2), &mixer).is_none());
+
+    // While the advisor speaks, units keep quiet; a second advisor line waits its turn too.
+    assert_eq!(mixer.play(advisor.sound), Played::Started);
+    assert!(b.speak("faction_a", &say("vehicle", "select", 0), &mixer).is_none());
+    let mut out = vec![0.0; 2 * 4800];
+    mixer.render(&mut out, 2);
+    assert_eq!(mixer.play(advisor.sound), Played::Dropped, "one advisor line at a time");
+
+    // The effects drop while anyone speaks, and come back after.
+    let level = mixer.bus_gain[Bus::Sfx as usize];
+    b.duck(&mut mixer);
+    assert!(mixer.bus_gain[Bus::Sfx as usize] < level * 0.6, "held down 6 dB");
+    b.duck(&mut mixer);
+    mixer.stop_all();
+    b.duck(&mut mixer);
+    assert_eq!(mixer.bus_gain[Bus::Sfx as usize], level);
+    let reply = b.speak("faction_a", &say("vehicle", "select", 0), &mixer).unwrap();
+    assert_eq!(mixer.play(reply.sound), Played::Started, "once the advisor is done, units answer");
+}
+
+#[test]
+fn the_feed_hands_what_it_said_to_the_sound_board() {
+    use classic_render::Hud;
+    use classic_render::lines::Moment;
+    use classic_render::platform::Files;
+    let mut game = game();
+    let pack = setting::load("generic").unwrap();
+    let dir = setting::root().join("target/voiced-lines-pack");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lines.json"),
+        r#"{ "factions": { "faction_a": { "advisor": { "low_power": ["One", "Two"] },
+             "acks": { "vehicle": { "select": ["A.", "B."] } } } } }"#,
+    )
+    .unwrap();
+    let mut hud = Hud::new(&pack, &Files::Dir(dir), &game, 0, 0);
+    assert!(hud.feed.warnings.is_empty(), "{:?}", hud.feed.warnings);
+    let tank = game.kind("battle_tank").unwrap();
+    let mine = game.spawn(tank, 0, 6, 8);
+    hud.feed.reply(&game, Moment::Select, &[mine]);
+    let radar = game.kind("radar").unwrap();
+    for i in 0..5 {
+        game.spawn(radar, 0, 4 + 2 * i, 10);
+    }
+    game.step(1);
+    hud.after_step(&game);
+    let said = std::mem::take(&mut hud.feed.spoken);
+    println!("{said:?}");
+    assert_eq!(said.len(), 2, "the reply and the advisor's line, nothing for words the advisor has none of");
+    let reply = hud.feed.reply.clone().unwrap();
+    assert_eq!(["A.", "B."][said[0].variant], reply.text, "the voice says what the subtitle shows");
+    let line = hud.feed.lines.iter().find(|l| l.id == "low_power").unwrap();
+    assert_eq!((said[1].who, said[1].key.as_str()), ("advisor", "low_power"));
+    assert_eq!(["One", "Two"][said[1].variant], line.text);
+}
+
+#[test]
+fn the_private_packs_voices_load_and_cover_their_lines_when_they_are_cloned_in() {
+    let packs = setting::private_packs();
+    if packs.is_empty() {
+        eprintln!("settings-private/ is not cloned here; skipping");
+        return;
+    }
+    let generic = setting::root().join("settings/generic");
+    for dir in &packs {
+        let mut mixer = Mixer::new(48_000);
+        let b = SoundBoard::load(dir, &generic, 0, 1, &mut mixer);
+        assert!(b.warnings.is_empty(), "{}: {:?}", dir.display(), b.warnings);
+        let pack = setting::load(dir.to_str().unwrap()).unwrap();
+        let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
+        if b.voices.is_empty() {
+            continue;
+        }
+        // Every line the pack writes for a faction has a take, and every take speaks a line.
+        for f in &factions {
+            let lines = classic_render::lines::Lines::load(
+                &classic_render::platform::Files::Dir(dir.clone()),
+                &factions,
+                Some(f),
+            );
+            for (id, said) in &lines.advisor {
+                let takes = &b.voices[&(f.clone(), "advisor".to_string(), id.clone())];
+                assert_eq!(takes.len(), said.len(), "{f} advisor {id}");
+            }
+            for ((set, moment), said) in &lines.acks {
+                let key = (f.clone(), set.to_string(), moment.id().to_string());
+                assert_eq!(b.voices.get(&key).map_or(0, Vec::len), said.len(), "{key:?}");
+            }
+        }
+        println!("{}: {} voiced lines", dir.display(), b.voices.len());
+    }
+}

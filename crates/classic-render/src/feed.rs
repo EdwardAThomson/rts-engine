@@ -14,7 +14,7 @@ use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{Event, IdleReason};
 use classic_sim::{Game, Kind, ProduceError};
 
-use crate::lines::{Lines, Moment, VOICES};
+use crate::lines::{Lines, Moment, Speech, VOICES};
 use crate::platform::Files;
 
 const MESSAGES: &str = include_str!("../../../data/ui/messages.json");
@@ -64,6 +64,8 @@ pub struct Feed {
     pub speech: Lines,
     /// The variant last said, by message id or reply set, so no line comes twice in a row.
     last: BTreeMap<String, usize>,
+    /// Lines said in a faction's own words since the caller last took them, for the sound board to voice.
+    pub spoken: Vec<Speech>,
     /// The feed's own pick, stirred at every choice; never the game's generator.
     stir: u32,
     names: BTreeMap<String, String>,
@@ -113,6 +115,7 @@ impl Feed {
             words: table,
             speech,
             last: BTreeMap::new(),
+            spoken: Vec::new(),
             stir: 1,
             names,
             seen: 0,
@@ -148,10 +151,22 @@ impl Feed {
             old.tick = tick;
             return;
         }
-        let text = said[self.turn(id, said.len())].clone();
+        let at = self.turn(id, said.len());
+        if self.speech.advisor.contains_key(id) {
+            self.voice(Speech { who: "advisor", key: id.to_string(), variant: at });
+        }
+        let text = said[at].clone();
         self.lines.push_back(Line { id, text, tone, tick });
         while self.lines.len() > MAX_LINES {
             self.lines.pop_front();
+        }
+    }
+
+    /// Keep `s` for the sound board; a few at most, since only the latest matter when nobody takes them.
+    fn voice(&mut self, s: Speech) {
+        self.spoken.push(s);
+        if self.spoken.len() > 8 {
+            self.spoken.remove(0);
         }
     }
 
@@ -190,6 +205,7 @@ impl Feed {
             if mine.iter().all(|e| Some(game.rules.kind(e.kind).armour) == infantry) { VOICES[0] } else { VOICES[1] };
         let Some(said) = self.speech.acks.get(&(voice, moment)).cloned() else { return };
         let at = self.turn(&format!("{voice}.{}", moment.id()), said.len());
+        self.voice(Speech { who: voice, key: moment.id().to_string(), variant: at });
         let text = said[at].clone();
         self.reply = Some(Line { id: moment.id(), text, tone: Tone::Info, tick });
     }

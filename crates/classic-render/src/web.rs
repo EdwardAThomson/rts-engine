@@ -92,7 +92,13 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
         let base = format!("{ROOT}{d}/");
         let mut files = web::fetch_files(&base, &[SOUND_INDEX.to_string()]).await?;
         let Some(index) = files.get(SOUND_INDEX) else { continue };
-        let names = sound::files_named(&String::from_utf8_lossy(index));
+        let mut names = sound::files_named(&String::from_utf8_lossy(index));
+        // Its spoken lines too, when it has them.
+        let voices = web::fetch_files(&base, &[sound::VOICE_INDEX.to_string()]).await?;
+        if let Some(index) = voices.get(sound::VOICE_INDEX) {
+            names.extend(sound::voice_files_named(&String::from_utf8_lossy(index)));
+        }
+        files.extend(voices);
         files.extend(web::fetch_files(&base, &names).await?);
         sounds.push(Files::Memory { label: d, files });
     }
