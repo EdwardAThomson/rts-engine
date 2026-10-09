@@ -92,6 +92,49 @@ const RECIPES: &[Recipe] = &[
             layer(Saw, 180.0, 520.0, 0.25, 0.2).tone(0.3, 0.3).rise(0.03),
         ],
     },
+    // Machine guns and rifles: three quick cracks, each a bright noise snap over a short low pop.
+    Recipe {
+        id: "sfx_gun",
+        folder: "sfx",
+        seconds: 0.35,
+        takes: 3,
+        drive: 1.2,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.018, 1.0).tone(0.8, 0.3),
+            layer(Sine, 260.0, 120.0, 0.02, 0.5),
+            layer(Noise, 0.0, 0.0, 0.018, 0.9).tone(0.8, 0.3).at(0.075),
+            layer(Sine, 250.0, 115.0, 0.02, 0.45).at(0.075),
+            layer(Noise, 0.0, 0.0, 0.018, 0.85).tone(0.8, 0.3).at(0.15),
+            layer(Sine, 240.0, 110.0, 0.02, 0.4).at(0.15),
+        ],
+    },
+    // A soldier falling: a soft body thud and a puff of dust, no blast.
+    Recipe {
+        id: "sfx_infantry_die",
+        folder: "sfx",
+        seconds: 0.45,
+        takes: 2,
+        drive: 0.6,
+        layers: &[
+            layer(Sine, 110.0, 55.0, 0.08, 1.0).rise(0.004),
+            layer(Noise, 0.0, 0.0, 0.07, 0.5).tone(0.25, 0.05).at(0.02),
+            layer(Noise, 0.0, 0.0, 0.12, 0.3).tone(0.08, 0.02).at(0.09),
+        ],
+    },
+    // The hazard swallowing a unit: a deep falling gulp with a crunch of metal and sand inside it.
+    Recipe {
+        id: "sfx_hazard_eat",
+        folder: "sfx",
+        seconds: 1.2,
+        takes: 1,
+        drive: 2.0,
+        layers: &[
+            layer(Sine, 95.0, 26.0, 0.35, 1.0).rise(0.05),
+            layer(Saw, 70.0, 30.0, 0.3, 0.4).tone(0.1, 0.03).rise(0.05),
+            layer(Noise, 0.0, 0.0, 0.08, 0.6).tone(0.5, 0.1).at(0.12),
+            layer(Noise, 0.0, 0.0, 0.4, 0.5).tone(0.05, 0.02).at(0.25).rise(0.1),
+        ],
+    },
     // A shell bursting: a short dull knock.
     Recipe {
         id: "sfx_impact",

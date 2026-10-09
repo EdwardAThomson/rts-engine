@@ -128,6 +128,8 @@ struct Rule {
     warhead: Option<String>,
     weapon: Option<String>,
     building: Option<bool>,
+    /// The armour class of what was destroyed (`classic_data::ARMOURS`).
+    armour: Option<String>,
     local: bool,
     power: Option<PowerTurn>,
 }
@@ -215,6 +217,12 @@ impl Tables {
             {
                 return Err(format!("{at}: unknown warhead {w}"));
             }
+            let armour = text("armour");
+            if let Some(a) = &armour
+                && !classic_data::ARMOURS.contains(&a.as_str())
+            {
+                return Err(format!("{at}: unknown armour {a}"));
+            }
             let power = match text("power").as_deref() {
                 None => None,
                 Some("short") => Some(PowerTurn::Short),
@@ -227,6 +235,7 @@ impl Tables {
                 warhead,
                 weapon: text("weapon"),
                 building: r.get("building").and_then(Value::as_bool),
+                armour,
                 local: r.get("local").and_then(Value::as_bool).unwrap_or(false),
                 power,
             });
@@ -303,6 +312,7 @@ struct Facts {
     owner: Option<u32>,
     weapon: Option<classic_sim::WeaponId>,
     building: Option<bool>,
+    armour: Option<usize>,
     at: Option<(i64, i64)>,
     shortfall: Option<i64>,
     power_player: Option<u32>,
@@ -338,9 +348,13 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             Facts { owner: owner_of(unit), weapon: Some(weapon), at: at_of(unit), ..none }
         }
         Event::ProjectileHit { weapon, x, y, .. } => Facts { weapon: Some(weapon), at: Some((x, y)), ..none },
-        Event::Destroyed { kind, owner, x, y, .. } => {
-            Facts { owner: Some(owner), building: Some(is_building(kind)), at: Some((x, y)), ..none }
-        }
+        Event::Destroyed { kind, owner, x, y, .. } => Facts {
+            owner: Some(owner),
+            building: Some(is_building(kind)),
+            armour: Some(game.rules.kind(kind).armour),
+            at: Some((x, y)),
+            ..none
+        },
         Event::Hit { target, .. } => Facts { owner: owner_of(target), at: at_of(target), ..none },
         Event::ProductionQueued { factory, .. }
         | Event::ProductionPaused { factory, .. }
@@ -565,6 +579,7 @@ impl SoundBoard {
                 r.event == name
                     && (!r.local || f.owner == Some(self.local))
                     && r.building.is_none_or(|b| f.building == Some(b))
+                    && r.armour.as_ref().is_none_or(|a| f.armour.is_some_and(|x| classic_data::ARMOURS[x] == a))
                     && r.power.is_none_or(|p| turn == Some(p))
                     && r.weapon.as_ref().is_none_or(|w| weapon.is_some_and(|x| &x.id == w))
                     && r.warhead.as_ref().is_none_or(|w| weapon.is_some_and(|x| classic_data::WARHEADS[x.warhead] == w))

@@ -16,7 +16,10 @@
     "ui_power_down": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
     "sfx_hazard_strike": { "bus": "sfx", "gain_db": 0, "priority": 85, "max_instances": 2, "spatial": true, "jitter_percent": 6 },
     "sfx_hazard_rumble": { "bus": "sfx", "gain_db": -6, "priority": 60, "max_instances": 2, "spatial": true, "jitter_percent": 8 },
-    "ui_power_up": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 }
+    "ui_power_up": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
+    "sfx_gun": { "bus": "sfx", "gain_db": -9, "priority": 35, "max_instances": 3, "spatial": true, "jitter_percent": 8 },
+    "sfx_infantry_die": { "bus": "sfx", "gain_db": -6, "priority": 55, "max_instances": 2, "spatial": true, "jitter_percent": 10 },
+    "sfx_hazard_eat": { "bus": "sfx", "gain_db": -2, "priority": 85, "max_instances": 1, "spatial": true, "jitter_percent": 5 }
   },
   "voices": {
     "about": "How spoken lines (a pack's audio/voices.json) are mixed, on the voice bus: one advisor line and one unit reply at a time at most, no reply starting while the advisor speaks, and the sound effects held down by duck_db while anyone speaks.",

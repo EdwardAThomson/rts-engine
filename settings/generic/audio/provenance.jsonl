@@ -2,6 +2,12 @@
 {"file": "audio/sfx/cannon_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/rocket_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/rocket_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/gun_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/gun_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/gun_3.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/infantry_die_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/infantry_die_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/hazard_eat_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/impact_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/impact_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/explode_small_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
