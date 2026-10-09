@@ -15,6 +15,7 @@ use crate::path::Pathfinder;
 use crate::placement::{self, PlaceError};
 use crate::power::Power;
 use crate::production::{self, EntryCanon, ProduceError, QueueEntry};
+use crate::storage;
 use crate::units::{Kind, Rules, WeaponId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,13 +161,24 @@ impl Canon for EntityCanon<'_> {
 pub struct Player {
     pub id: u32,
     pub credits: i64,
-    /// Total resource ever delivered, for statistics.
+    /// Total resource ever delivered, for statistics, stored or not.
     pub delivered: i64,
+    /// Total resource delivered with no storage left for it, so lost (the `storage` module).
+    pub lost: i64,
+    /// When the last `credits_lost` event went out, so they come at most once per `storage.warn_every` ticks.
+    pub lost_warned: Option<u32>,
 }
 
 impl Canon for Player {
     fn canon(&self, w: &mut CanonHasher) {
-        w.object().field("credits", &self.credits).field("delivered", &self.delivered).field("id", &self.id).end();
+        // Written only once something is lost, so a game that never fills its storage hashes as it did before.
+        w.object()
+            .field("credits", &self.credits)
+            .field("delivered", &self.delivered)
+            .field("id", &self.id)
+            .opt("lost", (self.lost != 0).then_some(&self.lost))
+            .opt("lostWarned", self.lost_warned.as_ref())
+            .end();
     }
 }
 
@@ -288,6 +300,20 @@ pub enum Event {
         unit: u32,
         player: u32,
         credits: i64,
+    },
+    /// A delivery filled the player's storage: credits reached the cap from below.
+    StorageFull {
+        tick: u32,
+        player: u32,
+        cap: i64,
+    },
+    /// A delivery found no storage left and `amount` was lost; at most one every `storage.warn_every` ticks, while
+    /// `Player::lost` counts every loss.
+    CreditsLost {
+        tick: u32,
+        player: u32,
+        amount: i64,
+        cap: i64,
     },
     Regrowth {
         tick: u32,
@@ -461,6 +487,8 @@ impl Event {
         match self {
             Event::HarvesterIdle { .. } => "harvester_idle",
             Event::Delivered { .. } => "delivered",
+            Event::StorageFull { .. } => "storage_full",
+            Event::CreditsLost { .. } => "credits_lost",
             Event::Regrowth { .. } => "regrowth",
             Event::BuildingPlaced { .. } => "building_placed",
             Event::PlacementRejected { .. } => "placement_rejected",
@@ -491,6 +519,8 @@ impl Event {
         match *self {
             Event::HarvesterIdle { tick, .. }
             | Event::Delivered { tick, .. }
+            | Event::StorageFull { tick, .. }
+            | Event::CreditsLost { tick, .. }
             | Event::Regrowth { tick, .. }
             | Event::BuildingPlaced { tick, .. }
             | Event::PlacementRejected { tick, .. }
@@ -806,11 +836,10 @@ fn harvest(
             let amount = h.unload_rate.min(cargo);
             e.cargo = Some(cargo - amount);
             let (unit, owner, empty) = (e.id, e.owner, cargo == amount);
-            let p = &mut state.players[owner as usize];
-            p.credits += amount;
-            p.delivered += amount;
+            storage::deliver(state, rules, owner as usize, amount, events);
             if empty {
-                events.push(Event::Delivered { tick, unit, player: owner, credits: p.credits });
+                let credits = state.players[owner as usize].credits;
+                events.push(Event::Delivered { tick, unit, player: owner, credits });
                 state.entities[i].task = Some(Task::Seek);
             }
         }

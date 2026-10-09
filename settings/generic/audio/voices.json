@@ -54,6 +54,9 @@
         "hazard_sighted": [
           "audio/voices/advisor/hazard_sighted_1.wav"
         ],
+        "storage_full": [
+          "audio/voices/advisor/storage_full_1.wav"
+        ],
         "enemy_wave": [
           "audio/voices/advisor/enemy_wave_1.wav"
         ],
@@ -165,6 +168,9 @@
         ],
         "hazard_sighted": [
           "audio/voices/advisor/hazard_sighted_1.wav"
+        ],
+        "storage_full": [
+          "audio/voices/advisor/storage_full_1.wav"
         ],
         "enemy_wave": [
           "audio/voices/advisor/enemy_wave_1.wav"

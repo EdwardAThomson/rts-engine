@@ -246,7 +246,7 @@ function drawPanel() {
   const players = [];
   for (let p = 0; p < api.game_player_count(game); p++) {
     const sw = `<span class="swatch" style="background:${PLAYER_COLOURS[p % PLAYER_COLOURS.length]}"></span>`;
-    players.push([`${sw}Player ${p + 1}`, `${Number(api.game_credits(game, p)).toLocaleString()} credits`]);
+    players.push([`${sw}Player ${p + 1}`, `${Number(api.game_credits(game, p)).toLocaleString()} / ${Number(api.game_storage(game, p)).toLocaleString()} credits`]);
   }
   rows($("players"), players);
   const e = cur.get(selected);

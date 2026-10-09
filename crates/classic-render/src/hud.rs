@@ -819,7 +819,6 @@ impl Hud {
         batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), self.theme.text);
     }
 
-    /// Credits and power in numbers, and a power gauge: supply filled, demand marked.
     /// The game clock in hours, minutes and seconds, on a small panel at the top middle of the world, where it has
     /// room for any length of game.
     fn draw_clock(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, screen: (f32, f32)) {
@@ -832,12 +831,21 @@ impl Hud {
         skin.text(batch, Style::Heading, &clock, r.x + 10.0 * s, r.y + 5.0 * s, s, self.theme.text);
     }
 
+    /// Credits and storage, power in numbers, and a power gauge: supply filled, demand marked.
     fn draw_readout(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, r: Rect) {
         let s = self.scale;
         skin.frame(batch, "panel", 0, r, s, self.theme.panel);
         let credits = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.credits);
         let (x, mut y) = (r.x + 10.0 * s, r.y + 8.0 * s);
-        skin.text(batch, Style::Heading, &format!("CREDITS {credits}"), x, y, s, self.theme.text);
+        // Credits out of storage, in the warning colour once harvests have nowhere to go; the label gives way to the
+        // numbers when both don't fit.
+        let cap = game.storage(self.player);
+        let mut text = format!("CREDITS {credits}/{cap}");
+        if skin.width(Style::Heading, &text, s) > r.w - 20.0 * s {
+            text = format!("{credits}/{cap}");
+        }
+        let colour = if credits >= cap { self.theme.warn } else { self.theme.text };
+        skin.text(batch, Style::Heading, &text, x, y, s, colour);
         y += skin.line(Style::Heading, s) + 2.0 * s;
         let power = game.power(self.player);
         let short = power.is_short();

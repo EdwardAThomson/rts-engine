@@ -18,6 +18,7 @@
     "harvester_no_refinery": "{name} idle: no refinery",
     "harvester_attacked": "{name} under attack",
     "hazard_sighted": "Hazard sighted",
+    "storage_full": "Storage full: build silos",
     "enemy_wave": "Enemy forces approaching",
     "game_won": "Battle won",
     "game_lost": "Battle lost"

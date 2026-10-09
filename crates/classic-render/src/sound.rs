@@ -336,6 +336,8 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             }
         }
         Event::PlacementRejected { player, .. }
+        | Event::StorageFull { player, .. }
+        | Event::CreditsLost { player, .. }
         | Event::ProductionRejected { player, .. }
         | Event::BuildingReady { player, .. } => Facts { owner: Some(player), ..none },
         Event::PowerChanged { player, shortfall, .. } => {

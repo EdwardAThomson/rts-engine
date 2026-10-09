@@ -5,7 +5,8 @@
 //! entry it has fewer of (counting one already queued) is built next, so a lost building is rebuilt the same way.
 //! Before anything that would leave power within `power_margin` of demand, a power plant comes first, and when power
 //! runs short (a plant lost) a building less than half done is cancelled to make way for one. One building is queued
-//! at a time.
+//! at a time. When the credits it has no plans for pass `silo_percent` of its storage, a silo comes before the build
+//! order, so harvests aren't lost for want of room (ai-opponent.md, "Silos").
 //!
 //! **Where it goes.** Every footprint position touching one of its buildings is checked with `Game::can_place`, the
 //! same check a player's placement meets, then scored: near the yard for most, near a resource field for a
@@ -55,6 +56,7 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
         return;
     }
     let next = next_building(ai, game, view);
+    let next = silo(ai, game, view, next).or(next);
     let draw = next.map_or(0, |k| game.rules.kind(k).power.min(0));
     let next = match plant {
         Some(p) if power.supply - power.demand + draw < ai.settings.power_margin => Some(p),
@@ -70,6 +72,33 @@ fn next_building(ai: &Ai, game: &Game, view: &View) -> Option<Kind> {
     ai.settings.build_order.iter().find_map(|(id, want)| {
         let k = game.kind(id)?;
         (view.count(game, k) < *want && buildable(game, view, ai.player, k)).then_some(k)
+    })
+}
+
+/// A silo, when harvests are still coming in and the credits it has no plans for (after what its queues still owe,
+/// the next building it wants and `unit_reserve`) pass `Settings::silo_percent` of its storage, so harvests aren't
+/// lost for want of room: any building it can make that adds storage and isn't a refinery. Credits about to be spent
+/// don't count, or the starting credits, above a lone refinery's storage, would put a silo before the first factory.
+fn silo(ai: &Ai, game: &Game, view: &View, next: Option<Kind>) -> Option<Kind> {
+    let cap = game.storage(ai.player);
+    if ai.settings.silo_percent == 0 || cap == 0 || ai.dry(game) {
+        return None;
+    }
+    let rules = &game.rules;
+    let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
+    let owed: i64 = view
+        .mine
+        .iter()
+        .flat_map(|&i| game.state.entities[i].queue.iter())
+        .map(|q| rules.kind(q.item).cost - q.paid)
+        .sum();
+    let spare = credits - owed - next.map_or(0, |k| rules.kind(k).cost) - ai.settings.unit_reserve;
+    if spare * 100 < cap * ai.settings.silo_percent {
+        return None;
+    }
+    (0..rules.kinds.len() as u16).map(Kind).find(|&k| {
+        let r = rules.kind(k);
+        r.building && r.storage > 0 && !r.refinery && buildable(game, view, ai.player, k)
     })
 }
 

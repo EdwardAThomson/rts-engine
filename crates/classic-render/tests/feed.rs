@@ -358,3 +358,23 @@ fn the_private_packs_lines_read_without_mistakes_when_they_are_cloned_in() {
         }
     }
 }
+
+#[test]
+fn the_advisor_says_storage_is_full_when_a_harvest_fills_it_or_is_lost_and_not_every_load() {
+    let (mut game, mut hud) = game();
+    let mut said = Vec::new();
+    let cap = game.storage(0);
+    game.state.players[0].credits = cap - 50;
+    // Unload far more than fits, twice over in quick succession.
+    for _ in 0..2 {
+        let h = game.state.entities.iter_mut().find(|e| e.owner == 0 && e.cargo.is_some()).unwrap();
+        h.cargo = Some(200);
+        h.task = Some(classic_sim::Task::Unloading);
+        h.path.clear();
+        run(&mut game, &mut hud, 25, &mut said);
+    }
+    println!("storage {cap}: credits {}, said {said:?}", game.state.players[0].credits);
+    let full: Vec<_> = said.iter().filter(|(_, t)| t == &feed::default_words()["storage_full"]).collect();
+    assert_eq!(full.len(), 1, "once, when it filled; the loss that follows is the same news");
+    assert_eq!(game.state.players[0].credits, cap);
+}
