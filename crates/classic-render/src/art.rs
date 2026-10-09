@@ -123,6 +123,8 @@ pub struct Art {
     pub tileset: Option<(Tileset, TexId)>,
     /// The middle shade of each owner's ramp, in owner order.
     owners: Vec<[u8; 3]>,
+    /// The fog of war's soft-edged page (`fog::page`), drawn from code for every pack.
+    pub fog: TexId,
 }
 
 impl Art {
@@ -177,6 +179,8 @@ impl Art {
             Ok(Strip { tex: batch.texture(gpu, w, h, &rgba), w: fw, h: fh, frames, facings, colour, accent })
         };
         let entries = |key: &str| doc.get(key).and_then(Value::as_object).unwrap_or(&[]);
+        let (fw, fh, fog_page) = crate::fog::page();
+        let fog = batch.texture(gpu, fw, fh, &fog_page);
         let mut art = Art {
             tile,
             terrain: BTreeMap::new(),
@@ -188,6 +192,7 @@ impl Art {
             studio: Studio::default(),
             tileset: None,
             owners: owner_ramps.iter().map(|r| r[r.len() / 2]).collect(),
+            fog,
         };
         for (id, entry) in entries("terrain") {
             art.terrain.insert(id.clone(), load(batch, entry, None)?);

@@ -6,10 +6,11 @@ use std::collections::BTreeMap;
 
 use classic_sim::combat::facing_to;
 use classic_sim::map::{RESOURCE_PER_TILE, TILE};
-use classic_sim::{Entity, Game, Hazard, Terrain};
+use classic_sim::{Entity, Game, Ghost, Hazard, Terrain, vision};
 
 use crate::art::{Art, Strip};
 use crate::effects::{Effects, FIRE_TICKS};
+use crate::fog;
 use crate::platform::{Rect, SpriteBatch, TexId};
 use crate::studio::{Frame, SHADOW_ALPHA};
 use crate::tiles;
@@ -74,9 +75,17 @@ pub struct Scene {
     pub selected: Vec<u32>,
     /// Control groups: the units kept under each number key, 0 to 9.
     pub groups: [Vec<u32>; 10],
+    /// The player whose fog of war is drawn: enemies out of their sight are hidden, enemy buildings show as they last
+    /// saw them, and shroud and fog cover the map. `None`, or fog off in the rules, shows everything.
+    pub viewer: Option<u32>,
 }
 
 impl Scene {
+    /// A scene drawn as `player` sees it, through their fog of war.
+    pub fn for_player(player: u32) -> Scene {
+        Scene { viewer: Some(player), ..Scene::default() }
+    }
+
     /// Ctrl and a number: keep `player`'s selected units under group `n`, replacing what it held. Buildings and
     /// other players' entities stay out of groups.
     pub fn set_group(&mut self, game: &Game, player: u32, n: usize) {
@@ -160,6 +169,12 @@ impl Scene {
         let px = tile / TILE as f32;
         let tick = game.state.tick;
         self.fx.update(game, art, &self.facing);
+        let viewer = self.viewer.filter(|_| game.state.vision.is_some());
+        let shows = |e: &Entity| viewer.is_none_or(|p| vision::visible(&game.state, &game.rules, p, e));
+        let ghosts: &[Ghost] = match (viewer, &game.state.vision) {
+            (Some(p), Some(v)) => v.players.get(p as usize).map_or(&[], |s| &s.ghosts),
+            _ => &[],
+        };
         // The map, only the tiles on screen.
         let (wx0, wy0) = cam.to_world(0.0, 0.0);
         let (wx1, wy1) = cam.to_world(w, h);
@@ -206,6 +221,9 @@ impl Scene {
         let mut units: Vec<&Entity> = Vec::new();
         for e in &game.state.entities {
             let k = game.rules.kind(e.kind);
+            if !shows(e) {
+                continue;
+            }
             if !k.building {
                 units.push(e);
                 continue;
@@ -217,10 +235,24 @@ impl Scene {
             let pose = Pose { facing: e.facing, turret: e.facing, anims, step: tick / OVERLAY_TICKS, alpha: 255 };
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), dst, &pose);
         }
+        // Enemy buildings out of sight, as the viewer last saw them; gone or not.
+        for g in ghosts.iter().filter(|g| !game.state.entity(g.id).is_some_and(&shows)) {
+            let k = game.rules.kind(g.kind);
+            let (sx, sy) = cam.to_screen(g.x as f32 * tile, g.y as f32 * tile);
+            let dst = Rect::new(sx, sy, k.width as f32 * tile * cam.zoom, k.height as f32 * tile * cam.zoom);
+            let anims: &[&str] = if g.health * 2 < k.max_health { &["damaged"] } else { &["idle"] };
+            let pose = Pose { facing: 0, turret: 0, anims, step: 0, alpha: 255 };
+            draw_look(batch, art, cam.zoom, &k.id, g.owner, (sx, sy), dst, &pose);
+        }
         units.sort_by_key(|e| (e.y, e.id));
+        // The viewer sees a hazard only where they see the ground it is on.
+        let hazard_shows = |z: &Hazard| {
+            let t = classic_sim::Tile { x: z.x.div_euclid(TILE) as i32, y: z.y.div_euclid(TILE) as i32 };
+            viewer.is_none_or(|p| game.state.vision.as_ref().is_some_and(|v| v.shows(p, t.x, t.y)))
+        };
         // Hazards under the sand: a ripple, under the units.
         let surface = game.rules.hazard.as_ref().map_or(1, |h| h.surface_ticks.max(1));
-        for z in hazards(game).iter().filter(|z| z.surfaced == 0) {
+        for z in hazards(game).iter().filter(|z| z.surfaced == 0 && hazard_shows(z)) {
             let (ox, oy) = self.prev.get(&z.id).copied().unwrap_or((z.x, z.y));
             let x = (ox as f32 + (z.x - ox) as f32 * alpha) * px;
             let y = (oy as f32 + (z.y - oy) as f32 * alpha) * px;
@@ -324,7 +356,7 @@ impl Scene {
             draw_look(batch, art, cam.zoom, &k.id, e.owner, (sx, sy), cell, &pose);
         }
         // Hazards above the sand: the strike, then the sink, over everything on the ground.
-        for z in hazards(game).iter().filter(|z| z.surfaced > 0) {
+        for z in hazards(game).iter().filter(|z| z.surfaced > 0 && hazard_shows(z)) {
             let up = surface.saturating_sub(z.surfaced);
             let frame = up * (STRIKE_FRAMES + SINK_FRAMES) / surface;
             let (anims, step): (&[&str], u32) = if frame < STRIKE_FRAMES {
@@ -337,8 +369,12 @@ impl Scene {
         }
         self.fx.draw_shots(batch, art, game, cam, alpha);
         self.fx.draw(batch, art, game, cam, alpha, false);
-        // Selection boxes, and health bars on whatever is selected or hurt.
-        for e in &game.state.entities {
+        // Shroud and fog over everything on the ground.
+        if let Some(p) = viewer {
+            fog::draw(batch, art.fog, game, p, cam, tile, (x0, y0, x1, y1));
+        }
+        // Selection boxes, and health bars on whatever is selected or hurt and in sight.
+        for e in game.state.entities.iter().filter(|e| shows(e)) {
             let k = game.rules.kind(e.kind);
             let selected = self.selected.contains(&e.id);
             if !selected && e.health >= k.max_health {

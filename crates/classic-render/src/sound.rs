@@ -587,6 +587,13 @@ impl SoundBoard {
                     && r.warhead.as_ref().is_none_or(|w| weapon.is_some_and(|x| classic_data::WARHEADS[x.warhead] == w))
             });
             let Some(def) = rule.map(|r| r.sound) else { continue };
+            // Under fog of war the local player hears what happens out in the world only where they can see it.
+            let tile = |v: i64| v.div_euclid(classic_sim::map::TILE) as i32;
+            if let (true, Some((x, y))) = (self.tables.defs[def].spatial, f.at)
+                && game.tile_view(self.local, tile(x), tile(y)) != classic_sim::TileView::Visible
+            {
+                continue;
+            }
             let (gain, pan) = match (self.tables.defs[def].spatial, f.at) {
                 (true, Some((x, y))) => listener.place(x as f32, y as f32),
                 _ => (1.0, 0.0),

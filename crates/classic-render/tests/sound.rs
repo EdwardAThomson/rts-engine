@@ -12,7 +12,9 @@ use classic_tools::setting;
 const MAP: &str = include_str!("../../../maps/test-01.txt");
 
 fn game() -> Game {
-    let pack = setting::load("generic").unwrap();
+    let mut pack = setting::load("generic").unwrap();
+    // The battles here are about sound: fog off, so both sides see each other across the whole field.
+    pack.rules.modules.get_mut("fog").unwrap().numbers.get_mut("on").unwrap().value = 0;
     let rules = Rules::from_table(&pack.rules).unwrap();
     Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap()
 }
@@ -386,4 +388,31 @@ fn the_private_packs_voices_load_and_cover_their_lines_when_they_are_cloned_in()
         }
         println!("{}: {} voiced lines", dir.display(), b.voices.len());
     }
+}
+
+#[test]
+fn under_fog_a_player_hears_only_the_fights_they_can_see() {
+    let pack = setting::load("generic").unwrap();
+    let rules = Rules::from_table(&pack.rules).unwrap();
+    assert!(rules.fog.is_some(), "the generic pack turns fog on");
+    let mut game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    // Player 1's tanks shelling a third side's, far out in player 0's shroud.
+    let tank = game.kind("battle_tank").unwrap();
+    for i in 0..3 {
+        game.spawn(tank, 1, 19, 3 + i);
+        game.spawn(tank, 2, 21, 3 + i);
+    }
+    let mut mixer = Mixer::new(48_000);
+    let generic = setting::root().join("settings/generic");
+    let mut zero = SoundBoard::load(&generic, &generic, 0, 1, &mut mixer);
+    let mut one = SoundBoard::load(&generic, &generic, 1, 1, &mut mixer);
+    let (mut heard0, mut heard1) = (Vec::new(), Vec::new());
+    for _ in 0..150 {
+        game.step(1);
+        heard0.extend(zero.after_step(&game, &everything()).into_iter().map(|c| c.id));
+        heard1.extend(one.after_step(&game, &everything()).into_iter().map(|c| c.id));
+    }
+    println!("player 0 heard {heard0:?}; player 1 heard {} cues", heard1.len());
+    assert!(heard1.iter().any(|id| id == "sfx_cannon"), "the side that sees it hears the guns");
+    assert!(!heard0.iter().any(|id| id.starts_with("sfx_")), "nothing from the shroud");
 }

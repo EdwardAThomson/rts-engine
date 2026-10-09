@@ -12,8 +12,10 @@
 //! - the army (`army.rs`): gathers new units at a rally point, defends the base, and sends attack waves that grow
 //!   each time.
 //!
-//! There is no fog of war yet, so it sees what every player sees: the whole map. Once fog exists it must read only
-//! what its own units can see.
+//! Under fog of war (the `fog` module) it reads only what its own side can see: enemies in sight, and enemy
+//! buildings as it last saw them (`classic_sim::vision`). Knowing no enemy building, it guesses the other players'
+//! start positions, as a player who knows the map would, aims its rally point at the nearest, and sends its fastest
+//! idle fighter to look at the nearest one it has not explored. With fog off it sees the whole map, as before.
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
@@ -21,7 +23,7 @@ mod army;
 mod base;
 mod geo;
 
-use classic_sim::{Command, CommandOrder, Game, Kind, Tile};
+use classic_sim::{Command, CommandOrder, Game, Kind, Tile, TileView, vision};
 use geo::Point;
 
 pub use army::Wave;
@@ -140,6 +142,8 @@ pub struct Ai {
     pub waves_sent: u32,
     /// Thinks so far, for the managers that think less often.
     thinks: u32,
+    /// The unit it sent to find the enemy under fog, while it is on its way.
+    scout: Option<u32>,
     /// Credits delivered by its harvesters so far, and the tick that total last grew.
     delivered: i64,
     delivered_at: u32,
@@ -148,7 +152,17 @@ pub struct Ai {
 impl Ai {
     pub fn new(player: u32, settings: Settings) -> Ai {
         let wave_size = settings.first_wave;
-        Ai { player, settings, wave: None, wave_size, waves_sent: 0, thinks: 0, delivered: 0, delivered_at: 0 }
+        Ai {
+            player,
+            settings,
+            wave: None,
+            wave_size,
+            waves_sent: 0,
+            thinks: 0,
+            scout: None,
+            delivered: 0,
+            delivered_at: 0,
+        }
     }
 
     /// Whether this AI thinks on the game's current tick.
@@ -188,6 +202,7 @@ impl Ai {
             base::harvesters(game, &view, &mut out);
         }
         army::think(self, game, &view, &mut out);
+        army::scout(self, game, &view, &mut out);
         out.list
     }
 }
@@ -207,18 +222,25 @@ impl Orders {
 /// What one think works from: indices into `game.state.entities`, in id order.
 pub(crate) struct View {
     pub mine: Vec<usize>,
+    /// The enemies it knows of: all of them with fog off; under fog, those in its sight and the buildings it keeps a
+    /// ghost of.
     pub enemies: Vec<usize>,
     /// The centre of its first construction yard, or failing that of its first building.
     pub home: Option<Point>,
-    /// The centre of the enemy building nearest home.
+    /// The centre of the enemy building nearest home, or under fog, knowing none, of the nearest other player's start
+    /// position.
     pub enemy_home: Option<Point>,
+    /// Under fog, knowing no enemy building: the nearest other player's start position it has not explored.
+    pub unexplored_start: Option<Tile>,
 }
 
 impl View {
     fn new(game: &Game, player: u32) -> View {
         let es = &game.state.entities;
         let mine: Vec<usize> = (0..es.len()).filter(|&i| es[i].owner == player).collect();
-        let enemies: Vec<usize> = (0..es.len()).filter(|&i| es[i].owner != player).collect();
+        let enemies: Vec<usize> = (0..es.len())
+            .filter(|&i| es[i].owner != player && vision::known(&game.state, &game.rules, player, &es[i]))
+            .collect();
         let yard = game.kind("construction_yard");
         let building = |i: &&usize| game.rules.kind(es[**i].kind).building;
         let home = mine
@@ -230,7 +252,24 @@ impl View {
             enemies.iter().filter(building).min_by_key(|&&i| (geo::d2(geo::at(game, &es[i]), h), es[i].id))
         });
         let enemy_home = enemy_home.map(|&i| geo::at(game, &es[i]));
-        View { mine, enemies, home, enemy_home }
+        // Under fog, knowing no enemy building yet: the other players' start positions, nearest home first.
+        let starts: Vec<Tile> = match (enemy_home, home, &game.state.vision) {
+            (None, Some(h), Some(_)) => {
+                let mut s: Vec<Tile> = game
+                    .state
+                    .players
+                    .iter()
+                    .filter(|p| p.id != player)
+                    .filter_map(|p| game.map.start.get(p.id as usize).copied().flatten())
+                    .collect();
+                s.sort_by_key(|&t| (geo::d2(geo::centre(t), h), geo::off_middle(game, geo::centre(t)), t.y, t.x));
+                s
+            }
+            _ => Vec::new(),
+        };
+        let enemy_home = enemy_home.or(starts.first().map(|&t| geo::centre(t)));
+        let unexplored_start = starts.into_iter().find(|t| game.tile_view(player, t.x, t.y) == TileView::Shroud);
+        View { mine, enemies, home, enemy_home, unexplored_start }
     }
 
     pub fn count(&self, game: &Game, kind: Kind) -> usize {

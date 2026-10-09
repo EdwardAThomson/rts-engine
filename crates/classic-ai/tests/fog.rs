@@ -1,0 +1,96 @@
+//! The computer opponent under fog of war: it reads only what its side can see, so it has to find the enemy first.
+//! Each test prints what it ran (`cargo test -p classic-ai --test fog -- --nocapture`).
+
+use classic_ai::{Ai, Settings, defeated, winner};
+use classic_data::{RulesTable, json};
+use classic_sim::world::Event;
+use classic_sim::{Game, GameOptions, Rules, TileView};
+
+const SKIRMISH: &str = include_str!("../../../maps/skirmish-01.txt");
+
+/// The engine's rules with fog on, then `tuning`.
+fn rules(tuning: &str) -> Rules {
+    let mut t = RulesTable::builtin();
+    t.modules.get_mut("fog").unwrap().numbers.get_mut("on").unwrap().value = 1;
+    let errors = t.apply_tuning(&json::parse(tuning).unwrap());
+    assert!(errors.is_empty(), "{errors:?}");
+    Rules::from_table(&t).unwrap()
+}
+
+fn game(rules: &Rules, seed: i32) -> Game {
+    Game::new(GameOptions { map: SKIRMISH, seed, players: None, rules: Some(rules) }).expect("skirmish map is valid")
+}
+
+fn play(game: &mut Game, ais: &mut [Ai], ticks: u32) -> Option<(u32, u32)> {
+    for _ in 0..ticks {
+        for ai in ais.iter_mut() {
+            ai.tick(game);
+        }
+        game.step(1);
+        if let Some(w) = winner(game) {
+            return Some((w, game.state.tick));
+        }
+    }
+    None
+}
+
+#[test]
+fn it_scouts_finds_and_defeats_a_player_who_does_nothing() {
+    for hide in [1, 0] {
+        let r = rules(&format!(r#"{{ "modules": {{ "fog": {{ "hide": {hide} }} }} }}"#));
+        let mut g = game(&r, 1);
+        let other = g.map.start[0].unwrap();
+        assert_eq!(g.tile_view(1, other.x, other.y), TileView::Shroud, "it starts not knowing where the enemy is");
+        let mut ai = [Ai::new(1, Settings::normal())];
+        let end = play(&mut g, &mut ai, 25_000);
+        println!("fog hide {hide}: winner and tick {end:?}, waves {}", ai[0].waves_sent);
+        assert_eq!(end.map(|(w, _)| w), Some(1));
+        assert!(defeated(&g, 0));
+    }
+}
+
+#[test]
+fn it_never_orders_an_attack_on_what_it_cannot_see() {
+    let r = rules("{}");
+    let mut g = game(&r, 2);
+    let mut ais = [Ai::new(0, Settings::normal()), Ai::new(1, Settings::normal())];
+    let mut attacks = 0;
+    for _ in 0..15_000 {
+        for ai in ais.iter_mut() {
+            if !ai.due(&g) {
+                continue;
+            }
+            for c in ai.think(&g) {
+                if let classic_sim::CommandOrder::Attack { target } = c.order {
+                    assert!(g.known(c.player, target), "player {} attacked unseen {target}", c.player);
+                    attacks += 1;
+                }
+                g.order(c.player, &c.ids, c.order);
+            }
+        }
+        g.step(1);
+        if winner(&g).is_some() {
+            break;
+        }
+    }
+    let fired = g.events.iter().filter(|e| matches!(e, Event::Fired { .. })).count();
+    println!(
+        "AI against AI under fog: {attacks} attack orders, each on a known target, {fired} shots, tick {}",
+        g.state.tick
+    );
+    assert!(attacks > 0 && fired > 0, "they found each other and fought");
+}
+
+#[test]
+fn two_ais_under_fog_play_the_same_game_every_time() {
+    let r = rules("{}");
+    let run = || {
+        let mut g = game(&r, 3);
+        let mut ais = [Ai::new(0, Settings::normal()), Ai::new(1, Settings::normal())];
+        let end = play(&mut g, &mut ais, 20_000);
+        (g.hash(), end, ais.iter().map(|a| a.waves_sent).collect::<Vec<_>>())
+    };
+    let (a, b) = (run(), run());
+    println!("AI against AI under fog, seed 3: {a:?}");
+    assert_eq!(a, b);
+}

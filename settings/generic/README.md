@@ -4,6 +4,9 @@ Plain names and placeholder art for every generic id, so the engine runs and its
 factions on purpose: nothing in the engine may assume three. Its art may only ever be our own and generic: if
 someone could name the game a picture comes from, it belongs in a private pack instead.
 
+It turns fog of war on (`setting.json`'s `features`), with the engine's default of fog that hides what is out of
+sight, so the player and the tests run with it the way most packs will. The player's `--fog` overrides it.
+
 ## Art
 
 Everything under `art/` and `theme/` (but `art/sprites/` and `theme/fonts/`) is drawn from code in `crates/classic-tools/src/art` and written by

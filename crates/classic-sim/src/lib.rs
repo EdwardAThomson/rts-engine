@@ -17,6 +17,7 @@ pub mod power;
 pub mod production;
 pub mod storage;
 pub mod units;
+pub mod vision;
 pub mod world;
 
 pub use game::{Game, GameOptions, hash_state};
@@ -25,5 +26,6 @@ pub use map::{MapData, Terrain, Tile, parse_map};
 pub use placement::PlaceError;
 pub use power::Power;
 pub use production::{EntryState, ProduceError, QueueEntry};
-pub use units::{HazardRules, Kind, Rules, WeaponId};
+pub use units::{FogRules, HazardRules, Kind, Rules, WeaponId};
+pub use vision::{Ghost, TileView, Vision};
 pub use world::{Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};
