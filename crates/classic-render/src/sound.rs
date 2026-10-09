@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 25] = [
+pub const EVENT_NAMES: [&str; 27] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -99,6 +99,8 @@ pub const EVENT_NAMES: [&str; 25] = [
     "hazard_surfaced",
     "hazard_ate",
     "hazard_left",
+    "storage_full",
+    "credits_lost",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
