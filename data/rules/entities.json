@@ -1,5 +1,5 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. Roles: `capturable` buildings can be taken by `capturer` units (the capture module), a `repair_pad` mends its owner's vehicles beside it (the repair module). `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md). Units with the `air` role fly (the air module): straight over any tile, landing when they have nothing to do; a `carrier` ferries its owner's harvesters on long trips; an `untargetable` unit can't be fired on. `factions` lists the setting pack's faction ids that may build it (none means every faction). `self_destruct` names the blast it leaves when its owner orders it to blow up. An `unconvertible` unit is never taken over by a converting weapon; a `sapper` fires only at buildings and is used up by the shot. `cloak` (tiles) hides a unit from players with nothing that close to it, and `lifetime` (ticks) makes it disappear.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. Roles: `capturable` buildings can be taken by `capturer` units (the capture module), a `repair_pad` mends its owner's vehicles beside it (the repair module). `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md). Units with the `air` role fly (the air module): straight over any tile, landing when they have nothing to do; a `carrier` ferries its owner's harvesters on long trips; an `untargetable` unit can't be fired on. `factions` lists the setting pack's faction ids that may build it (none means every faction). `self_destruct` names the blast it leaves when its owner orders it to blow up. An `unconvertible` unit is never taken over by a converting weapon; a `sapper` fires only at buildings and is used up by the shot. `cloak` (tiles) hides a unit from players with nothing that close to it, and `lifetime` (ticks) makes it disappear. A unit with a `starport_price` is sold at the starport (the starport module) from a stock of `starport_stock` per player, which grows back by one every `starport_restock_ticks`.",
   "entities": {
     "construction_yard": {
       "kind": "building",
@@ -384,7 +384,10 @@
         "cost": { "default": 250, "min": 0, "max": 100000 },
         "build_ticks": { "default": 300, "min": 1, "max": 100000 },
         "turn_rate": { "default": 10, "min": 1, "max": 128 },
-        "sight": { "default": 4, "min": 1, "max": 16 }
+        "sight": { "default": 4, "min": 1, "max": 16 },
+        "starport_price": { "default": 250, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 3, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "raider_bike": { "kind": "unit", "status": "planned" },
@@ -404,7 +407,10 @@
         "cost": { "default": 400, "min": 0, "max": 100000 },
         "build_ticks": { "default": 375, "min": 1, "max": 100000 },
         "turn_rate": { "default": 10, "min": 1, "max": 128 },
-        "sight": { "default": 4, "min": 1, "max": 16 }
+        "sight": { "default": 4, "min": 1, "max": 16 },
+        "starport_price": { "default": 400, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 3, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "harvester": {
@@ -424,7 +430,10 @@
         "mine_rate": { "default": 4, "min": 1, "max": 1000 },
         "unload_rate": { "default": 10, "min": 1, "max": 1000 },
         "cost": { "default": 300, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "starport_price": { "default": 300, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 2, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "mcv": { "kind": "unit", "status": "planned" },
@@ -444,7 +453,10 @@
         "cost": { "default": 600, "min": 0, "max": 100000 },
         "build_ticks": { "default": 450, "min": 1, "max": 100000 },
         "turn_rate": { "default": 8, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "starport_price": { "default": 600, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 3, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "siege_tank": {
@@ -463,7 +475,10 @@
         "cost": { "default": 700, "min": 0, "max": 100000 },
         "build_ticks": { "default": 600, "min": 1, "max": 100000 },
         "turn_rate": { "default": 8, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "starport_price": { "default": 700, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 2, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "missile_tank": {
@@ -482,7 +497,10 @@
         "cost": { "default": 750, "min": 0, "max": 100000 },
         "build_ticks": { "default": 600, "min": 1, "max": 100000 },
         "turn_rate": { "default": 6, "min": 1, "max": 128 },
-        "sight": { "default": 6, "min": 1, "max": 16 }
+        "sight": { "default": 6, "min": 1, "max": 16 },
+        "starport_price": { "default": 750, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 2, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "super_a": {
@@ -563,7 +581,10 @@
         "max_health": { "default": 150, "min": 1, "max": 100000 },
         "cost": { "default": 600, "min": 0, "max": 100000 },
         "build_ticks": { "default": 750, "min": 1, "max": 100000 },
-        "turn_rate": { "default": 16, "min": 1, "max": 128 }
+        "turn_rate": { "default": 16, "min": 1, "max": 128 },
+        "starport_price": { "default": 600, "min": 0, "max": 100000 },
+        "starport_stock": { "default": 2, "min": 0, "max": 20 },
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
       }
     },
     "gunship": {

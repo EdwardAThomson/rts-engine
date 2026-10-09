@@ -50,6 +50,12 @@
     "reverted",
     "self_destruct_started",
     "sapper_detonated",
-    "expired"
+    "expired",
+    "market_prices_changed",
+    "starport_refused",
+    "starport_order_placed",
+    "supply_ship_landed",
+    "starport_order_refunded",
+    "supply_ship_left"
   ]
 }

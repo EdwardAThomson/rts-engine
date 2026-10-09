@@ -120,6 +120,46 @@ fn shift_click_queues_five_and_right_clicks_cancel_with_refunds() {
 }
 
 #[test]
+fn the_starport_tab_is_a_market_that_orders_and_sends() {
+    let (mut game, mut hud) = game();
+    let v = view();
+    assert!(
+        !hud.layout(&game, SCREEN).tabs.iter().any(|t| game.rules.kind(t.factory).id == "starport"),
+        "no starport, no tab"
+    );
+    let port = game.kind("starport").unwrap();
+    let yard = game.state.entities.iter().find(|e| e.owner == 0 && game.rules.kind(e.kind).id == "construction_yard");
+    let t = yard.unwrap().tile();
+    game.spawn(port, 0, t.x + 4, t.y + 4);
+    game.step(1);
+    let tab = hud.layout(&game, SCREEN).tabs.iter().find(|t| t.factory == port).expect("a starport tab").rect;
+    hud.click(&mut game, &v, centre(tab), Button::Left, false);
+    let l = hud.layout(&game, SCREEN);
+    assert_eq!(l.open, Some(port));
+    let sold: Vec<&str> = l.icons.iter().map(|i| game.rules.kind(i.item).id.as_str()).collect();
+    println!("the market sells {sold:?}");
+    assert!(sold.contains(&"battle_tank") && !sold.contains(&"power_plant"));
+    assert!(l.send.is_none(), "nothing to send yet");
+
+    game.state.players[0].credits = 10_000;
+    let tank = game.kind("battle_tank").unwrap();
+    let at = centre(icon(&game, &hud, "battle_tank").rect);
+    hud.click(&mut game, &v, at, Button::Left, true);
+    game.step(1);
+    assert_eq!(icon(&game, &hud, "battle_tank").status.queued, 3, "shift buys what the stock allows");
+    hud.click(&mut game, &v, at, Button::Right, false);
+    game.step(1);
+    let l = hud.layout(&game, SCREEN);
+    assert_eq!(l.queue.len(), 2, "the order shows where the queue does");
+    assert!(l.queue.iter().all(|&(k, _)| k == tank));
+    let price = classic_sim::starport::price(&game.state, &game.rules, tank).unwrap();
+    hud.click(&mut game, &v, centre(l.send.expect("a send button")), Button::Left, false);
+    game.step(1);
+    assert_eq!(game.state.players[0].credits, 10_000 - 2 * price, "paid on send");
+    assert!(hud.layout(&game, SCREEN).send.is_none(), "sent orders can't be sent again");
+}
+
+#[test]
 fn a_ready_building_goes_where_the_simulation_allows_and_nowhere_else() {
     let (mut game, mut hud) = game();
     let v = view();
