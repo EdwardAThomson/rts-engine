@@ -162,7 +162,12 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
         w.staging = None;
     }
 
-    let objective = game.state.entity(w.objective).filter(|e| e.owner != ai.player);
+    // Under fog, only while it can still see it or keeps a ghost of it: a unit that slips out of sight is no
+    // longer something it can be ordered to attack, and the wave would wait for it for ever.
+    let objective = game
+        .state
+        .entity(w.objective)
+        .filter(|e| e.owner != ai.player && classic_sim::vision::known(&game.state, rules, ai.player, e));
 
     // Turn back while it still can if the fight ahead has turned against it: the survivors join the next wave
     // instead of dying at the turrets.
@@ -188,6 +193,9 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     let Some(target) =
         near_armed.or(objective).or(building).or_else(|| enemies().min_by_key(|e| (from_middle(e), e.id)))
     else {
+        // Its objective is gone and, under fog, it knows of nothing else: the wave is over, and its units are free to
+        // search (`scout`). Kept, it would wait for ever, and so would every unit in it.
+        ai.wave = None;
         return;
     };
     // March in step: a unit more than three tiles nearer the target than the wave's rearmost waits where it is for
@@ -249,9 +257,16 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
 }
 
 /// Under fog, knowing no enemy building: send the fastest fighter at home (idle and not in a wave) to look at the
-/// nearest other player's start position it has not explored, unless one is already on its way.
+/// nearest other player's start position it has not explored, unless one is already on its way. With every start
+/// explored, the enemy has buildings it has never seen (built in fog, or out of its scout's sight): it searches the
+/// map (`search_point`).
 pub(crate) fn scout(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
-    let Some(spot) = view.unexplored_start else {
+    if view.knows_building || game.state.vision.is_none() {
+        ai.scout = None;
+        ai.searched.clear();
+        return;
+    }
+    let Some(spot) = view.unexplored_start.or_else(|| search_point(ai, game)) else {
         ai.scout = None;
         return;
     };
@@ -273,6 +288,40 @@ pub(crate) fn scout(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     if let Some(e) = pick {
         out.push(vec![e.id], CommandOrder::Move { x: to.x, y: to.y });
     }
+}
+
+/// The next point of a search for enemy buildings it has never seen: of points every `SEARCH_STEP` tiles that a
+/// unit can stand on, the one nearest another player's start position that hasn't been in its sight since the
+/// search began (the enemy builds near home); once every point has been, it starts again.
+fn search_point(ai: &mut Ai, game: &Game) -> Option<Tile> {
+    const SEARCH_STEP: i32 = 6;
+    let (w, h) = (game.map.width, game.map.height);
+    let points: Vec<Tile> = (SEARCH_STEP / 2..h)
+        .step_by(SEARCH_STEP as usize)
+        .flat_map(|y| (SEARCH_STEP / 2..w).step_by(SEARCH_STEP as usize).map(move |x| Tile { x, y }))
+        .filter(|t| game.pathfinder.passable(t.x, t.y))
+        .collect();
+    for t in &points {
+        if game.tile_view(ai.player, t.x, t.y) == classic_sim::TileView::Visible {
+            ai.searched.insert((t.y, t.x));
+        }
+    }
+    let starts: Vec<Point> = game
+        .state
+        .players
+        .iter()
+        .filter(|p| p.id != ai.player)
+        .filter_map(|p| game.map.start.get(p.id as usize).copied().flatten())
+        .map(centre)
+        .collect();
+    let near_start = |t: &Tile| starts.iter().map(|&s| d2(centre(*t), s)).min().unwrap_or(0);
+    let next = |searched: &BTreeSet<(i32, i32)>| {
+        points.iter().filter(|t| !searched.contains(&(t.y, t.x))).min_by_key(|t| (near_start(t), t.y, t.x)).copied()
+    };
+    next(&ai.searched).or_else(|| {
+        ai.searched.clear();
+        next(&ai.searched)
+    })
 }
 
 fn armed(game: &Game, e: &Entity) -> bool {

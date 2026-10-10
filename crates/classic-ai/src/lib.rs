@@ -27,6 +27,8 @@ mod base;
 mod geo;
 mod power;
 
+use std::collections::BTreeSet;
+
 use classic_sim::{Command, CommandOrder, Game, Kind, Tile, TileView, vision};
 use geo::Point;
 
@@ -252,6 +254,9 @@ pub struct Ai {
     thinks: u32,
     /// The unit it sent to find the enemy under fog, while it is on its way.
     scout: Option<u32>,
+    /// Under fog, knowing no enemy building once every start is explored: the search points it has had in sight
+    /// since the search began, as (y, x).
+    searched: BTreeSet<(i32, i32)>,
     /// Credits delivered by its harvesters so far, and the tick that total last grew.
     delivered: i64,
     delivered_at: u32,
@@ -268,6 +273,7 @@ impl Ai {
             waves_sent: 0,
             thinks: 0,
             scout: None,
+            searched: BTreeSet::new(),
             delivered: 0,
             delivered_at: 0,
         }
@@ -344,6 +350,8 @@ pub(crate) struct View {
     pub enemy_home: Option<Point>,
     /// Under fog, knowing no enemy building: the nearest other player's start position it has not explored.
     pub unexplored_start: Option<Tile>,
+    /// Under fog: whether it knows of any enemy building (in sight or kept as a ghost).
+    pub knows_building: bool,
 }
 
 impl View {
@@ -366,6 +374,7 @@ impl View {
             enemies.iter().filter(building).min_by_key(|&&i| (geo::d2(geo::at(game, &es[i]), h), es[i].id))
         });
         let enemy_home = enemy_home.map(|&i| geo::at(game, &es[i]));
+        let enemy_home_known = enemy_home.is_some();
         // Under fog, knowing no enemy building yet: the other players' start positions, nearest home first.
         let starts: Vec<Tile> = match (enemy_home, home, &game.state.vision) {
             (None, Some(h), Some(_)) => {
@@ -383,7 +392,7 @@ impl View {
         };
         let enemy_home = enemy_home.or(starts.first().map(|&t| geo::centre(t)));
         let unexplored_start = starts.into_iter().find(|t| game.tile_view(player, t.x, t.y) == TileView::Shroud);
-        View { mine, enemies, home, enemy_home, unexplored_start }
+        View { mine, enemies, home, enemy_home, unexplored_start, knows_building: enemy_home_known }
     }
 
     pub fn count(&self, game: &Game, kind: Kind) -> usize {
