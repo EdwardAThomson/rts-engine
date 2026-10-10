@@ -197,6 +197,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   side, an own tank on it gives way to the harvester while an enemy one blocks it, and a harvester queued for it
   steps aside for the one leaving it, and both keep delivering; a factory's new
   units drive clear of its exit; collision replays from the command log.
+- Slabs and decay (the `decay` module, off unless a pack turns it on): slabs are offered only with it on, lie on
+  rock as tile state rather than entities, extend the area a player may build in, may overlap the player's own
+  slab but never another player's; a bare building wears down 2% every 10 seconds to half its health, a half
+  slabbed one to three quarters and a fully slabbed one never; decay is its own event, not a hit; a destroyed
+  building takes its slab, a sold one leaves it and a captured one hands it over; it all replays from the
+  command log.
 - Rendering (with Mesa's software GPU, no window): the start base is drawn in its faction's colours with no remap
   colour left on screen and the map covering the frame; the other faction's tank is in its own colours; the same
   frame twice gives the same pixels and drawing never changes the game's hash; shots and explosions appear from

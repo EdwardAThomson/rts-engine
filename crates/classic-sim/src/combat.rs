@@ -459,6 +459,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         let e = state.entities.remove(i);
         if rules.kind(e.kind).building {
             world::occupy(pf, rules, &e, false);
+            crate::decay::destroyed(state, rules, &e);
         }
     }
     // Blasts don't hurt those already destroyed this tick; anything they kill goes next tick.
