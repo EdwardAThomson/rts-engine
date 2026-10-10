@@ -39,6 +39,10 @@ fn game(rules: &Rules) -> Game {
     let mut g = Game::new(GameOptions { map: MAP, seed: 1, players: Some(2), rules: Some(rules) }).unwrap();
     g.state.players[0].credits = 10_000;
     g.state.players[1].credits = 10_000;
+    // The large slab needs an upgraded yard.
+    for e in g.state.entities.iter_mut() {
+        e.level = 1;
+    }
     g
 }
 

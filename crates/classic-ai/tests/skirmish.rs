@@ -382,14 +382,18 @@ fn two_ais_on_a_mirrored_map_play_mirror_images_of_each_other() {
         v.sort();
         v
     };
-    // Until units of the two sides meet. Two mirrored units meeting head-on can't stay mirror images: movement goes
-    // in id order, so one of them finds its way round first.
+    // Until units of the two sides meet, or one side's units take aim at the other's. Two mirrored units meeting
+    // head-on can't stay mirror images: movement goes in id order, so one of them finds its way round first. Nor can
+    // two chasing a target: a chaser looks for a new way to it on ticks staggered by its id.
     let met = |g: &Game| {
         let units: Vec<&classic_sim::Entity> =
             g.state.entities.iter().filter(|e| !g.rules.kind(e.kind).building).collect();
-        units
-            .iter()
-            .any(|a| units.iter().any(|b| a.owner != b.owner && (a.x - b.x).abs().max((a.y - b.y).abs()) <= 3 * TILE))
+        let aiming =
+            |a: &classic_sim::Entity| a.target.and_then(|t| g.state.entity(t)).is_some_and(|t| t.owner != a.owner);
+        units.iter().any(|a| {
+            aiming(a)
+                || units.iter().any(|b| a.owner != b.owner && (a.x - b.x).abs().max((a.y - b.y).abs()) <= 3 * TILE)
+        })
     };
     while g.state.tick < 9000 && !met(&g) {
         assert_eq!(side(&g, 0), side(&g, 1), "tick {}", g.state.tick);

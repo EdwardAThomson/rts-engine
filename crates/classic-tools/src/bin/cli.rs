@@ -1,6 +1,6 @@
 //! Headless run from the command line:
 //!   cargo run --release --bin cli -- [--setting generic] [--map maps/test-01.txt] [--seed 1] [--ticks 9000] [--every 1500]
-//!     [--ai 0,1] [--factions faction_a,faction_b]
+//!     [--ai 0,1] [--factions faction_a,faction_b] [--tech 1-8]
 //! Prints the setting pack in use, one JSON line every --every ticks and the event counts at the end. No window, no
 //! graphics. `--ai` hands the listed players (0 is the map's start 1) to the computer opponent; the run then stops
 //! early when one player is left, and the last line names the winner. `--factions` gives the players, in order, the
@@ -51,6 +51,9 @@ fn main() {
 
     let text = std::fs::read_to_string(&map_path).unwrap_or_else(|e| panic!("{map_path}: {e}"));
     let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
+    if let Some(t) = arg("tech") {
+        game.set_tech_level(Some(t.parse().expect("a tech level from 1 to 8")));
+    }
     if let Some(f) = arg("factions") {
         game.set_factions(&f.split(',').map(str::trim).collect::<Vec<_>>());
     }

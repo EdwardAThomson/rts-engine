@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); P makes the selected factory the primary one of its kind, where new orders go; ctrl+click on an item in the rail puts it on hold or resumes it; right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
+`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); P makes the selected factory the primary one of its kind, where new orders go; ctrl+click on an item in the rail puts it on hold or resumes it; the upgrade icon after a factory's items upgrades its primary factory, unlocking the items shown locked until then (right-click it, or the upgrade in the queue, to take it back), and `--tech 1` to `8` sets the game's tech level, which limits what anyone may build or upgrade; right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -184,6 +184,11 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   sends units out of the corner facing the middle) or waits until one frees up; prerequisites, the primary factory
   (the first built, or the one the player picks, takes orders and sends out the units), an entry put on hold (its
   queue stops, paying nothing, until resumed or cancelled) and replay from the command log all hold.
+- Tech levels and factory upgrades: a game's tech level (1 to 8, none for everything) refuses whatever is above it,
+  at the starport too, and caps how far each kind of factory may be upgraded; an upgrade is an entry in that
+  factory's queue, paid as it builds and taken back with a full refund, that holds up the queue behind it and
+  raises only that building's level; an item that needs a level goes to a factory that has it even when another is
+  primary; it all replays from the command log, and saves keep the tech level.
 - Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
   heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
   nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
@@ -367,11 +372,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
 - Collision covers vehicles only (aircraft have none, by design): no infantry positions, crushing, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout and raider bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or tech levels; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
+- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout and raider bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two) or attacks on the ground; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent has three levels (easy, normal, hard) with numbers in code: no brutal level, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
-  exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
+  exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. It upgrades a factory when the
+  next unit its mix calls for needs the upgrade, and never the construction yard. Its memory lives in the `Ai`
   value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
   differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
   three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
@@ -388,7 +394,10 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
   acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
   because the starting base doesn't turn with them.
-- No tech levels or factory upgrades. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
+- Tech levels and upgrades: the tech level is set with `--tech` (or by a save), not yet on the title screen or by
+  mission data; there are no level 2 items yet, no allow or deny lists, and no `tech_changed` event; waiting entries
+  are not refunded when a required building dies. Checked in tests and computer games, not yet by a person playing.
+- Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
   3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
   way. Carriers make the economy faster, so fields run dry and more AI games end:
   of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
@@ -402,8 +411,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   person: `faction_a` beat `faction_c` 23 to 12, a lean these runs can't yet tell from noise.
 - Palace powers: the guerrillas don't hide on rough ground yet, the missile leaves no scorch mark, and its flight
   and blast are stand-in effects (a rocket sprite on an arc, large explosions). The private pack has its own words only
-  for `superpower_ready`; the other new lines use the engine's. Tech levels aren't built, so the powers need only a
-  palace. The computer scores the tiles of enemies it knows of rather than the design's grid. Checked in tests and
+  for `superpower_ready`; the other new lines use the engine's. The palace is tech level 8, so below that there are
+  no powers. The computer scores the tiles of enemies it knows of rather than the design's grid. Checked in tests and
   computer games, not yet by a person playing.
 - Starport: the computer opponent never builds one or buys from it, prices and stock show only on the starport's
   tab, and the supply ship has no landing or take-off effect or sound. It was checked in tests, not yet by a person

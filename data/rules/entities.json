@@ -1,5 +1,5 @@
 {
-  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. Roles: `capturable` buildings can be taken by `capturer` units (the capture module), a `repair_pad` mends its owner's vehicles beside it (the repair module). A `slab` is laid as concrete on the tiles under its footprint rather than standing as a building, and is offered only while the decay module is on. `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md). Units with the `air` role fly (the air module): straight over any tile, landing when they have nothing to do; a `carrier` ferries its owner's harvesters on long trips; an `untargetable` unit can't be fired on. `factions` lists the setting pack's faction ids that may build it (none means every faction). `self_destruct` names the blast it leaves when its owner orders it to blow up. An `unconvertible` unit is never taken over by a converting weapon; a `sapper` fires only at buildings and is used up by the shot. `cloak` (tiles) hides a unit from players with nothing that close to it, and `lifetime` (ticks) makes it disappear. `deploys_into` names the building a unit turns into when its owner deploys it where it stands (the deploy module). A unit with a `starport_price` is sold at the starport (the starport module) from a stock of `starport_stock` per player, which grows back by one every `starport_restock_ticks`.",
+  "about": "Every generic id the engine knows, with its kind and status. Built entries carry their numbers: the default, and the range a setting pack's tuning.json may move it within. Roles say which built mechanics an entity takes part in. Our own numbers, from our own simulation runs, never from another game's tables. Speeds are sub-tile units per tick (256 per tile, 15 ticks per second); times are ticks; a building's width and height are in tiles, from its top-left tile; its power is what it adds to its owner's supply (positive) or draws from it (negative). `built_at` names the building that produces an item and `requires` the buildings its owner must have first; `cost` is in credits, paid while it builds over `build_ticks`. Roles: `capturable` buildings can be taken by `capturer` units (the capture module), a `repair_pad` mends its owner's vehicles beside it (the repair module). A `slab` is laid as concrete on the tiles under its footprint rather than standing as a building, and is offered only while the decay module is on. `tech_level` (1 to 8) is the lowest tech level a game must allow for it to be built; a game with no tech level allows everything. `factory_level` is the level its factory must be upgraded to first. A building with a `max_level` can be upgraded that many times, each for `upgrade_cost` over `upgrade_ticks`, once the game allows `level_1_tech` (or `level_2_tech` for its second level). `storage` is the credits a building adds to its owner's storage cap: harvests delivered beyond the cap are lost (rules-economy-production.md). `armour` is the column it takes damage from in the combat module's table; `weapon` and `death` name weapons in `weapons.json` (what it fires, and the blast it leaves when destroyed); `turn_rate` is in facing units per tick (256 to a full turn), `sight` in tiles (how far it looks for targets), `vision` in tiles (how far it uncovers the map for its owner when the fog module is on, measured from a building's edge), and `noise` is what a unit makes each tick it moves on open ground, which draws the hazard (rules-world.md). Units with the `air` role fly (the air module): straight over any tile, landing when they have nothing to do; a `carrier` ferries its owner's harvesters on long trips; an `untargetable` unit can't be fired on. `factions` lists the setting pack's faction ids that may build it (none means every faction). `self_destruct` names the blast it leaves when its owner orders it to blow up. An `unconvertible` unit is never taken over by a converting weapon; a `sapper` fires only at buildings and is used up by the shot. `cloak` (tiles) hides a unit from players with nothing that close to it, and `lifetime` (ticks) makes it disappear. `deploys_into` names the building a unit turns into when its owner deploys it where it stands (the deploy module). A unit with a `starport_price` is sold at the starport (the starport module) from a stock of `starport_stock` per player, which grows back by one every `starport_restock_ticks`.",
   "entities": {
     "construction_yard": {
       "kind": "building",
@@ -11,7 +11,13 @@
         "max_health": { "default": 1200, "min": 1, "max": 100000 },
         "width": { "default": 2, "min": 1, "max": 4 },
         "height": { "default": 2, "min": 1, "max": 4 },
-        "power": { "default": 0, "min": -500, "max": 500 }
+        "power": { "default": 0, "min": -500, "max": 500 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 },
+        "max_level": { "default": 1, "min": 0, "max": 2 },
+        "upgrade_cost": { "default": 400, "min": 0, "max": 100000 },
+        "upgrade_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "level_1_tech": { "default": 4, "min": 1, "max": 8 },
+        "level_2_tech": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "slab": {
@@ -28,7 +34,8 @@
         "height": { "default": 1, "min": 1, "max": 4 },
         "power": { "default": 0, "min": 0, "max": 0 },
         "cost": { "default": 10, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 45, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 45, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "slab_large": {
@@ -45,7 +52,9 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": 0, "min": 0, "max": 0 },
         "cost": { "default": 40, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 150, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 150, "min": 1, "max": 100000 },
+        "tech_level": { "default": 4, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "power_plant": {
@@ -62,7 +71,8 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": 100, "min": -500, "max": 500 },
         "cost": { "default": 300, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "refinery": {
@@ -80,7 +90,8 @@
         "power": { "default": -30, "min": -500, "max": 500 },
         "storage": { "default": 1000, "min": 0, "max": 100000 },
         "cost": { "default": 400, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 750, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 750, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "silo": {
@@ -98,7 +109,8 @@
         "power": { "default": -5, "min": -500, "max": 500 },
         "storage": { "default": 1000, "min": 0, "max": 100000 },
         "cost": { "default": 150, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 300, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "radar": {
@@ -116,7 +128,8 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -30, "min": -500, "max": 500 },
         "cost": { "default": 400, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "tech_level": { "default": 2, "min": 1, "max": 8 }
       }
     },
     "barracks": {
@@ -133,7 +146,13 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -10, "min": -500, "max": 500 },
         "cost": { "default": 300, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 450, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 },
+        "max_level": { "default": 1, "min": 0, "max": 2 },
+        "upgrade_cost": { "default": 300, "min": 0, "max": 100000 },
+        "upgrade_ticks": { "default": 300, "min": 1, "max": 100000 },
+        "level_1_tech": { "default": 2, "min": 1, "max": 8 },
+        "level_2_tech": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "barracks_heavy": {
@@ -150,7 +169,8 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -15, "min": -500, "max": 500 },
         "cost": { "default": 400, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 }
       }
     },
     "light_factory": {
@@ -167,7 +187,13 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -20, "min": -500, "max": 500 },
         "cost": { "default": 400, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 600, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "tech_level": { "default": 2, "min": 1, "max": 8 },
+        "max_level": { "default": 1, "min": 0, "max": 2 },
+        "upgrade_cost": { "default": 300, "min": 0, "max": 100000 },
+        "upgrade_ticks": { "default": 450, "min": 1, "max": 100000 },
+        "level_1_tech": { "default": 3, "min": 1, "max": 8 },
+        "level_2_tech": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "heavy_factory": {
@@ -184,7 +210,13 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -35, "min": -500, "max": 500 },
         "cost": { "default": 600, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 },
+        "max_level": { "default": 1, "min": 0, "max": 2 },
+        "upgrade_cost": { "default": 500, "min": 0, "max": 100000 },
+        "upgrade_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "level_1_tech": { "default": 5, "min": 1, "max": 8 },
+        "level_2_tech": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "air_factory": {
@@ -201,7 +233,13 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -35, "min": -500, "max": 500 },
         "cost": { "default": 800, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 },
+        "tech_level": { "default": 4, "min": 1, "max": 8 },
+        "max_level": { "default": 1, "min": 0, "max": 2 },
+        "upgrade_cost": { "default": 500, "min": 0, "max": 100000 },
+        "upgrade_ticks": { "default": 600, "min": 1, "max": 100000 },
+        "level_1_tech": { "default": 7, "min": 1, "max": 8 },
+        "level_2_tech": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "repair_pad": {
@@ -218,7 +256,8 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -20, "min": -500, "max": 500 },
         "cost": { "default": 700, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 },
+        "tech_level": { "default": 5, "min": 1, "max": 8 }
       }
     },
     "starport": {
@@ -235,7 +274,8 @@
         "height": { "default": 3, "min": 1, "max": 4 },
         "power": { "default": -50, "min": -500, "max": 500 },
         "cost": { "default": 1000, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 1050, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 1050, "min": 1, "max": 100000 },
+        "tech_level": { "default": 6, "min": 1, "max": 8 }
       }
     },
     "research_lab": {
@@ -252,7 +292,8 @@
         "height": { "default": 2, "min": 1, "max": 4 },
         "power": { "default": -40, "min": -500, "max": 500 },
         "cost": { "default": 600, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 900, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 900, "min": 1, "max": 100000 },
+        "tech_level": { "default": 7, "min": 1, "max": 8 }
       }
     },
     "palace": {
@@ -268,7 +309,8 @@
         "height": { "default": 3, "min": 1, "max": 4 },
         "power": { "default": -60, "min": -500, "max": 500 },
         "cost": { "default": 1500, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 1350, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 1350, "min": 1, "max": 100000 },
+        "tech_level": { "default": 8, "min": 1, "max": 8 }
       }
     },
     "wall": {
@@ -285,7 +327,8 @@
         "height": { "default": 1, "min": 1, "max": 4 },
         "power": { "default": 0, "min": -500, "max": 500 },
         "cost": { "default": 25, "min": 0, "max": 100000 },
-        "build_ticks": { "default": 30, "min": 1, "max": 100000 }
+        "build_ticks": { "default": 30, "min": 1, "max": 100000 },
+        "tech_level": { "default": 2, "min": 1, "max": 8 }
       }
     },
     "gun_turret": {
@@ -303,7 +346,8 @@
         "power": { "default": -5, "min": -500, "max": 500 },
         "cost": { "default": 150, "min": 0, "max": 100000 },
         "build_ticks": { "default": 300, "min": 1, "max": 100000 },
-        "turn_rate": { "default": 10, "min": 1, "max": 128 }
+        "turn_rate": { "default": 10, "min": 1, "max": 128 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 }
       }
     },
     "rocket_turret": {
@@ -321,7 +365,9 @@
         "power": { "default": -20, "min": -500, "max": 500 },
         "cost": { "default": 250, "min": 0, "max": 100000 },
         "build_ticks": { "default": 450, "min": 1, "max": 100000 },
-        "turn_rate": { "default": 10, "min": 1, "max": 128 }
+        "turn_rate": { "default": 10, "min": 1, "max": 128 },
+        "tech_level": { "default": 4, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
 
@@ -341,7 +387,8 @@
         "cost": { "default": 80, "min": 0, "max": 100000 },
         "build_ticks": { "default": 150, "min": 1, "max": 100000 },
         "turn_rate": { "default": 32, "min": 1, "max": 128 },
-        "sight": { "default": 3, "min": 1, "max": 16 }
+        "sight": { "default": 3, "min": 1, "max": 16 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "infantry_squad": {
@@ -360,7 +407,9 @@
         "cost": { "default": 200, "min": 0, "max": 100000 },
         "build_ticks": { "default": 300, "min": 1, "max": 100000 },
         "turn_rate": { "default": 32, "min": 1, "max": 128 },
-        "sight": { "default": 3, "min": 1, "max": 16 }
+        "sight": { "default": 3, "min": 1, "max": 16 },
+        "tech_level": { "default": 2, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "rocket_infantry": {
@@ -379,7 +428,8 @@
         "cost": { "default": 120, "min": 0, "max": 100000 },
         "build_ticks": { "default": 225, "min": 1, "max": 100000 },
         "turn_rate": { "default": 32, "min": 1, "max": 128 },
-        "sight": { "default": 4, "min": 1, "max": 16 }
+        "sight": { "default": 4, "min": 1, "max": 16 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 }
       }
     },
     "rocket_squad": {
@@ -398,7 +448,9 @@
         "cost": { "default": 300, "min": 0, "max": 100000 },
         "build_ticks": { "default": 375, "min": 1, "max": 100000 },
         "turn_rate": { "default": 32, "min": 1, "max": 128 },
-        "sight": { "default": 4, "min": 1, "max": 16 }
+        "sight": { "default": 4, "min": 1, "max": 16 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "scout_bike": {
@@ -420,7 +472,8 @@
         "sight": { "default": 4, "min": 1, "max": 16 },
         "starport_price": { "default": 250, "min": 0, "max": 100000 },
         "starport_stock": { "default": 3, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 2, "min": 1, "max": 8 }
       }
     },
     "raider_bike": {
@@ -462,7 +515,9 @@
         "sight": { "default": 4, "min": 1, "max": 16 },
         "starport_price": { "default": 400, "min": 0, "max": 100000 },
         "starport_stock": { "default": 3, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "harvester": {
@@ -485,7 +540,8 @@
         "build_ticks": { "default": 600, "min": 1, "max": 100000 },
         "starport_price": { "default": 300, "min": 0, "max": 100000 },
         "starport_stock": { "default": 2, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 1, "min": 1, "max": 8 }
       }
     },
     "mcv": {
@@ -527,7 +583,8 @@
         "sight": { "default": 5, "min": 1, "max": 16 },
         "starport_price": { "default": 600, "min": 0, "max": 100000 },
         "starport_stock": { "default": 3, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 3, "min": 1, "max": 8 }
       }
     },
     "siege_tank": {
@@ -549,7 +606,9 @@
         "sight": { "default": 5, "min": 1, "max": 16 },
         "starport_price": { "default": 700, "min": 0, "max": 100000 },
         "starport_stock": { "default": 2, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 5, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "missile_tank": {
@@ -571,7 +630,9 @@
         "sight": { "default": 6, "min": 1, "max": 16 },
         "starport_price": { "default": 750, "min": 0, "max": 100000 },
         "starport_stock": { "default": 2, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 5, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "super_a": {
@@ -592,7 +653,8 @@
         "cost": { "default": 1000, "min": 0, "max": 100000 },
         "build_ticks": { "default": 900, "min": 1, "max": 100000 },
         "turn_rate": { "default": 6, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "tech_level": { "default": 7, "min": 1, "max": 8 }
       }
     },
     "super_h": {
@@ -614,7 +676,8 @@
         "cost": { "default": 1050, "min": 0, "max": 100000 },
         "build_ticks": { "default": 1050, "min": 1, "max": 100000 },
         "turn_rate": { "default": 4, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "tech_level": { "default": 7, "min": 1, "max": 8 }
       }
     },
     "super_o": {
@@ -635,7 +698,8 @@
         "cost": { "default": 1000, "min": 0, "max": 100000 },
         "build_ticks": { "default": 900, "min": 1, "max": 100000 },
         "turn_rate": { "default": 6, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "tech_level": { "default": 7, "min": 1, "max": 8 }
       }
     },
     "carrier": {
@@ -655,7 +719,8 @@
         "turn_rate": { "default": 16, "min": 1, "max": 128 },
         "starport_price": { "default": 600, "min": 0, "max": 100000 },
         "starport_stock": { "default": 2, "min": 0, "max": 20 },
-        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 }
+        "starport_restock_ticks": { "default": 1800, "min": 1, "max": 100000 },
+        "tech_level": { "default": 4, "min": 1, "max": 8 }
       }
     },
     "gunship": {
@@ -674,7 +739,9 @@
         "cost": { "default": 700, "min": 0, "max": 100000 },
         "build_ticks": { "default": 750, "min": 1, "max": 100000 },
         "turn_rate": { "default": 16, "min": 1, "max": 128 },
-        "sight": { "default": 5, "min": 1, "max": 16 }
+        "sight": { "default": 5, "min": 1, "max": 16 },
+        "tech_level": { "default": 7, "min": 1, "max": 8 },
+        "factory_level": { "default": 1, "min": 0, "max": 2 }
       }
     },
     "elite_infantry": { "kind": "unit", "status": "planned" },

@@ -276,7 +276,10 @@ impl Feed {
                     ProduceError::NotBuildable
                     | ProduceError::NoFactory
                     | ProduceError::NotQueued
-                    | ProduceError::Faction => {}
+                    | ProduceError::Faction
+                    | ProduceError::TechLevel
+                    | ProduceError::FactoryLevel { .. }
+                    | ProduceError::MaxLevel => {}
                 },
                 Event::ProductionPaused { factory, kind, .. } if Self::owner(game, factory) == Some(local) => {
                     self.say(game, "no_credits", Some(kind), Tone::Warn)
@@ -426,6 +429,7 @@ impl Feed {
                 | Event::ProductionHeld { .. }
                 | Event::ProductionResumed { .. }
                 | Event::PrimarySet { .. }
+                | Event::UpgradeCompleted { .. }
                 | Event::SlabLaid { .. }
                 | Event::BloomSeeded { .. }
                 | Event::BloomBurst { .. }

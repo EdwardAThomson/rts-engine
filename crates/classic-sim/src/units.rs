@@ -150,6 +150,16 @@ pub struct KindRules {
     pub radar: bool,
     /// The building it turns into when its owner deploys it (the `deploy` module); `None` for kinds that can't.
     pub deploys_into: Option<Kind>,
+    /// The lowest game tech level that lets it be built (rules-economy-production.md, section 11).
+    pub tech_level: u32,
+    /// The level its factory must have been upgraded to (section 9).
+    pub factory_level: u32,
+    /// Producing buildings: how many times it can be upgraded, what each upgrade costs and takes, and the game tech
+    /// level each of its first two levels needs.
+    pub max_level: u32,
+    pub upgrade_cost: i64,
+    pub upgrade_ticks: i64,
+    pub level_tech: [u32; 2],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -526,6 +536,15 @@ impl Rules {
                 storage: t.number(id, "storage").unwrap_or(0),
                 radar: t.number(id, "radar").unwrap_or(0) != 0,
                 deploys_into: None,
+                tech_level: t.number(id, "tech_level").unwrap_or(1) as u32,
+                factory_level: t.number(id, "factory_level").unwrap_or(0) as u32,
+                max_level: t.number(id, "max_level").unwrap_or(0) as u32,
+                upgrade_cost: t.number(id, "upgrade_cost").unwrap_or(0),
+                upgrade_ticks: t.number(id, "upgrade_ticks").unwrap_or(1).max(1),
+                level_tech: [
+                    t.number(id, "level_1_tech").unwrap_or(1) as u32,
+                    t.number(id, "level_2_tech").unwrap_or(1) as u32,
+                ],
             });
         }
         if kinds.len() > u16::MAX as usize {
