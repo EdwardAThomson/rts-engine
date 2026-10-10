@@ -1,5 +1,5 @@
 {
-  "about": "Every sound id the engine plays, and how: its bus (sfx, ui, voice, music), level in whole decibels, priority when the mixer is full (higher wins), how many may play at once, whether it is placed in the world (panned and quieter off screen) and how far each play's speed may wander, in percent. A setting pack supplies the files for these ids (its audio/sounds.json) but can't change these numbers or add ids. Our own starting values, to be tuned by ear.",
+  "about": "Every sound id the engine plays, and how: its bus (sfx, ui, voice, music), level in whole decibels, priority when the mixer is full (higher wins), how many may play at once, whether it is placed in the world (panned and quieter off screen) and how far each play's speed may wander, in percent. A sound with `loop` plays round and round while units need it (`loops` in events.json); its caps and wander don't apply, and at most six loops play at once. A setting pack supplies the files for these ids (its audio/sounds.json) but can't change these numbers or add ids. Our own starting values, to be tuned by ear.",
   "sounds": {
     "sfx_cannon": { "bus": "sfx", "gain_db": -4, "priority": 50, "max_instances": 3, "spatial": true, "jitter_percent": 6 },
     "sfx_rocket": { "bus": "sfx", "gain_db": -5, "priority": 50, "max_instances": 3, "spatial": true, "jitter_percent": 6 },
@@ -22,12 +22,44 @@
     "sfx_gun": { "bus": "sfx", "gain_db": -9, "priority": 35, "max_instances": 3, "spatial": true, "jitter_percent": 8 },
     "sfx_infantry_die": { "bus": "sfx", "gain_db": -6, "priority": 55, "max_instances": 2, "spatial": true, "jitter_percent": 10 },
     "sfx_bloom_burst": { "bus": "sfx", "gain_db": -2, "priority": 75, "max_instances": 2, "spatial": true, "jitter_percent": 6 },
-    "sfx_hazard_eat": { "bus": "sfx", "gain_db": -2, "priority": 85, "max_instances": 1, "spatial": true, "jitter_percent": 5 }
+    "sfx_hazard_eat": { "bus": "sfx", "gain_db": -2, "priority": 85, "max_instances": 1, "spatial": true, "jitter_percent": 5 },
+    "sfx_exit_barracks": { "bus": "sfx", "gain_db": -9, "priority": 45, "max_instances": 2, "spatial": true, "jitter_percent": 4 },
+    "sfx_exit_light_factory": { "bus": "sfx", "gain_db": -7, "priority": 45, "max_instances": 2, "spatial": true, "jitter_percent": 4 },
+    "sfx_exit_heavy_factory": { "bus": "sfx", "gain_db": -5, "priority": 45, "max_instances": 2, "spatial": true, "jitter_percent": 4 },
+    "sfx_exit_air_factory": { "bus": "sfx", "gain_db": -6, "priority": 45, "max_instances": 2, "spatial": true, "jitter_percent": 4 },
+    "loop_engine_light": { "bus": "sfx", "gain_db": -16, "priority": 20, "max_instances": 1, "spatial": true, "jitter_percent": 0, "loop": true },
+    "loop_engine_heavy": { "bus": "sfx", "gain_db": -14, "priority": 22, "max_instances": 1, "spatial": true, "jitter_percent": 0, "loop": true },
+    "loop_engine_air": { "bus": "sfx", "gain_db": -15, "priority": 24, "max_instances": 1, "spatial": true, "jitter_percent": 0, "loop": true },
+    "loop_harvest": { "bus": "sfx", "gain_db": -13, "priority": 26, "max_instances": 1, "spatial": true, "jitter_percent": 0, "loop": true },
+    "loop_unload": { "bus": "sfx", "gain_db": -13, "priority": 26, "max_instances": 1, "spatial": true, "jitter_percent": 0, "loop": true }
   },
   "voices": {
-    "about": "How spoken lines (a pack's audio/voices.json) are mixed, on the voice bus: one advisor line and one unit reply at a time at most, no reply starting while the advisor speaks, and the sound effects held down by duck_db while anyone speaks.",
+    "about": "How spoken lines (a pack's audio/voices.json) are mixed, on the voice bus: one advisor line and one unit reply at a time at most, no reply starting while the advisor speaks, and the sound effects and music held down by duck_db while anyone speaks. An advisor line that comes while another speaks waits in a queue of `queue.size`, the highest `line_priority` first (lines not listed take `default`); one that has waited over `queue.stale_ms` is dropped, and so are the least important beyond the queue's size.",
     "advisor": { "gain_db": 0, "priority": 95 },
     "unit": { "gain_db": -2, "priority": 60 },
-    "duck_db": -6
+    "duck_db": -6,
+    "queue": { "size": 2, "stale_ms": 3000 },
+    "line_priority": {
+      "default": 50,
+      "game_won": 100,
+      "game_lost": 100,
+      "missile_warning": 98,
+      "hazard_sighted": 95,
+      "base_attacked": 90,
+      "enemy_wave": 90,
+      "superpower_ready": 90,
+      "harvester_attacked": 85,
+      "building_taken": 85,
+      "low_power": 80,
+      "building_lost": 75,
+      "units_attacked": 70,
+      "unit_lost": 65,
+      "building_ready": 60,
+      "unit_ready": 55,
+      "storage_full": 55,
+      "power_restored": 50,
+      "radar_online": 45,
+      "radar_offline": 45
+    }
   }
 }

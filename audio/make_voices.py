@@ -41,6 +41,7 @@ CAST = {
     "advisor": ("af_heart", 1.0, "en-us", False),
     "infantry": ("am_puck", 1.05, "en-us", True),
     "vehicle": ("am_liam", 1.0, "en-us", True),
+    "aircraft": ("am_michael", 1.05, "en-us", True),
 }
 
 # What the advisor says for each message id: the feed's meaning, without `{name}`.

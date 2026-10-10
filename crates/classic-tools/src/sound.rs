@@ -67,6 +67,60 @@ struct Recipe {
 use Wave::*;
 
 const RECIPES: &[Recipe] = &[
+    // A unit leaving the barracks: a door latch and a quick clack.
+    Recipe {
+        id: "sfx_exit_barracks",
+        folder: "sfx",
+        seconds: 0.3,
+        takes: 1,
+        drive: 0.8,
+        layers: &[
+            layer(Square, 420.0, 300.0, 0.012, 0.4).tone(0.4, 0.2),
+            layer(Noise, 0.0, 0.0, 0.02, 0.8).tone(0.6, 0.3),
+            layer(Noise, 0.0, 0.0, 0.03, 0.7).tone(0.5, 0.2).at(0.12),
+            layer(Sine, 160.0, 110.0, 0.04, 0.5).at(0.12),
+        ],
+    },
+    // A vehicle out of the light factory: a rolling shutter going up, then a clunk.
+    Recipe {
+        id: "sfx_exit_light_factory",
+        folder: "sfx",
+        seconds: 0.6,
+        takes: 1,
+        drive: 0.6,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.25, 0.7).tone(0.08, 0.2).rise(0.08),
+            layer(Saw, 95.0, 140.0, 0.25, 0.35).tone(0.15, 0.25).rise(0.06),
+            layer(Sine, 120.0, 70.0, 0.06, 0.8).at(0.42),
+            layer(Noise, 0.0, 0.0, 0.03, 0.5).tone(0.4, 0.1).at(0.42),
+        ],
+    },
+    // A heavy vehicle out of its factory: a hydraulic hiss and a big door's deep thud.
+    Recipe {
+        id: "sfx_exit_heavy_factory",
+        folder: "sfx",
+        seconds: 1.0,
+        takes: 1,
+        drive: 1.0,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.3, 0.6).tone(0.7, 0.35).rise(0.04),
+            layer(Saw, 60.0, 48.0, 0.4, 0.4).tone(0.06, 0.04).rise(0.1),
+            layer(Sine, 75.0, 38.0, 0.18, 1.0).at(0.55),
+            layer(Noise, 0.0, 0.0, 0.08, 0.5).tone(0.2, 0.05).at(0.55),
+        ],
+    },
+    // An aircraft out of its factory: a rising whoosh as it lifts off the pad.
+    Recipe {
+        id: "sfx_exit_air_factory",
+        folder: "sfx",
+        seconds: 0.9,
+        takes: 1,
+        drive: 0.3,
+        layers: &[
+            layer(Noise, 0.0, 0.0, 0.5, 0.9).tone(0.03, 0.3).rise(0.35),
+            layer(Sine, 260.0, 620.0, 0.5, 0.25).rise(0.3),
+        ],
+    },
     // A shell gun: a dark noise blast over a falling thump, with a short bright crack on top.
     Recipe {
         id: "sfx_cannon",
@@ -342,11 +396,11 @@ const RECIPES: &[Recipe] = &[
 
 /// Every sound id the generator makes.
 pub fn ids() -> Vec<&'static str> {
-    RECIPES.iter().map(|r| r.id).collect()
+    RECIPES.iter().map(|r| r.id).chain(LOOPS.iter().map(|l| l.id)).collect()
 }
 
 /// A sine from a phase in turns (0..1): a parabola, sharpened. Within about 0.1% of the real thing.
-fn sine(phase: f64) -> f64 {
+pub fn sine(phase: f64) -> f64 {
     let p = phase - phase.floor();
     let y = if p < 0.5 { 16.0 * p * (0.5 - p) } else { -16.0 * (p - 0.5) * (1.0 - p) };
     0.225 * (y * y.abs() - y) + y
@@ -407,6 +461,138 @@ fn render(r: &Recipe, take: usize) -> Vec<i16> {
     mix.iter().map(|s| (s / peak * 0.9 * 32767.0).round() as i16).collect()
 }
 
+/// A loop: an id, its length in seconds, and how it sounds, as a sample at time `t` from the state it keeps.
+struct Loop {
+    id: &'static str,
+    seconds: f64,
+    make: fn(&mut LoopState, f64) -> f64,
+}
+
+/// What a loop's maker keeps from one sample to the next: phases, filters and a noise source.
+struct LoopState {
+    ph: [f64; 4],
+    low: [f64; 4],
+    noise: Noise,
+    /// A click's envelope, for the rattles and crunches.
+    click: f64,
+}
+
+impl LoopState {
+    fn white(&mut self) -> f64 {
+        (self.noise.roll() >> 11) as f64 / (1u64 << 52) as f64 - 1.0
+    }
+
+    /// Advance phase `i` by `freq` for one sample and give it.
+    fn osc(&mut self, i: usize, freq: f64) -> f64 {
+        self.ph[i] += freq / RATE as f64;
+        self.ph[i] -= self.ph[i].floor();
+        self.ph[i]
+    }
+
+    /// One-pole low-pass `i` on `x`, `a` from 0 (shut) to 1 (open).
+    fn lp(&mut self, i: usize, x: f64, a: f64) -> f64 {
+        self.low[i] += a * (x - self.low[i]);
+        self.low[i]
+    }
+}
+
+fn saw(p: f64) -> f64 {
+    2.0 * p - 1.0
+}
+
+const LOOPS: &[Loop] = &[
+    // A light vehicle: a buzzy engine with its firing pulse and a little road noise.
+    Loop {
+        id: "loop_engine_light",
+        seconds: 1.0,
+        make: |s, t| {
+            let p = s.osc(0, 92.0 * (1.0 + 0.02 * sine(t * 3.0)));
+            let buzz = s.lp(0, saw(p), 0.15);
+            let w = s.white();
+            let road = s.lp(1, w, 0.08);
+            (buzz * 0.8 + road * 0.5) * (0.6 + 0.4 * sine(t * 14.0))
+        },
+    },
+    // A heavy vehicle: a deep diesel rumble under the rattle of its tracks.
+    Loop {
+        id: "loop_engine_heavy",
+        seconds: 1.2,
+        make: |s, t| {
+            let a = saw(s.osc(0, 46.0));
+            let b = if s.osc(1, 23.0) < 0.5 { 1.0 } else { -1.0 };
+            let rumble = s.lp(0, a * 0.7 + b * 0.4, 0.06);
+            let w = s.white();
+            let ground = s.lp(1, w, 0.03);
+            // Track links knocking nine times a second.
+            if s.osc(2, 9.0) < 9.0 / RATE as f64 {
+                s.click = 1.0;
+            }
+            s.click *= 1.0 - 1.0 / (0.012 * RATE as f64);
+            let w2 = s.white();
+            let rattle = (w2 - s.lp(2, w2, 0.2)) * s.click;
+            rumble * 1.2 + ground * 0.6 + rattle * 0.35 * (0.8 + 0.2 * sine(t * 2.0))
+        },
+    },
+    // An aircraft: the whoosh of blades and a soft turbine whine.
+    Loop {
+        id: "loop_engine_air",
+        seconds: 1.2,
+        make: |s, t| {
+            let w = s.white();
+            let hi = s.lp(0, w, 0.3);
+            let band = hi - s.lp(1, w, 0.03);
+            let whine = sine(s.osc(0, 840.0 * (1.0 + 0.004 * sine(t * 5.0))));
+            let p = s.osc(1, 60.0);
+            let hum = s.lp(2, saw(p), 0.05);
+            band * (0.5 + 0.5 * sine(t * 7.5)) + whine * 0.08 + hum * 0.5
+        },
+    },
+    // A harvester at work: a grinding drum with grit crunching inside it.
+    Loop {
+        id: "loop_harvest",
+        seconds: 1.5,
+        make: |s, t| {
+            let p = s.osc(0, 55.0);
+            let drum = s.lp(0, saw(p), 0.08);
+            let w = s.white();
+            let grind = s.lp(1, w, 0.2) * (0.6 + 0.4 * sine(t * 4.0));
+            if s.noise.roll() % 900 == 0 {
+                s.click = 1.0;
+            }
+            s.click *= 1.0 - 1.0 / (0.02 * RATE as f64);
+            let w2 = s.white();
+            let crunch = s.lp(2, w2, 0.5) * s.click;
+            drum * 0.9 + grind * 0.7 + crunch * 0.6
+        },
+    },
+    // A harvester unloading: a steady pour over a low pump hum.
+    Loop {
+        id: "loop_unload",
+        seconds: 1.5,
+        make: |s, t| {
+            let w = s.white();
+            let pour = s.lp(0, w, 0.12) - s.lp(1, w, 0.01);
+            let hum = sine(s.osc(0, 60.0)) * 0.5 + sine(s.osc(1, 120.0)) * 0.2;
+            pour * (0.8 + 0.2 * sine(t * 2.0)) * 1.5 + hum * 0.4
+        },
+    },
+];
+
+/// A loop's samples, joined end to start: rendered a little long, with the extra crossfaded into the start.
+fn render_loop(l: &Loop) -> Vec<i16> {
+    let n = (l.seconds * RATE as f64) as usize;
+    let overlap = RATE as usize / 10;
+    let mut s = LoopState { ph: [0.0; 4], low: [0.0; 4], noise: Noise::new(l.id), click: 0.0 };
+    let raw: Vec<f64> = (0..n + overlap).map(|i| (l.make)(&mut s, i as f64 / RATE as f64)).collect();
+    let mut mix = raw[..n].to_vec();
+    for k in 0..overlap {
+        let a = k as f64 / overlap as f64;
+        mix[k] = raw[k] * a + raw[n + k] * (1.0 - a);
+    }
+    let peak = mix.iter().fold(0.0f64, |m, s| m.max(s.abs())).max(1e-9);
+    mix.iter().map(|s| (s / peak * 0.7 * 32767.0).round() as i16).collect()
+}
+
 /// Encode 16-bit mono samples as a WAV file.
 fn wav(samples: &[i16]) -> Vec<u8> {
     let data = samples.len() as u32 * 2;
@@ -440,6 +626,11 @@ pub fn generate() -> Vec<File> {
         }
         index.push(format!("    \"{}\": {{ \"files\": [{}] }}", r.id, paths.join(", ")));
     }
+    for l in LOOPS {
+        let path = format!("audio/loops/{}.wav", l.id.trim_start_matches("loop_"));
+        files.push(File { path: path.clone(), bytes: wav(&render_loop(l)) });
+        index.push(format!("    \"{}\": {{ \"files\": [\"{path}\"] }}", l.id));
+    }
     let provenance: String = files
         .iter()
         .map(|f| {
@@ -471,8 +662,18 @@ mod tests {
     }
 
     #[test]
+    fn loops_join_up_without_a_click() {
+        for f in generate().iter().filter(|f| f.path.starts_with("audio/loops/")) {
+            let samples: Vec<i16> = f.bytes[44..].chunks(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+            let jump = (samples[0] as i32 - *samples.last().unwrap() as i32).abs();
+            let typical = samples.windows(2).map(|w| (w[1] as i32 - w[0] as i32).abs()).max().unwrap();
+            assert!(jump <= typical, "{}: jumps {jump} going round, at most {typical} elsewhere", f.path);
+        }
+    }
+
+    #[test]
     fn every_sound_is_short_loud_enough_and_never_clips() {
-        for f in generate().iter().filter(|f| f.path.ends_with(".wav")) {
+        for f in generate().iter().filter(|f| f.path.ends_with(".wav") && !f.path.starts_with("audio/loops/")) {
             let samples: Vec<i16> = f.bytes[44..].chunks(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
             let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap();
             assert!((29000..=29500).contains(&peak), "{}: peak {peak}", f.path);

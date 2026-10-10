@@ -248,23 +248,25 @@ fn spoken_lines_play_the_take_the_screen_shows_and_no_reply_talks_over_the_advis
     use classic_render::platform::Played;
     let mut mixer = Mixer::new(48_000);
     let mut b = voiced(&mut mixer);
-    let say = |who: &'static str, key: &str, variant| Speech { who, key: key.into(), variant, engine: false };
-    let advisor = b.speak("faction_a", &say("advisor", "low_power", 1), &mixer).unwrap();
+    let say = |who: &str, key: &str, variant| Speech { who: who.into(), key: key.into(), variant, engine: false };
+    let advisor = b.speak("faction_a", &say("advisor", "low_power", 1), &mixer, 0.0).unwrap();
     let generic = setting::root().join("settings/generic");
     let decode = |f: &str| classic_render::platform::wav::decode(&std::fs::read(generic.join(f)).unwrap()).unwrap();
     let take = mixer.clip(advisor.sound.clip).seconds();
     assert_eq!(take, decode("audio/sfx/explode_large_1.wav").seconds(), "the second take for the second line");
     assert_eq!(advisor.sound.bus, Bus::Voice);
     // No voice for another faction, a line the pack didn't voice, or a variant past its takes.
-    assert!(b.speak("faction_b", &say("advisor", "low_power", 0), &mixer).is_none());
-    assert!(b.speak("faction_a", &say("advisor", "base_attacked", 0), &mixer).is_none());
-    assert!(b.speak("faction_a", &say("vehicle", "select", 2), &mixer).is_none());
+    assert!(b.speak("faction_b", &say("advisor", "low_power", 0), &mixer, 0.0).is_none());
+    assert!(b.speak("faction_a", &say("advisor", "base_attacked", 0), &mixer, 0.0).is_none());
+    assert!(b.speak("faction_a", &say("vehicle", "select", 2), &mixer, 0.0).is_none());
 
     // While the advisor speaks, units keep quiet; a second advisor line waits its turn too.
     assert_eq!(mixer.play(advisor.sound), Played::Started);
-    assert!(b.speak("faction_a", &say("vehicle", "select", 0), &mixer).is_none());
+    assert!(b.speak("faction_a", &say("vehicle", "select", 0), &mixer, 0.0).is_none());
     let mut out = vec![0.0; 2 * 4800];
     mixer.render(&mut out, 2);
+    assert!(b.speak("faction_a", &say("advisor", "low_power", 0), &mixer, 0.1).is_none(), "it waits");
+    assert_eq!(b.waiting().len(), 1);
     assert_eq!(mixer.play(advisor.sound), Played::Dropped, "one advisor line at a time");
 
     // The effects drop while anyone speaks, and come back after.
@@ -275,7 +277,10 @@ fn spoken_lines_play_the_take_the_screen_shows_and_no_reply_talks_over_the_advis
     mixer.stop_all();
     b.duck(&mut mixer);
     assert_eq!(mixer.bus_gain[Bus::Sfx as usize], level);
-    let reply = b.speak("faction_a", &say("vehicle", "select", 0), &mixer).unwrap();
+    // The waiting line has gone stale by now, so it is dropped rather than said.
+    assert!(b.next_line(&mixer, 10.0).is_none());
+    assert!(b.waiting().is_empty());
+    let reply = b.speak("faction_a", &say("vehicle", "select", 0), &mixer, 10.0).unwrap();
     assert_eq!(mixer.play(reply.sound), Played::Started, "once the advisor is done, units answer");
 }
 
@@ -311,7 +316,7 @@ fn the_feed_hands_what_it_said_to_the_sound_board() {
     let reply = hud.feed.reply.clone().unwrap();
     assert_eq!(["A.", "B."][said[0].variant], reply.text, "the voice says what the subtitle shows");
     let line = hud.feed.lines.iter().find(|l| l.id == "low_power").unwrap();
-    assert_eq!((said[1].who, said[1].key.as_str()), ("advisor", "low_power"));
+    assert_eq!((said[1].who.as_str(), said[1].key.as_str()), ("advisor", "low_power"));
     assert_eq!(["One", "Two"][said[1].variant], line.text);
 }
 
@@ -335,7 +340,8 @@ fn the_generic_voices_speak_every_engine_line_but_only_in_the_engines_words() {
         for voice in VOICES {
             for m in Moment::ALL {
                 let key = (f.id.clone(), voice.to_string(), m.id().to_string());
-                assert_eq!(b.voices.get(&key).map_or(0, Vec::len), engine.acks[&(voice, m)].len(), "{key:?}");
+                let lines = engine.acks[&(voice.to_string(), m)].len();
+                assert_eq!(b.voices.get(&key).map_or(0, Vec::len), lines, "{key:?}");
             }
         }
     }
@@ -344,9 +350,10 @@ fn the_generic_voices_speak_every_engine_line_but_only_in_the_engines_words() {
         assert!(provenance.contains(&format!("\"file\": \"{file}\"")), "{file} has no provenance line");
     }
     // The engine's words take the generic voices; a pack's own words don't.
-    let say = |engine| Speech { who: "advisor", key: "low_power".into(), variant: 0, engine };
-    assert!(b.speak("faction_a", &say(true), &mixer).is_some());
-    assert!(b.speak("faction_a", &say(false), &mixer).is_none());
+    let mut b = b;
+    let say = |engine| Speech { who: "advisor".into(), key: "low_power".into(), variant: 0, engine };
+    assert!(b.speak("faction_a", &say(true), &mixer, 0.0).is_some());
+    assert!(b.speak("faction_a", &say(false), &mixer, 0.0).is_none());
     // A pack with voices of its own replaces the generic cast whole.
     let own = voiced(&mut mixer);
     assert!(!own.engine_voices);
@@ -372,9 +379,11 @@ fn the_private_packs_voices_load_and_cover_their_lines_when_they_are_cloned_in()
         }
         // Every line the pack writes for a faction has a take, and every take speaks a line.
         for f in &factions {
+            let units: Vec<String> = pack.rules.entities.keys().cloned().collect();
             let lines = classic_render::lines::Lines::load(
                 &classic_render::platform::Files::Dir(dir.clone()),
                 &factions,
+                &units,
                 Some(f),
             );
             for (id, said) in &lines.advisor {
@@ -415,4 +424,189 @@ fn under_fog_a_player_hears_only_the_fights_they_can_see() {
     println!("player 0 heard {heard0:?}; player 1 heard {} cues", heard1.len());
     assert!(heard1.iter().any(|id| id == "sfx_cannon"), "the side that sees it hears the guns");
     assert!(!heard0.iter().any(|id| id.starts_with("sfx_")), "nothing from the shroud");
+}
+
+/// A pack in memory whose advisor voices four lines, each a generic sound of a known length.
+fn advisor_pack(mixer: &mut Mixer) -> SoundBoard {
+    let generic = setting::root().join("settings/generic");
+    let index = r#"{ "voices": { "faction_a": { "advisor": {
+        "unit_ready": ["audio/ui/select_1.wav"],
+        "low_power": ["audio/sfx/cannon_1.wav"],
+        "base_attacked": ["audio/sfx/explode_large_1.wav"],
+        "radar_online": ["audio/ui/order_1.wav"] } } } }"#;
+    let mut files = BTreeMap::new();
+    files.insert(classic_render::sound::VOICE_INDEX.to_string(), index.as_bytes().to_vec());
+    for f in classic_render::sound::voice_files_named(index) {
+        files.insert(f.clone(), std::fs::read(generic.join(&f)).unwrap());
+    }
+    let pack = classic_render::platform::Files::Memory { label: "advisor".into(), files };
+    SoundBoard::from_files(&[classic_render::platform::Files::Dir(generic), pack], 0, 1, mixer)
+}
+
+#[test]
+fn the_advisor_queues_lines_most_urgent_first_and_drops_stale_ones() {
+    use classic_render::lines::Speech;
+    let mut mixer = Mixer::new(48_000);
+    let mut b = advisor_pack(&mut mixer);
+    let say = |key: &str| Speech { who: "advisor".into(), key: key.into(), variant: 0, engine: false };
+    let first = b.speak("faction_a", &say("radar_online"), &mixer, 0.0).expect("nothing speaking: said at once");
+    mixer.play(first.sound);
+    // Three more while it speaks: only two may wait, so the least important goes.
+    for key in ["unit_ready", "low_power", "base_attacked"] {
+        assert!(b.speak("faction_a", &say(key), &mixer, 0.2).is_none(), "{key} waits");
+    }
+    println!("waiting: {:?}", b.waiting());
+    assert_eq!(b.waiting(), ["voice faction_a advisor.base_attacked", "voice faction_a advisor.low_power"]);
+    // Nothing comes out while the first line plays.
+    assert!(b.next_line(&mixer, 0.3).is_none());
+    mixer.stop_all();
+    let next = b.next_line(&mixer, 0.4).unwrap();
+    assert_eq!(next.id, "voice faction_a advisor.base_attacked", "the attack warning jumps ahead");
+    mixer.play(next.sound);
+    // The other waits past its time and is dropped unsaid.
+    mixer.stop_all();
+    assert!(b.next_line(&mixer, 3.5).is_none());
+    assert!(b.waiting().is_empty());
+    let t = Tables::builtin();
+    assert!(t.voices.priority("game_lost") > t.voices.priority("base_attacked"));
+    assert_eq!(t.voices.priority("repaired"), t.voices.default_priority);
+}
+
+#[test]
+fn a_unit_leaving_a_factory_is_heard_at_the_door_and_the_owner_hears_it_is_ready() {
+    use classic_sim::world::Event;
+    let mut game = game();
+    let mut mixer = Mixer::new(48_000);
+    let mut b = board(&mut mixer);
+    let heard = |game: &mut Game, b: &mut SoundBoard, factory: &str, unit: &str, owner: u32| {
+        let f = game.kind(factory).unwrap();
+        let u = game.kind(unit).unwrap();
+        let fid = game.spawn(f, owner, 20, 20);
+        let uid = game.spawn(u, owner, 21, 22);
+        game.events.push(Event::UnitBuilt { tick: game.state.tick, factory: fid, entity: uid, kind: u });
+        let mut ids: Vec<String> = b.after_step(game, &everything()).into_iter().map(|c| c.id).collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(
+        heard(&mut game, &mut b, "heavy_factory", "battle_tank", 0),
+        ["sfx_exit_heavy_factory", "ui_unit_ready"]
+    );
+    assert_eq!(heard(&mut game, &mut b, "barracks", "infantry", 0), ["sfx_exit_barracks", "ui_unit_ready"]);
+    // Someone else's factory: the door, but not the ready blip.
+    assert_eq!(heard(&mut game, &mut b, "light_factory", "quad", 1), ["sfx_exit_light_factory"]);
+    assert_eq!(heard(&mut game, &mut b, "air_factory", "gunship", 1), ["sfx_exit_air_factory"]);
+}
+
+#[test]
+fn moving_vehicles_and_working_harvesters_keep_their_loops_going_and_let_them_go() {
+    use classic_sim::CommandOrder;
+    let mut game = game();
+    let mut mixer = Mixer::new(48_000);
+    let mut b = board(&mut mixer);
+    let tank = game.kind("battle_tank").unwrap();
+    let quad = game.kind("quad").unwrap();
+    let tanks: Vec<u32> = (0..3).map(|i| game.spawn(tank, 0, 2 + i, 0)).collect();
+    let q = game.spawn(quad, 0, 2, 19);
+    game.order(0, &tanks, CommandOrder::Move { x: 28, y: 0 });
+    game.order(0, &[q], CommandOrder::Move { x: 28, y: 19 });
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let mut most = 0;
+    let mut buf = vec![0.0f32; 2 * 48_000 / 15];
+    for _ in 0..1200 {
+        game.step(1);
+        b.update_loops(&game, &everything(), &mut mixer);
+        mixer.render(&mut buf, 2);
+        for id in b.loops_playing() {
+            *seen.entry(id.to_string()).or_default() += 1;
+        }
+        most = most.max(mixer.loops());
+    }
+    println!("ticks each loop played: {seen:?}, most at once {most}");
+    for id in ["loop_engine_heavy", "loop_engine_light", "loop_harvest"] {
+        assert!(seen.contains_key(id), "no {id}");
+    }
+    // One loop per sound however many units need it.
+    assert!(most <= 5);
+    // Everyone has long arrived: the engines are off, and pausing lets the rest go.
+    assert!(!b.loops_playing().contains(&"loop_engine_light"));
+    b.stop_loops(&mut mixer);
+    for _ in 0..10 {
+        mixer.render(&mut buf, 2);
+    }
+    assert_eq!(mixer.loops(), 0);
+}
+
+#[test]
+fn a_loop_rule_must_name_a_loop() {
+    let sounds = include_str!("../../../data/audio/sounds.json");
+    let events = include_str!("../../../data/audio/events.json");
+    let bad = events.replace(r#""sound": "loop_harvest""#, r#""sound": "sfx_cannon""#);
+    assert!(Tables::parse(sounds, &bad).unwrap_err().contains("not a loop"));
+    let bad = events.replace(r#""sound": "ui_unit_ready""#, r#""sound": "loop_harvest""#);
+    assert!(Tables::parse(sounds, &bad).unwrap_err().contains("is a loop"));
+}
+
+#[test]
+fn the_music_follows_the_fighting() {
+    use classic_render::music::{MusicBoard, Pool};
+    use classic_render::platform::Files;
+    let generic = setting::root().join("settings/generic");
+    let mut mixer = Mixer::new(48_000);
+    let mut m = MusicBoard::from_files(&[Files::Dir(generic)], 0, 1, &mut mixer);
+    assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+    for pool in Pool::ALL {
+        assert!(m.pieces.iter().any(|p| p.pool == pool), "no {} music", pool.id());
+    }
+    let pool_of = |m: &MusicBoard| m.pieces.iter().find(|p| Some(p.id.as_str()) == m.playing()).map(|p| p.pool);
+    let mut buf = vec![0.0f32; 2 * 48_000 / 15];
+    m.title(&mut mixer);
+    assert_eq!(pool_of(&m), Some(Pool::Menu));
+    mixer.render(&mut buf, 2);
+    assert!(buf.iter().any(|&s| s != 0.0), "the title music plays");
+
+    let mut game = game();
+    m.new_game(&game);
+    battle(&mut game, 6);
+    let mut moods = vec![];
+    for _ in 0..1500 {
+        game.step(1);
+        m.after_step(&game, &mut mixer);
+        mixer.render(&mut buf, 2);
+        if moods.last() != Some(&m.mood) {
+            moods.push(m.mood);
+        }
+    }
+    println!(
+        "moods {:?}, tension {:.1}, playing {:?}",
+        moods.iter().map(|p| p.id()).collect::<Vec<_>>(),
+        m.tension,
+        m.playing()
+    );
+    assert_eq!(moods, [Pool::Calm, Pool::Battle, Pool::Calm], "into battle with the fight, and calm again after");
+    assert_eq!(pool_of(&m), Some(Pool::Calm));
+
+    m.over(true, &mut mixer);
+    assert_eq!(pool_of(&m), Some(Pool::Won));
+    let stinger = m.playing().map(String::from);
+    for _ in 0..300 {
+        mixer.render(&mut buf, 2);
+        m.over(true, &mut mixer);
+    }
+    assert_eq!(m.playing().map(String::from), stinger, "the stinger plays once");
+    assert_eq!(mixer.music(), None, "and then it is quiet");
+}
+
+#[test]
+fn the_private_packs_music_loads_when_they_are_cloned_in() {
+    use classic_render::music::MusicBoard;
+    use classic_render::platform::Files;
+    let generic = setting::root().join("settings/generic");
+    for dir in setting::private_packs() {
+        let mut mixer = Mixer::new(48_000);
+        let m = MusicBoard::from_files(&[Files::Dir(generic.clone()), Files::Dir(dir.clone())], 0, 1, &mut mixer);
+        assert!(m.warnings.is_empty(), "{}: {:?}", dir.display(), m.warnings);
+        let ids: Vec<&str> = m.pieces.iter().map(|p| p.id.as_str()).collect();
+        println!("{}: {ids:?}", dir.display());
+    }
 }

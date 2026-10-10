@@ -1,5 +1,5 @@
 {
-  "about": "The engine's own words for what units say back when the local player selects them or gives an order, by voice set (infantry, or vehicle for everything else) and moment (select, move, attack, cant for an order refused). Text for now, shown as a subtitle; voices will play the same lines later. A setting pack replaces any of them in its own `lines.json`, and can also give the advisor its own words for the feed's message ids (`data/ui/messages.json`) and for any `planned` ids below (none just now). Our own plain phrases, kept short enough to say in under a second. How the file is read: `crates/classic-render/src/lines.rs`.",
+  "about": "The engine's own words for what units say back when the local player selects them or gives an order, by voice set (infantry, aircraft, or vehicle for everything else; a pack may also give one unit a set of its own, named by its generic id) and moment (select, move, attack, cant for an order refused). Text for now, shown as a subtitle; voices will play the same lines later. A setting pack replaces any of them in its own `lines.json`, and can also give the advisor its own words for the feed's message ids (`data/ui/messages.json`) and for any `planned` ids below (none just now). Our own plain phrases, kept short enough to say in under a second. How the file is read: `crates/classic-render/src/lines.rs`.",
   "acks": {
     "infantry": {
       "select": ["Ready.", "Standing by.", "Orders?", "Here."],
@@ -12,6 +12,12 @@
       "move": ["Rolling.", "Under way.", "Driving.", "On the move."],
       "attack": ["Target locked.", "Firing.", "Gunner ready.", "Weapons hot."],
       "cant": ["Can't reach it.", "Blocked."]
+    },
+    "aircraft": {
+      "select": ["Pilot here.", "In the air.", "Circling.", "Awaiting a heading."],
+      "move": ["Heading out.", "On my way.", "Course set.", "Flying there."],
+      "attack": ["Starting my run.", "Going in.", "Target sighted.", "Diving."],
+      "cant": ["Can't set down there.", "No way in."]
     }
   },
   "planned": []

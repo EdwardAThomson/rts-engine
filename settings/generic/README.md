@@ -49,8 +49,15 @@ change the recipe and rerun it. A test fails when the files and the recipes disa
 
 - `audio/sounds.json` lists the files for each sound id; an id with several takes picks one at random each time.
 - `audio/sfx/` holds weapons (cannon, rockets, machine guns and rifles), impacts, explosions, a soldier falling, the
-  hazard's sounds and the building thud; `audio/ui/` holds interface sounds.
+  hazard's sounds, the building thud and a unit leaving each kind of factory; `audio/ui/` holds interface sounds.
+- `audio/loops/` holds the loops played while units work: light, heavy and aircraft engines, a harvester mining and
+  one unloading. Each is crossfaded end into start so it goes round without a click.
 - `audio/provenance.jsonl` records each file's source.
+- `audio/music/` and `audio/music.json` are the placeholder music, composed and synthesised by
+  `crates/classic-tools/src/music.rs` (written by the same `cargo run --bin sounds`): a menu piece, two calm, two
+  battle, and won and lost stingers, kept dark (no bare square waves, a low-pass over the mix) and built to rise
+  (battle phrases that start sparse and end in a roll and a riser), in 4-bit IMA ADPCM WAV (a quarter of PCM's size). `audio/music/provenance.jsonl`
+  records each. A pack with its own `audio/music.json` replaces this music whole.
 
 Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack
 supplies its own files the same way, in its own `audio/sounds.json`; ids it leaves out play these.
@@ -62,4 +69,4 @@ units' replies (`data/ui/lines.json`), with one cast for every faction. They onl
 engine's words, and a pack with voices of its own replaces them whole. `audio/voices/provenance.jsonl` records each
 take and its text. After changing those lines, rerun the script (see its header).
 
-Not made yet: music and looping sounds.
+Not made yet: real recordings of any of it.

@@ -1678,8 +1678,8 @@ source = "git+https://github.com/EdwardAThomson/rts-core?rev=da80e8730d22dcd6f34
 
 [[package]]
 name = "rts-platform"
-version = "0.1.0"
-source = "git+https://github.com/EdwardAThomson/rts-core?rev=c7844f344840e2f8cf649ce5780e0a415e283fe6#c7844f344840e2f8cf649ce5780e0a415e283fe6"
+version = "0.2.0"
+source = "git+https://github.com/EdwardAThomson/rts-core?rev=eca48d5f6382eaac383820d55e7d2f4749164ca5#eca48d5f6382eaac383820d55e7d2f4749164ca5"
 dependencies = [
  "cpal",
  "js-sys",

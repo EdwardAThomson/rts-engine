@@ -1,5 +1,5 @@
 {
-  "about": "Which game events play which sound id. For each event the first rule whose conditions all hold plays; no rule, no sound. Conditions: `warhead` or `weapon` (the generic id fired or bursting), `building` (true or false: what was destroyed or placed), `armour` (the armour class of what was destroyed), `local` (true: only for the player at this screen) and `power` (`short`: the player just ran short of power; `restored`: they just stopped being short). `silent` lists the events that play nothing on purpose, so a new event can't be forgotten: every event is in a rule or in `silent`, and a test checks it.",
+  "about": "Which game events play which sound id. For each event the first rule whose conditions all hold plays; no rule, no sound. Conditions: `warhead` or `weapon` (the generic id fired or bursting), `building` (true or false: what was destroyed or placed), `armour` (the armour class of what was destroyed), `local` (true: only for the player at this screen), `power` (`short`: the player just ran short of power; `restored`: they just stopped being short) and `factory` (the generic id of the factory a unit came out of). A rule with `also` plays as well as the next rule that holds rather than instead of it. `silent` lists the events that play nothing on purpose, so a new event can't be forgotten: every event is in a rule or in `silent`, and a test checks it. `loops` are not events: each says which loop plays while a unit the local player can see is `moving` (on the ground), `flying`, `mining` or `unloading` (harvesters), optionally only for one `armour`; the first that holds for a unit is its loop.",
   "rules": [
     { "event": "fired", "warhead": "shell", "sound": "sfx_cannon" },
     { "event": "fired", "warhead": "rocket", "sound": "sfx_rocket" },
@@ -19,6 +19,11 @@
     { "event": "deployed", "local": true, "sound": "sfx_build" },
     { "event": "deploy_refused", "local": true, "sound": "ui_error" },
     { "event": "building_ready", "local": true, "sound": "ui_ready" },
+    { "event": "unit_built", "building": false, "factory": "barracks", "also": true, "sound": "sfx_exit_barracks" },
+    { "event": "unit_built", "building": false, "factory": "barracks_heavy", "also": true, "sound": "sfx_exit_barracks" },
+    { "event": "unit_built", "building": false, "factory": "light_factory", "also": true, "sound": "sfx_exit_light_factory" },
+    { "event": "unit_built", "building": false, "factory": "heavy_factory", "also": true, "sound": "sfx_exit_heavy_factory" },
+    { "event": "unit_built", "building": false, "factory": "air_factory", "also": true, "sound": "sfx_exit_air_factory" },
     { "event": "unit_built", "local": true, "sound": "ui_unit_ready" },
     { "event": "placement_rejected", "local": true, "sound": "ui_error" },
     { "event": "production_rejected", "local": true, "sound": "ui_error" },
@@ -37,6 +42,13 @@
     { "event": "power_missile_launched", "sound": "sfx_rocket" },
     { "event": "power_missile_impact", "sound": "sfx_explode_large" },
     { "event": "superpower_refused", "local": true, "sound": "ui_error" }
+  ],
+  "loops": [
+    { "while": "flying", "sound": "loop_engine_air" },
+    { "while": "mining", "sound": "loop_harvest" },
+    { "while": "unloading", "sound": "loop_unload" },
+    { "while": "moving", "armour": "heavy", "sound": "loop_engine_heavy" },
+    { "while": "moving", "armour": "light", "sound": "loop_engine_light" }
   ],
   "silent": [
     "harvester_idle",

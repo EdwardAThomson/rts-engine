@@ -49,6 +49,7 @@ use classic_render::art::{self, Art};
 use classic_render::hud::{self, Button, Click, RAIL_W};
 use classic_render::lines::Moment;
 use classic_render::menu::{Action, Menu, Screen};
+use classic_render::music::MusicBoard;
 use classic_render::platform::{Files, Gpu, Instant, Mixer, Rect, SpriteBatch};
 use classic_render::prefs::{Bind, Prefs};
 use classic_render::save::{Save, SaveInfo, map_hash};
@@ -173,6 +174,9 @@ struct App {
     frames: u64,
     max_frames: Option<u64>,
     sound: SoundBoard,
+    music: MusicBoard,
+    /// When the player started, for the advisor's queue of lines.
+    born: Instant,
     /// Shared with the sound card's thread, which pulls the mix from it.
     mixer: Arc<Mutex<Mixer>>,
     #[cfg(feature = "device")]
@@ -212,6 +216,10 @@ impl App {
         let mut sound = SoundBoard::from_files(sound_files, player, seed as u64, &mut mixer);
         for w in &sound.warnings {
             say(&format!("sound: {w}"));
+        }
+        let music = MusicBoard::from_files(sound_files, player, seed as u64, &mut mixer);
+        for w in &music.warnings {
+            say(&format!("music: {w}"));
         }
         let faction = arg("faction").and_then(|s| s.parse().ok()).unwrap_or(0) % pack.factions.len().max(1);
         give_factions(&mut game, &pack, player, faction);
@@ -278,6 +286,8 @@ impl App {
             frames: 0,
             max_frames: arg("frames").and_then(|s| s.parse().ok()),
             sound,
+            music,
+            born: Instant::now(),
             mixer: Arc::new(Mutex::new(mixer)),
             #[cfg(feature = "device")]
             speaker: None,
@@ -311,6 +321,10 @@ impl App {
         self.hud = Hud::new(&self.pack, &self.pack_files, &self.game, self.player, self.menu.faction);
         self.hud.scale = scale;
         self.scene = Scene::for_player(self.player);
+        self.music.new_game(&self.game);
+        if let Ok(mut m) = self.mixer.lock() {
+            self.sound.stop_loops(&mut m);
+        }
         self.owed = Duration::ZERO;
         self.paused = false;
         self.centre_on_base();
@@ -583,12 +597,18 @@ impl App {
     fn speak(&mut self) {
         let said = std::mem::take(&mut self.hud.feed.spoken);
         let Some(faction) = self.pack.factions.get(self.menu.faction).map(|f| f.id.clone()) else { return };
+        let now = self.seconds();
         let Ok(mut m) = self.mixer.lock() else { return };
         for s in &said {
-            if let Some(c) = self.sound.speak(&faction, s, &m) {
+            if let Some(c) = self.sound.speak(&faction, s, &m, now) {
                 m.play(c.sound);
             }
         }
+    }
+
+    /// Seconds since the player started, the advisor queue's clock.
+    fn seconds(&self) -> f64 {
+        (Instant::now() - self.born).as_secs_f64()
     }
 
     fn ui_sound(&mut self, id: &str) {
@@ -715,8 +735,21 @@ impl App {
 
     /// Advance the game by the ticks owed since the last frame, at most a few at once so a stall doesn't snowball.
     fn advance(&mut self) -> f32 {
+        let seconds = self.seconds();
         if let Ok(mut m) = self.mixer.lock() {
+            // The advisor's next line, once the last has finished.
+            if let Some(c) = self.sound.next_line(&m, seconds) {
+                m.play(c.sound);
+            }
             self.sound.duck(&mut m);
+            match self.menu.screen {
+                Screen::Title => self.music.title(&mut m),
+                Screen::Over { won } => self.music.over(won, &mut m),
+                _ => {}
+            }
+            if self.paused || !self.menu.playing() {
+                self.sound.stop_loops(&mut m);
+            }
         }
         let now = Instant::now();
         let dt = now - self.last;
@@ -739,6 +772,10 @@ impl App {
             self.speak();
             let cues = self.sound.after_step(&self.game, &listener);
             self.hear(cues);
+            if let Ok(mut m) = self.mixer.lock() {
+                self.sound.update_loops(&self.game, &listener, &mut m);
+                self.music.after_step(&self.game, &mut m);
+            }
             self.menu.after_step(&self.game, self.player);
             if let Screen::Over { won } = self.menu.screen {
                 self.hud.feed.over(&self.game, won);

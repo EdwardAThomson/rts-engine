@@ -1,10 +1,11 @@
-//! The generic pack's placeholder sounds are synthesised from code (`crates/classic-tools/src/sound.rs`). This
-//! keeps the committed files equal to what the code makes, and every one of them listed in the provenance file.
+//! The generic pack's placeholder sounds and music are synthesised from code (`crates/classic-tools/src/sound.rs`
+//! and `music.rs`). This keeps the committed files equal to what the code makes, and every one of them listed in
+//! the provenance files.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use classic_tools::{setting, sound};
+use classic_tools::{music, setting, sound};
 
 fn files_under(dir: &Path, out: &mut BTreeSet<PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap().flatten() {
@@ -22,7 +23,7 @@ fn committed_sounds_match_the_recipes() {
     let pack = setting::root().join("settings/generic");
     let mut stale = Vec::new();
     let mut expected = BTreeSet::new();
-    for f in sound::generate() {
+    for f in sound::generate().into_iter().chain(music::generate()) {
         let path = pack.join(&f.path);
         if std::fs::read(&path).ok().as_deref() != Some(&f.bytes[..]) {
             stale.push(f.path.clone());
@@ -46,5 +47,19 @@ fn every_sound_file_has_provenance() {
     let provenance = std::fs::read_to_string(pack.join("audio/provenance.jsonl")).unwrap();
     for f in sound::generate().iter().filter(|f| f.path.ends_with(".wav")) {
         assert!(provenance.contains(&format!("\"file\": \"{}\"", f.path)), "{} has no provenance line", f.path);
+    }
+}
+
+#[test]
+fn every_music_file_has_provenance_and_reads_back() {
+    let pack = setting::root().join("settings/generic");
+    let provenance = std::fs::read_to_string(pack.join("audio/music/provenance.jsonl")).unwrap();
+    for f in music::generate().iter().filter(|f| f.path.ends_with(".wav")) {
+        assert!(provenance.contains(&format!("\"file\": \"{}\"", f.path)), "{} has no provenance line", f.path);
+        // IMA ADPCM, mono, at the pack's rate: about 11 kB a second.
+        assert_eq!(&f.bytes[20..22], &[0x11, 0], "{}", f.path);
+        let seconds = (f.bytes.len() - 60) as f64 / 11_025.0;
+        println!("{}: {seconds:.1} s, {} kB", f.path, f.bytes.len() / 1024);
+        assert!((3.0..60.0).contains(&seconds), "{}: {seconds} s", f.path);
     }
 }
