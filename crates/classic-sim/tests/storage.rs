@@ -108,7 +108,7 @@ fn a_cancelled_entry_is_refunded_above_the_cap() {
     g.state.players[0].credits = 1000;
     let (yard, silo) = (yard(&g, 0), kind(&g, "silo"));
     let y = g.state.entities.iter_mut().find(|e| e.id == yard).unwrap();
-    y.queue.push(QueueEntry { item: silo, state: EntryState::Building, progress: 0, paid: 100 });
+    y.queue.push(QueueEntry { state: EntryState::Building, paid: 100, ..QueueEntry::new(silo) });
     g.order(0, &[yard], CommandOrder::Cancel { kind: silo });
     g.step(1);
     assert_eq!(g.state.players[0].credits, 1100);
@@ -119,7 +119,7 @@ fn a_silo_waiting_to_be_placed_adds_no_storage() {
     let mut g = game();
     let (yard, silo) = (yard(&g, 0), kind(&g, "silo"));
     let y = g.state.entities.iter_mut().find(|e| e.id == yard).unwrap();
-    y.queue.push(QueueEntry { item: silo, state: EntryState::Ready, progress: 0, paid: 150 });
+    y.queue.push(QueueEntry { state: EntryState::Ready, paid: 150, ..QueueEntry::new(silo) });
     g.step(1);
     assert_eq!(g.storage(0), 1000);
 }

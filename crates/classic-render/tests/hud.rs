@@ -151,6 +151,71 @@ fn ctrl_click_holds_and_resumes_and_the_rail_shows_the_primary_factorys_queue() 
 }
 
 #[test]
+fn the_factory_tab_offers_its_upgrade_and_shows_what_it_unlocks_locked_until_done() {
+    let (mut game, mut hud) = game();
+    let v = view();
+    game.state.players[0].credits = 10_000;
+    let heavy = game.kind("heavy_factory").unwrap();
+    let t = game.state.entities.iter().find(|e| e.owner == 0 && game.rules.kind(e.kind).id == "construction_yard");
+    let t = t.unwrap().tile();
+    let f = game.spawn(heavy, 0, t.x + 4, t.y + 4);
+    game.step(1);
+    let tab = hud.layout(&game, SCREEN).tabs.iter().find(|t| t.factory == heavy).expect("a heavy factory tab").rect;
+    hud.click(&mut game, &v, centre(tab), Button::Left, false);
+    let l = hud.layout(&game, SCREEN);
+    let up = *l.icons.iter().find(|i| i.upgrade).expect("an upgrade icon");
+    assert_eq!(up.item, heavy);
+    assert_eq!(l.icons.last(), Some(&up), "after the items");
+    let siege = icon(&game, &hud, "siege_tank");
+    assert_eq!(siege.status.level, Some(1), "shown, locked until the upgrade");
+    assert!(siege.status.locked());
+    // A left click on a locked item does nothing.
+    hud.click(&mut game, &v, centre(siege.rect), Button::Left, false);
+    game.step(1);
+    assert_eq!(queued(&game, game.kind("siege_tank").unwrap()), 0);
+
+    // Queue the upgrade; the queue strip shows it, and a click there takes it back with a refund.
+    let start = game.state.players[0].credits;
+    hud.click(&mut game, &v, centre(up.rect), Button::Left, false);
+    game.step(30);
+    assert!(game.state.entity(f).unwrap().queue[0].upgrade);
+    assert!(matches!(
+        hud.layout(&game, SCREEN).icons.iter().find(|i| i.upgrade).unwrap().status.head,
+        Some((EntryState::Building, _))
+    ));
+    let slot = hud.layout(&game, SCREEN).queue[0];
+    assert_eq!(slot.0, heavy);
+    hud.click(&mut game, &v, centre(slot.1), Button::Left, false);
+    game.step(1);
+    assert!(game.state.entity(f).unwrap().queue.is_empty());
+    assert_eq!(game.state.players[0].credits, start);
+
+    // Right click on the icon takes one back too; left again, and let it finish.
+    hud.click(&mut game, &v, centre(up.rect), Button::Left, false);
+    game.step(1);
+    hud.click(&mut game, &v, centre(up.rect), Button::Right, false);
+    game.step(1);
+    assert!(game.state.entity(f).unwrap().queue.is_empty());
+    hud.click(&mut game, &v, centre(up.rect), Button::Left, false);
+    game.step(2000);
+    assert_eq!(game.state.entity(f).unwrap().level, 1);
+    let l = hud.layout(&game, SCREEN);
+    assert!(l.icons.iter().all(|i| !i.upgrade), "nothing more to upgrade to");
+    assert!(!icon(&game, &hud, "siege_tank").status.locked());
+
+    // With a tech level too low for an upgrade, a fresh factory offers none and hides what it would unlock.
+    game.set_tech_level(Some(4));
+    game.spawn(heavy, 0, t.x + 8, t.y + 4);
+    let second = game.state.entities.iter().rev().find(|e| e.kind == heavy).unwrap().id;
+    game.order(0, &[second], classic_sim::CommandOrder::Primary);
+    game.step(1);
+    hud.tab = Some(heavy);
+    let l = hud.layout(&game, SCREEN);
+    assert!(l.icons.iter().all(|i| !i.upgrade));
+    assert!(l.icons.iter().all(|i| game.rules.kind(i.item).id != "siege_tank"), "tech 4 has no siege tanks");
+}
+
+#[test]
 fn the_starport_tab_is_a_market_that_orders_and_sends() {
     let (mut game, mut hud) = game();
     let v = view();

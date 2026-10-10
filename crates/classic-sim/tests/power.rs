@@ -30,7 +30,7 @@ fn game_with(rules: Option<&Rules>) -> Game {
 fn place(g: &mut Game, player: u32, id: &str, x: i32, y: i32) -> Vec<(u32, i64, i64, i64)> {
     let (yard, kind) = (g.kind("construction_yard").unwrap(), g.kind(id).unwrap());
     let at = g.state.entities.iter_mut().find(|e| e.owner == player && e.kind == yard).unwrap();
-    at.queue.push(QueueEntry { item: kind, state: EntryState::Ready, progress: 0, paid: 0 });
+    at.queue.push(QueueEntry { state: EntryState::Ready, ..QueueEntry::new(kind) });
     g.order(player, &[], CommandOrder::Place { kind, x, y });
     let from = g.events.len();
     g.step(1);

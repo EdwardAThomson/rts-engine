@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 63] = [
+pub const EVENT_NAMES: [&str; 64] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -86,6 +86,7 @@ pub const EVENT_NAMES: [&str; 63] = [
     "production_held",
     "production_resumed",
     "primary_set",
+    "upgrade_completed",
     "slab_laid",
     "bloom_seeded",
     "bloom_burst",
@@ -463,6 +464,9 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         }
         Event::Decayed { entity, owner, .. } => {
             Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
+        }
+        Event::UpgradeCompleted { factory, .. } => {
+            Facts { owner: owner_of(factory), building: Some(true), at: centre_of(factory), ..none }
         }
         Event::PrimarySet { entity, owner, .. } => {
             Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }

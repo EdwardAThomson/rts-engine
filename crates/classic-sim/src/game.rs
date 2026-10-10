@@ -102,6 +102,7 @@ impl Game {
             strikes: Vec::new(),
             slabs: None,
             blooms: blooms::start(&map, &rules),
+            tech_level: None,
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in
@@ -164,6 +165,12 @@ impl Game {
         }
     }
 
+    /// Set the game's tech level (1 to 8; a mission's, or the skirmish host's choice), which limits what can be built
+    /// and how far buildings can be upgraded; `None` limits nothing. Call it before the first tick.
+    pub fn set_tech_level(&mut self, level: Option<u32>) {
+        self.state.tech_level = level.map(|t| t.clamp(1, 8));
+    }
+
     /// Advance `n` ticks.
     pub fn step(&mut self, n: u32) {
         for _ in 0..n {
@@ -221,6 +228,11 @@ impl Game {
     /// A player's storage cap now: the most credits deliveries can bring them to.
     pub fn storage(&self, player: u32) -> i64 {
         storage::cap(&self.state, &self.rules, player)
+    }
+
+    /// The highest level a building of `kind` can be upgraded to in this game.
+    pub fn level_cap(&self, kind: Kind) -> u32 {
+        production::level_cap(&self.state, &self.rules, kind)
     }
 
     /// Whether `player` may order `kind` built now. Changes nothing.
