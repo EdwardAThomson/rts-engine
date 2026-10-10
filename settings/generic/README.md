@@ -55,7 +55,8 @@ change the recipe and rerun it. A test fails when the files and the recipes disa
 - `audio/provenance.jsonl` records each file's source.
 - `audio/music/` and `audio/music.json` are the placeholder music, composed and synthesised by
   `crates/classic-tools/src/music.rs` (written by the same `cargo run --bin sounds`): a menu piece, two calm, two
-  battle, and won and lost stingers, in 4-bit IMA ADPCM WAV (a quarter of PCM's size). `audio/music/provenance.jsonl`
+  battle, and won and lost stingers, kept dark (no bare square waves, a low-pass over the mix) and built to rise
+  (battle phrases that start sparse and end in a roll and a riser), in 4-bit IMA ADPCM WAV (a quarter of PCM's size). `audio/music/provenance.jsonl`
   records each. A pack with its own `audio/music.json` replaces this music whole.
 
 Which events play which id, and each id's bus, level and limits, are the engine's (`data/audio/`). Another pack

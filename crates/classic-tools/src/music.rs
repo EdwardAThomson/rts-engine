@@ -6,8 +6,12 @@
 //! committed files still match.
 //!
 //! Each piece is a few bars of chords in one key, played by a handful of simple instruments: a kick, a snare, hats,
-//! a metallic clank, a saw bass, a soft pad and a plucked arpeggio. Pieces for a pool loop seamlessly (notes that
-//! ring past the end carry over to the start); the end stingers don't. The files are 4-bit IMA ADPCM, a quarter of
+//! toms, a soft metallic ring, a filtered saw bass, a dark pad, a muted pluck, a lead and a noise riser. Everything
+//! is kept dark: the tones are filtered saws and sines with no bare square waves, and the whole mix goes through a
+//! gentle low-pass. The music builds: each battle phrase starts sparse, adds drums and opens its filters bar by bar,
+//! and ends in a snare roll and a riser that land on the next phrase, the last phrase climbing to the dominant so the
+//! loop's start resolves it; the calm pieces swell and settle over their length, with a quiet heartbeat at the top.
+//! Pieces for a pool loop seamlessly (notes that ring past the end carry over to the start); the end stingers don't. The files are 4-bit IMA ADPCM, a quarter of
 //! the size of PCM, which the engine plays without decoding them up front.
 //!
 //! As in `sound`, the synth uses only adding, multiplying and dividing, so every machine writes the same bytes.
@@ -51,27 +55,33 @@ enum Voice {
     Kick,
     Snare,
     Hat,
-    Clank,
+    Tom,
+    Metal,
     Bass,
     Pad,
     Pluck,
     Bell,
+    Lead,
+    Riser,
 }
 
-/// One note: when it starts (in samples), how long it is held, its pitch and how hard it is played.
+/// One note: when it starts (in samples), how long it is held, its pitch, how hard it is played, and how open the
+/// filters are where it falls in the piece (0 dark to 1 bright).
 struct Note {
     at: usize,
     held: usize,
     key: i32,
     voice: Voice,
     level: f64,
+    tone: f64,
 }
 
 /// A chord as semitones above the key's root (the minor scale's degrees), and the bass note's.
 type Chord = [i32; 3];
 
 /// One piece: its file name, pool, tempo, bars, key (a MIDI note number for the root), chords (one per bar, in
-/// turn), how busy it is, and whether it loops.
+/// turn), the chords of a battle piece's last phrase (which climb back to the start), how busy it is, and whether it
+/// loops.
 struct Piece {
     id: &'static str,
     pool: &'static str,
@@ -79,6 +89,7 @@ struct Piece {
     bars: usize,
     root: i32,
     chords: &'static [Chord],
+    climb: &'static [Chord],
     style: Style,
     loops: bool,
 }
@@ -91,7 +102,7 @@ enum Style {
     Calm,
     /// A pad, a plucked arpeggio and light hats.
     CalmPulse,
-    /// Driving bass, full drums, metal, stabs.
+    /// Driving bass and drums in eight-bar phrases that build.
     Battle,
     /// The end: one rising chord.
     Won,
@@ -106,6 +117,10 @@ const V: Chord = [7, 10, 14];
 const III: Chord = [3, 7, 10];
 const VI: Chord = [8, 12, 15];
 const VII: Chord = [10, 14, 17];
+/// The major dominant (from the harmonic minor), which pulls back to i.
+const VMAJ: Chord = [7, 11, 14];
+/// A battle phrase is eight bars.
+const PHRASE: usize = 8;
 
 const PIECES: &[Piece] = &[
     Piece {
@@ -115,6 +130,7 @@ const PIECES: &[Piece] = &[
         bars: 16,
         root: 57,
         chords: &[I, VI, III, VII],
+        climb: &[],
         style: Style::Menu,
         loops: true,
     },
@@ -125,6 +141,7 @@ const PIECES: &[Piece] = &[
         bars: 16,
         root: 50,
         chords: &[I, IV, VI, V],
+        climb: &[],
         style: Style::Calm,
         loops: true,
     },
@@ -135,6 +152,7 @@ const PIECES: &[Piece] = &[
         bars: 16,
         root: 52,
         chords: &[I, VII, VI, VII],
+        climb: &[],
         style: Style::CalmPulse,
         loops: true,
     },
@@ -145,6 +163,7 @@ const PIECES: &[Piece] = &[
         bars: 24,
         root: 52,
         chords: &[I, I, VI, VII],
+        climb: &[VI, VII, IV, VMAJ],
         style: Style::Battle,
         loops: true,
     },
@@ -155,6 +174,7 @@ const PIECES: &[Piece] = &[
         bars: 24,
         root: 48,
         chords: &[I, VI, VII, V],
+        climb: &[IV, IV, VI, VMAJ],
         style: Style::Battle,
         loops: true,
     },
@@ -165,6 +185,7 @@ const PIECES: &[Piece] = &[
         bars: 3,
         root: 48,
         chords: &[VI, VII, I],
+        climb: &[],
         style: Style::Won,
         loops: false,
     },
@@ -175,24 +196,41 @@ const PIECES: &[Piece] = &[
         bars: 3,
         root: 45,
         chords: &[I, IV, I],
+        climb: &[],
         style: Style::Lost,
         loops: false,
     },
 ];
+
+/// How open the filters are at `bar` (0 dark to 1 bright): a battle phrase opens bar by bar, a calm loop swells to
+/// its middle and settles back by its end, so it joins up.
+fn tone(p: &Piece, bar: usize) -> f64 {
+    match p.style {
+        Style::Battle => 0.2 + 0.8 * (bar % PHRASE) as f64 / (PHRASE - 1) as f64,
+        Style::Menu | Style::Calm | Style::CalmPulse => {
+            let half = (p.bars / 2).max(1) as f64;
+            let x = bar as f64 / half;
+            0.15 + 0.6 * if x < 1.0 { x } else { 2.0 - x }
+        }
+        Style::Won | Style::Lost => 0.5,
+    }
+}
 
 /// The notes of `p`, with the length of a sixteenth note in samples.
 fn score(p: &Piece) -> (Vec<Note>, usize) {
     let step = (RATE as f64 * 60.0 / p.bpm / 4.0) as usize;
     let mut notes = Vec::new();
     let mut add = |bar: usize, s: usize, held: usize, key: i32, voice: Voice, level: f64| {
-        notes.push(Note { at: (bar * 16 + s) * step, held: held * step, key, voice, level });
+        notes.push(Note { at: (bar * 16 + s) * step, held: held * step, key, voice, level, tone: tone(p, bar) });
     };
     for bar in 0..p.bars {
-        let chord = p.chords[bar % p.chords.len()];
+        let last = p.style == Style::Battle && !p.climb.is_empty() && bar + PHRASE >= p.bars;
+        let chord = if last { p.climb[bar % p.climb.len()] } else { p.chords[bar % p.chords.len()] };
         let r = p.root;
-        // Every fourth bar the line turns: a fill, or the chord's top note raised.
-        let turn = bar % 4 == 3;
         let intro = bar < 2 && p.loops;
+        // Where the piece is in its swell (calm) or phrase (battle).
+        let top = p.loops && (p.bars / 2).abs_diff(bar) <= 2;
+        let pb = bar % PHRASE;
         match p.style {
             Style::Menu => {
                 for &c in &chord {
@@ -202,13 +240,13 @@ fn score(p: &Piece) -> (Vec<Note>, usize) {
                 add(bar, 8, 8, r - 12 + chord[0], Voice::Bass, 0.35);
                 let arp = [chord[0], chord[1], chord[2], chord[1] + 12, chord[2], chord[1]];
                 for (i, s) in [0, 3, 6, 8, 11, 14].into_iter().enumerate() {
-                    add(bar, s, 3, r + 12 + arp[i], Voice::Pluck, 0.30);
+                    add(bar, s, 3, r + arp[i], Voice::Pluck, 0.30);
                 }
                 if !intro {
                     add(bar, 0, 1, 36, Voice::Kick, 0.6);
                     add(bar, 8, 1, 36, Voice::Kick, 0.5);
                     for s in (2..16).step_by(4) {
-                        add(bar, s, 1, 0, Voice::Hat, 0.18);
+                        add(bar, s, 1, 0, Voice::Hat, 0.12);
                     }
                 }
             }
@@ -220,7 +258,14 @@ fn score(p: &Piece) -> (Vec<Note>, usize) {
                 // Bells on a few beats only, a different few each bar.
                 let beats: &[usize] = if bar % 2 == 0 { &[0, 6, 10] } else { &[4, 12] };
                 for (i, &s) in beats.iter().enumerate() {
-                    add(bar, s, 6, r + 24 + chord[(bar + i) % 3], Voice::Bell, 0.25);
+                    add(bar, s, 6, r + 12 + chord[(bar + i) % 3], Voice::Bell, 0.22);
+                }
+                if top {
+                    // A quiet heartbeat while the swell is at its height.
+                    add(bar, 0, 1, 36, Voice::Kick, 0.35);
+                    add(bar, 2, 1, 36, Voice::Kick, 0.22);
+                    add(bar, 8, 1, 36, Voice::Kick, 0.35);
+                    add(bar, 10, 1, 36, Voice::Kick, 0.22);
                 }
             }
             Style::CalmPulse => {
@@ -231,52 +276,87 @@ fn score(p: &Piece) -> (Vec<Note>, usize) {
                 add(bar, 10, 6, r - 12 + chord[0], Voice::Bass, 0.30);
                 for s in (0..16).step_by(2) {
                     let n = chord[(s / 2) % 3] + if s % 8 == 6 { 12 } else { 0 };
-                    add(bar, s, 2, r + 12 + n, Voice::Pluck, 0.22);
+                    add(bar, s, 2, r + n, Voice::Pluck, 0.24);
                 }
                 if !intro {
                     for s in (4..16).step_by(8) {
-                        add(bar, s, 1, 0, Voice::Hat, 0.16);
+                        add(bar, s, 1, 0, Voice::Hat, 0.10);
+                    }
+                }
+                if top {
+                    for s in [0, 6, 8, 14] {
+                        add(bar, s, 1, r - 12, Voice::Tom, if s % 8 == 0 { 0.30 } else { 0.18 });
                     }
                 }
             }
             Style::Battle => {
                 for &c in &chord {
-                    add(bar, 0, 16, r + c, Voice::Pad, 0.18);
+                    add(bar, 0, 16, r + c, Voice::Pad, 0.16);
                 }
-                // A driving bass in sixteenths, octave jumps on the off-beats.
+                let phrase = bar / PHRASE;
+                // A driving bass in sixteenths, octave jumps on the off-beats, growing through the phrase and a little
+                // more each phrase.
+                let grow = 0.5 + 0.4 * pb as f64 / (PHRASE - 1) as f64 + 0.1 * phrase as f64;
                 for s in 0..16 {
                     let up = if s % 4 == 2 { 12 } else { 0 };
-                    let gap = s % 8 == 7;
-                    if !gap {
-                        add(bar, s, 1, r - 24 + chord[0] + up, Voice::Bass, if s % 4 == 0 { 0.55 } else { 0.38 });
+                    if s % 8 != 7 {
+                        let level = if s % 4 == 0 { 0.55 } else { 0.38 } * grow;
+                        add(bar, s, 1, r - 24 + chord[0] + up, Voice::Bass, level);
                     }
                 }
-                if intro {
-                    for s in (0..16).step_by(2) {
-                        add(bar, s, 1, 0, Voice::Hat, 0.15);
-                    }
-                    continue;
-                }
-                for s in [0, 4, 8, 10, 12] {
-                    add(bar, s, 1, 36, Voice::Kick, if s % 4 == 0 { 0.8 } else { 0.55 });
-                }
-                add(bar, 4, 1, 0, Voice::Snare, 0.55);
-                add(bar, 12, 1, 0, Voice::Snare, 0.6);
-                for s in 0..16 {
-                    add(bar, s, 1, 0, Voice::Hat, if s % 2 == 0 { 0.2 } else { 0.12 });
-                }
-                add(bar, 6, 1, 0, Voice::Clank, 0.22);
-                add(bar, 14, 1, 0, Voice::Clank, 0.16);
-                if turn {
-                    for s in [13, 14, 15] {
-                        add(bar, s, 1, 0, Voice::Snare, 0.35 + 0.08 * (s - 13) as f64);
-                    }
-                } else {
-                    // Stabs on the chord, off the beat.
-                    for &s in &[3usize, 11] {
-                        for &c in &chord {
-                            add(bar, s, 1, r + 12 + c, Voice::Pluck, 0.16);
+                match pb {
+                    // The phrase opens sparse: kick on the beat, hats and one tom.
+                    0 | 1 => {
+                        add(bar, 0, 1, 36, Voice::Kick, 0.7);
+                        add(bar, 8, 1, 36, Voice::Kick, 0.6);
+                        for s in (0..16).step_by(2) {
+                            add(bar, s, 1, 0, Voice::Hat, 0.09);
                         }
+                        add(bar, 14, 1, r - 12, Voice::Tom, 0.3);
+                    }
+                    // The last bar: a snare roll speeding up and growing, and a riser into the next phrase.
+                    7 => {
+                        for s in [0, 4, 8] {
+                            add(bar, s, 1, 36, Voice::Kick, 0.7);
+                        }
+                        let roll = (0..8).step_by(2).chain(8..16);
+                        for s in roll {
+                            add(bar, s, 1, 0, Voice::Snare, 0.25 + 0.035 * s as f64);
+                        }
+                        add(bar, 0, 16, 0, Voice::Riser, 0.4 + 0.1 * phrase as f64);
+                    }
+                    // The full groove.
+                    _ => {
+                        for s in [0, 4, 8, 10, 12] {
+                            add(bar, s, 1, 36, Voice::Kick, if s % 4 == 0 { 0.8 } else { 0.55 });
+                        }
+                        add(bar, 4, 1, 0, Voice::Snare, 0.5);
+                        add(bar, 12, 1, 0, Voice::Snare, 0.55);
+                        for s in 0..16 {
+                            add(bar, s, 1, 0, Voice::Hat, if s % 2 == 0 { 0.12 } else { 0.07 });
+                        }
+                        add(bar, 6, 1, 0, Voice::Metal, 0.16);
+                        if pb >= 4 {
+                            add(bar, 14, 1, 0, Voice::Metal, 0.12);
+                        }
+                        // Muted stabs on the chord, off the beat.
+                        for &s in &[3usize, 11] {
+                            for &c in &chord {
+                                add(bar, s, 1, r + c, Voice::Pluck, 0.14);
+                            }
+                        }
+                        if phrase >= 2 {
+                            for s in [6, 7, 14, 15] {
+                                add(bar, s, 1, r - 12 + if s % 2 == 1 { 7 } else { 0 }, Voice::Tom, 0.24);
+                            }
+                        }
+                    }
+                }
+                // From the second phrase a lead climbs through the chord, higher each phrase.
+                if phrase >= 1 && pb >= 2 {
+                    let lift = if phrase >= 2 && pb >= 4 { 12 } else { 0 };
+                    for (i, (s, held)) in [(0, 6), (8, 4), (12, 4)].into_iter().enumerate() {
+                        add(bar, s, held, r + 12 + chord[i] + if i == 2 { lift } else { 0 }, Voice::Lead, 0.17);
                     }
                 }
             }
@@ -318,17 +398,25 @@ fn release(v: Voice) -> usize {
         Voice::Kick => 0.25,
         Voice::Snare => 0.2,
         Voice::Hat => 0.05,
-        Voice::Clank => 0.15,
+        Voice::Tom => 0.3,
+        Voice::Metal => 0.2,
         Voice::Bass => 0.06,
         Voice::Pad => 0.6,
         Voice::Pluck => 0.25,
         Voice::Bell => 1.2,
+        Voice::Lead => 0.25,
+        Voice::Riser => 0.03,
     };
     (s * RATE as f64) as usize
 }
 
 fn white(noise: &mut Noise) -> f64 {
     (noise.roll() >> 11) as f64 / (1u64 << 52) as f64 - 1.0
+}
+
+/// A saw wave at phase `p`.
+fn saw(p: f64) -> f64 {
+    2.0 * (p - p.floor()) - 1.0
 }
 
 /// Synthesise one note into `out` from its start, `len` samples.
@@ -354,58 +442,87 @@ fn play(n: &Note, out: &mut [f64], noise: &mut Noise) {
             }
             Voice::Snare => {
                 env *= 1.0 - dt / 0.07;
-                ph += 190.0 * dt;
+                ph += 180.0 * dt;
                 let w = white(noise);
-                low += 0.5 * (w - low);
-                (low * 0.8 + sine(ph) * 0.35 * (1.0 - t / 0.05).max(0.0)) * env
+                low += 0.35 * (w - low);
+                (low * 0.8 + sine(ph) * 0.4 * (1.0 - t / 0.05).max(0.0)) * env
             }
             Voice::Hat => {
+                // Noise with its lows taken out and its very top softened.
                 env *= 1.0 - dt / 0.018;
                 let w = white(noise);
                 low += 0.3 * (w - low);
-                (w - low) * env
+                low2 += 0.5 * ((w - low) - low2);
+                low2 * env
             }
-            Voice::Clank => {
-                // Two squares multiplied: an inharmonic, metallic ring.
-                env *= 1.0 - dt / 0.05;
-                ph += 1530.0 * dt;
-                ph2 += 2210.0 * dt;
-                let a = if ph - ph.floor() < 0.5 { 1.0 } else { -1.0 };
-                let b = if ph2 - ph2.floor() < 0.5 { 1.0 } else { -1.0 };
-                a * b * env * 0.7
+            Voice::Tom => {
+                // A low drum: a sine falling a little in pitch.
+                env *= 1.0 - dt / 0.16;
+                ph += f * (1.0 + 0.6 * (1.0 - t / 0.06).max(0.0)) * dt;
+                sine(ph) * env
+            }
+            Voice::Metal => {
+                // Two sines multiplied: an inharmonic ring, softened.
+                env *= 1.0 - dt / 0.07;
+                ph += 830.0 * dt;
+                ph2 += 1190.0 * dt;
+                let ring = sine(ph) * sine(ph2);
+                low += 0.25 * (ring - low);
+                low * env * 0.9
             }
             Voice::Bass => {
+                // A saw and a sine an octave down, through a filter that opens on each note and closes as it goes.
                 ph += f * dt;
-                let saw = 2.0 * (ph - ph.floor()) - 1.0;
-                // The filter opens on each note and closes as it goes.
-                let cut = 0.05 + 0.25 * (1.0 - t / 0.15).max(0.0);
-                low += cut * (saw - low);
+                ph2 += f * 0.5 * dt;
+                let cut = 0.015 + 0.05 * n.tone + (0.03 + 0.08 * n.tone) * (1.0 - t / 0.15).max(0.0);
+                low += cut * (saw(ph) - low);
                 low2 += cut * (low - low2);
-                low2 * 1.6
+                low2 * 1.5 + sine(ph2) * 0.35
             }
             Voice::Pad => {
                 // Three saws a little out of tune, darkened, swelling in.
                 ph += f * dt;
                 ph2 += f * 1.004 * dt;
                 ph3 += f * 0.997 * dt;
-                let saw = |p: f64| 2.0 * (p - p.floor()) - 1.0;
                 let sum = (saw(ph) + saw(ph2) + saw(ph3)) / 3.0;
-                low += 0.04 * (sum - low);
-                low * (t / 0.35).min(1.0)
+                let cut = 0.02 + 0.04 * n.tone;
+                low += cut * (sum - low);
+                low2 += 0.5 * (low - low2);
+                low2 * (t / 0.35).min(1.0)
             }
             Voice::Pluck => {
+                // A muted saw: its filter closes fast after the pick.
                 env *= 1.0 - dt / 0.12;
                 ph += f * dt;
-                // A narrow pulse, its two levels set so it has no offset.
-                let sq = if ph - ph.floor() < 0.3 { 0.7 } else { -0.3 };
-                low += (0.05 + 0.4 * env) * (sq - low);
-                low * env
+                let cut = 0.02 + (0.06 + 0.1 * n.tone) * env;
+                low += cut * (saw(ph) - low);
+                low2 += cut * (low - low2);
+                low2 * env * 1.6
             }
             Voice::Bell => {
                 env *= 1.0 - dt / 0.6;
                 ph += f * dt;
                 ph2 += f * 2.76 * dt;
-                (sine(ph) + 0.3 * sine(ph2) * env) * env
+                (sine(ph) + 0.2 * sine(ph2) * env) * env
+            }
+            Voice::Lead => {
+                // Two saws a little apart with a slow vibrato, darkened, with a soft start.
+                let wob = 1.0 + 0.004 * sine(t * 5.0) * (t / 0.3).min(1.0);
+                ph += f * wob * dt;
+                ph2 += f * 1.003 * wob * dt;
+                let cut = 0.03 + 0.04 * n.tone;
+                low += cut * ((saw(ph) + saw(ph2)) / 2.0 - low);
+                low2 += cut * (low - low2);
+                low2 * 1.8 * (t / 0.04).min(1.0)
+            }
+            Voice::Riser => {
+                // Noise whose filter and level climb over the note.
+                let x = (i as f64 / held).min(1.0);
+                let w = white(noise);
+                let cut = 0.01 + 0.2 * x * x;
+                low += cut * (w - low);
+                low2 += cut * (low - low2);
+                low2 * x * x * 3.0
             }
         };
         *o += s * gate * n.level;
@@ -433,6 +550,18 @@ fn render(p: &Piece) -> Vec<i16> {
             }
         }
     }
+    // A gentle low-pass over the whole mix (about 3 kHz) takes the edge off. A loop is filtered twice round so its
+    // start carries on from its end.
+    let mut low = 0.0f64;
+    let passes = if p.loops { 2 } else { 1 };
+    let mut dark = mix.clone();
+    for _ in 0..passes {
+        for (d, s) in dark.iter_mut().zip(&mix) {
+            low += 0.58 * (s - low);
+            *d = low;
+        }
+    }
+    let mut mix = dark;
     // Take out any offset left over, gently squash the peaks, then bring the loudest to 0.8.
     let mean = mix.iter().sum::<f64>() / mix.len().max(1) as f64;
     for s in &mut mix {
