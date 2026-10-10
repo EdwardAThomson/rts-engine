@@ -21,7 +21,8 @@ use crate::repair;
 use crate::sell;
 use crate::starport::{self, Delivery, DeliveryCanon, Market, StarportError};
 use crate::storage;
-use crate::units::{Kind, Rules, WeaponId};
+use crate::superpower::{self, Strike, SuperpowerError};
+use crate::units::{Kind, Rules, Superpower, WeaponId};
 use crate::vision::{self, Vision, VisionCanon};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +145,8 @@ pub struct Entity {
     pub fuse: Option<u32>,
     /// The tick it disappears on its own, for kinds with a lifetime.
     pub expires: Option<u32>,
+    /// Fighting on its own for its owner, who can't order it, around this tile: a palace power's guerrillas.
+    pub autonomous: Option<Tile>,
 }
 
 impl Entity {
@@ -179,6 +182,8 @@ impl Canon for EntityCanon<'_> {
         w.object()
             .opt("altitude", (e.altitude != 0).then_some(&e.altitude))
             .opt("attackedAt", attacked.as_ref())
+            // Written only when set, so a game without the palace powers hashes as it did before them.
+            .opt("autonomous", e.autonomous.as_ref())
             .opt("cargo", e.cargo.as_ref())
             .opt("carriedBy", e.carried_by.as_ref())
             // Written only when set, as are `expires`, `fuse` and `revertsAt`, so a game without the faction specials
@@ -231,12 +236,16 @@ pub struct Player {
     /// The generic id of the setting pack's faction this player plays, which decides the faction-only kinds it may
     /// build; `None` builds none of them.
     pub faction: Option<String>,
+    /// Ticks its palace power has charged, from when it first owns a powered palace (the `superpowers` module).
+    pub charge: Option<u32>,
 }
 
 impl Canon for Player {
     fn canon(&self, w: &mut CanonHasher) {
         // Written only once something is lost, so a game that never fills its storage hashes as it did before.
         let mut o = w.object();
+        // Written only once it has a palace power, so a game without one hashes as it did before.
+        o.opt("charge", self.charge.as_ref());
         o.field("credits", &self.credits).field("delivered", &self.delivered);
         // Written only when set, so a game with no factions hashes as it did before them.
         if let Some(f) = &self.faction {
@@ -269,6 +278,8 @@ pub struct GameState {
     pub market: Option<Market>,
     /// Starport orders, by starport id.
     pub deliveries: Vec<Delivery>,
+    /// Palace powers on their way: missiles in flight and guerrillas about to arrive, in launch order.
+    pub strikes: Vec<Strike>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -294,6 +305,8 @@ impl Canon for GameState {
             .opt("projectiles", (!projectiles.is_empty()).then_some(&projectiles))
             .field("resource", &self.resource)
             .field("rng", &self.rng)
+            // Written only while a palace power is on its way.
+            .opt("strikes", (!self.strikes.is_empty()).then_some(&self.strikes))
             .field("tick", &self.tick)
             // Written only when fog is on, so a game without it hashes as it did before.
             .opt("vision", self.vision.as_ref().map(|v| VisionCanon(v, &self.kind_ids)).as_ref())
@@ -360,6 +373,11 @@ pub enum CommandOrder {
     },
     /// Pay for that order and send for it.
     StarportConfirm,
+    /// Use the player's charged palace power at this tile (rules-world.md, section 8).
+    Superpower {
+        x: i32,
+        y: i32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -770,6 +788,52 @@ pub enum Event {
         tick: u32,
         ship: u32,
     },
+    /// A player's palace power finished charging and waits to be used.
+    SuperpowerReady {
+        tick: u32,
+        player: u32,
+        power: Superpower,
+    },
+    /// A palace power order that can't be carried out.
+    SuperpowerRefused {
+        tick: u32,
+        player: u32,
+        reason: SuperpowerError,
+    },
+    /// A palace missile left the palace for tile (x, y); it lands on tile (to_x, to_y) at tick `arrive`. Every player
+    /// hears it, so its target gets a warning.
+    MissileLaunched {
+        tick: u32,
+        player: u32,
+        palace: u32,
+        x: i32,
+        y: i32,
+        to_x: i32,
+        to_y: i32,
+        arrive: u32,
+    },
+    /// A palace missile landed on tile (x, y).
+    MissileImpact {
+        tick: u32,
+        player: u32,
+        x: i32,
+        y: i32,
+    },
+    /// A palace power's guerrillas appeared round tile (x, y).
+    GuerrillasArrived {
+        tick: u32,
+        player: u32,
+        x: i32,
+        y: i32,
+        units: u32,
+    },
+    /// A palace power's saboteur came out of the palace.
+    SaboteurArrived {
+        tick: u32,
+        player: u32,
+        palace: u32,
+        unit: u32,
+    },
 }
 
 impl Event {
@@ -824,6 +888,12 @@ impl Event {
             Event::SupplyShipLanded { .. } => "supply_ship_landed",
             Event::StarportOrderRefunded { .. } => "starport_order_refunded",
             Event::SupplyShipLeft { .. } => "supply_ship_left",
+            Event::SuperpowerReady { .. } => "superpower_ready",
+            Event::SuperpowerRefused { .. } => "superpower_refused",
+            Event::MissileLaunched { .. } => "power_missile_launched",
+            Event::MissileImpact { .. } => "power_missile_impact",
+            Event::GuerrillasArrived { .. } => "guerrillas_arrived",
+            Event::SaboteurArrived { .. } => "saboteur_arrived",
         }
     }
 
@@ -870,7 +940,13 @@ impl Event {
             | Event::StarportOrderPlaced { tick, .. }
             | Event::SupplyShipLanded { tick, .. }
             | Event::StarportOrderRefunded { tick, .. }
-            | Event::SupplyShipLeft { tick, .. } => tick,
+            | Event::SupplyShipLeft { tick, .. }
+            | Event::SuperpowerReady { tick, .. }
+            | Event::SuperpowerRefused { tick, .. }
+            | Event::MissileLaunched { tick, .. }
+            | Event::MissileImpact { tick, .. }
+            | Event::GuerrillasArrived { tick, .. }
+            | Event::SaboteurArrived { tick, .. } => tick,
             Event::RepairStarted { tick, .. }
             | Event::RepairStopped { tick, .. }
             | Event::UnitRepaired { tick, .. }
@@ -925,6 +1001,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         converted: None,
         fuse: None,
         expires,
+        autonomous: None,
     });
     id
 }
@@ -1025,6 +1102,7 @@ pub fn apply_command(
             return starport::remove(state, rules, cmd.player, &cmd.ids, kind, events);
         }
         CommandOrder::StarportConfirm => return starport::confirm(state, rules, cmd.player, &cmd.ids, events),
+        CommandOrder::Superpower { x, y } => return superpower::fire(map, pf, state, rules, cmd.player, x, y, events),
         _ => {}
     }
     if let CommandOrder::Place { kind, x, y } = cmd.order {
@@ -1058,8 +1136,14 @@ pub fn apply_command(
             continue;
         }
         let e = &mut state.entities[i];
-        // A unit being carried takes no orders until it is set down, and one counting down to its blast none at all.
-        if e.owner != cmd.player || rules.kind(e.kind).building || e.carried_by.is_some() || e.fuse.is_some() {
+        // A unit being carried takes no orders until it is set down, and one counting down to its blast none at all,
+        // nor one fighting on its own.
+        if e.owner != cmd.player
+            || rules.kind(e.kind).building
+            || e.carried_by.is_some()
+            || e.fuse.is_some()
+            || e.autonomous.is_some()
+        {
             continue;
         }
         let k = rules.kind(e.kind);
@@ -1112,7 +1196,8 @@ pub fn apply_command(
             | CommandOrder::RepairAt { .. }
             | CommandOrder::StarportAdd { .. }
             | CommandOrder::StarportRemove { .. }
-            | CommandOrder::StarportConfirm => {}
+            | CommandOrder::StarportConfirm
+            | CommandOrder::Superpower { .. } => {}
         }
     }
 }
@@ -1136,6 +1221,7 @@ pub fn step(
     for cmd in commands {
         apply_command(map, pf, state, rules, cmd, events);
     }
+    superpower::tick(map, pf, state, rules, events);
     combat::tick(pf, state, rules, events);
     movement::tick(pf, state, rules, events);
     air::tick(map, pf, state, rules, events);

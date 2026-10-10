@@ -1048,6 +1048,9 @@ impl ApplicationHandler for App {
                             Some(Bind::Mute) => self.toggle_mute(),
                             Some(Bind::Sell) => self.building_key(Mode::Sell),
                             Some(Bind::Repair) => self.building_key(Mode::Repair),
+                            // F (a fixed key, unless rebound to another action): aim the charged palace power
+                            // (or put it back).
+                            None if code == KeyCode::KeyF => self.hud.aim(&self.game),
                             _ => {}
                         },
                     }

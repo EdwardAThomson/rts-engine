@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
+`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -309,6 +309,19 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   a starport replay to the same hash. In the player the starport has a sidebar tab: icons show today's price or
   SOLD OUT, left click (shift for as many as allowed) adds to the order, right click takes one out, the queue row
   shows the order and SEND pays (`crates/classic-render/tests/hud.rs`).
+- Palace powers (`crates/classic-sim/tests/superpowers.rs`): no golden game has a faction or a palace, so every
+  golden hash is unchanged. Each faction's palace gives one power (`faction_a` guerrillas, `faction_b` the missile,
+  `faction_c` the saboteur, from the `superpowers` module's data); it charges only while its owner has a palace and
+  enough power, says so once when full, and a player with no faction has none. The missile lands 30 + 2 ticks a
+  tile after launch, within its spread of the tile aimed at, and takes 800, 600, 350 and 150 from everything on the
+  ground 0 to 3 tiles away, either side's, a building by its nearest tile. Five guerrillas arrive 45 ticks after
+  the order, 3 to 6 tiles from the tile, take no orders from their owner, and fight what they find there. The
+  saboteur comes out of the palace and destroys the building it was aimed at. Games with each power replay to the
+  same hash. The player shows the charge under the credits; F or a click on it aims, and the next click uses it
+  (`crates/classic-render/tests/hud.rs`). The computer opponent builds a palace after its research lab and uses its
+  power on the best target it knows of. In 120 games on `mirror-01` (20 seeds for each ordered pair of factions,
+  60,000 ticks, fog off) the decided games went 34, 33 and 33 to `faction_a`, `faction_b` and `faction_c` (100
+  decided), against 38, 33 and 27 (98 decided) with the same games and no palace.
 
 ## Not verified / not built yet
 
@@ -348,11 +361,16 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   (8 for the right start), so that lean is older than aircraft and wants a look of its own. Aircraft were checked in tests and a rendered
   frame, not yet by a person playing.
 - Faction specials: the beam and the self-destruct blast have stand-in effects (sparks along the line, a large
-  explosion) and no sounds of their own; a converted unit isn't drawn any differently. `guerrilla` has numbers but
-  no use until the palace powers (issue #76), and its hiding on rough ground isn't built. The computer opponent
+  explosion) and no sounds of their own; a converted unit isn't drawn any differently. `guerrilla` comes only with
+  the palace powers, and its hiding on rough ground isn't built. The computer opponent
   never orders a self-destruct and sends its specials in waves like any other unit. A converted harvester goes back
   to work for its new side, which wasn't tested. Balance comes from computer games only, and not yet played by a
   person: `faction_a` beat `faction_c` 23 to 12, a lean these runs can't yet tell from noise.
+- Palace powers: the guerrillas don't hide on rough ground yet, the missile leaves no scorch mark, and its flight
+  and blast are stand-in effects (a rocket sprite on an arc, large explosions). The private pack has its own words only
+  for `superpower_ready`; the other new lines use the engine's. Tech levels aren't built, so the powers need only a
+  palace. The computer scores the tiles of enemies it knows of rather than the design's grid. Checked in tests and
+  computer games, not yet by a person playing.
 - Starport: the computer opponent never builds one or buys from it, prices and stock show only on the starport's
   tab, and the supply ship has no landing or take-off effect or sound. It was checked in tests, not yet by a person
   playing.

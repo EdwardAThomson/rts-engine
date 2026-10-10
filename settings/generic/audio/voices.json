@@ -87,6 +87,21 @@
         "starport_refunded": [
           "audio/voices/advisor/starport_refunded_1.wav"
         ],
+        "superpower_ready": [
+          "audio/voices/advisor/superpower_ready_1.wav"
+        ],
+        "superpower_charging": [
+          "audio/voices/advisor/superpower_charging_1.wav"
+        ],
+        "missile_warning": [
+          "audio/voices/advisor/missile_warning_1.wav"
+        ],
+        "guerrillas_arrived": [
+          "audio/voices/advisor/guerrillas_arrived_1.wav"
+        ],
+        "saboteur_ready": [
+          "audio/voices/advisor/saboteur_ready_1.wav"
+        ],
         "enemy_wave": [
           "audio/voices/advisor/enemy_wave_1.wav"
         ],
@@ -231,6 +246,21 @@
         ],
         "starport_refunded": [
           "audio/voices/advisor/starport_refunded_1.wav"
+        ],
+        "superpower_ready": [
+          "audio/voices/advisor/superpower_ready_1.wav"
+        ],
+        "superpower_charging": [
+          "audio/voices/advisor/superpower_charging_1.wav"
+        ],
+        "missile_warning": [
+          "audio/voices/advisor/missile_warning_1.wav"
+        ],
+        "guerrillas_arrived": [
+          "audio/voices/advisor/guerrillas_arrived_1.wav"
+        ],
+        "saboteur_ready": [
+          "audio/voices/advisor/saboteur_ready_1.wav"
         ],
         "enemy_wave": [
           "audio/voices/advisor/enemy_wave_1.wav"

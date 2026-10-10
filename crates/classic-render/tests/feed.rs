@@ -181,7 +181,7 @@ fn the_engine_has_a_reply_for_every_voice_and_moment_and_planned_ids_are_new() {
     unique.sort();
     unique.dedup();
     assert_eq!(unique.len(), ids.len(), "a planned advisor id isn't already a message");
-    assert!(ids.len() > words.len());
+    assert!(ids.len() >= words.len(), "every message is an advisor id; planned ones come on top");
 }
 
 /// A pack in `target/` with `lines` as its `lines.json`.
@@ -270,7 +270,7 @@ fn a_pack_gives_each_faction_its_own_lines_and_mistakes_are_warned_about() {
     let a = Lines::load(&pack, &factions, Some("faction_a"));
     println!("warnings: {:#?}", a.warnings);
     assert_eq!(a.advisor["low_power"], ["A: power low", "A: lights dim"], "the faction's own words win");
-    assert_eq!(a.advisor["superpower_ready"], ["Ready to strike"], "a planned id may have lines already");
+    assert_eq!(a.advisor["superpower_ready"], ["Ready to strike"], "a pack may give the advisor its own words");
     assert_eq!(a.acks[&("vehicle", Moment::Select)], ["A here."]);
     assert_eq!(a.acks[&("vehicle", Moment::Move)], ["Pack rolling.", "Pack driving."], "pack-wide lines carry over");
     assert_eq!(a.acks[&("infantry", Moment::Move)], Lines::engine().acks[&("infantry", Moment::Move)]);
