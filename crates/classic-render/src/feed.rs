@@ -82,6 +82,8 @@ pub struct Feed {
     /// How many of the game's events have been read.
     seen: usize,
     short: bool,
+    /// Whether the local player had radar at the last look; unknown before the first.
+    radar: Option<bool>,
     building_attacked: Option<u32>,
     unit_attacked: Option<u32>,
     harvester_attacked: Option<u32>,
@@ -142,6 +144,7 @@ impl Feed {
             names,
             seen: 0,
             short: false,
+            radar: None,
             building_attacked: None,
             unit_attacked: None,
             harvester_attacked: None,
@@ -417,6 +420,13 @@ impl Feed {
             self.say(game, id, None, tone);
             self.short = short;
         }
+        // Radar coming and going (the `radar` module), but not the lack of it at the start.
+        let radar = game.radar(local);
+        if self.radar.is_some_and(|was| was != radar) {
+            let (id, tone) = if radar { ("radar_online", Tone::Good) } else { ("radar_offline", Tone::Warn) };
+            self.say(game, id, None, tone);
+        }
+        self.radar = Some(radar);
         let now = game.state.tick;
         if now.is_multiple_of(TICKS_PER_SECOND) {
             let near = enemies_near_base(game, local);

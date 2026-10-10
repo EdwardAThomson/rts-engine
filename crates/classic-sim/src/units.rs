@@ -143,6 +143,8 @@ pub struct KindRules {
     pub noise: i64,
     /// Credits it adds to its owner's storage cap (the `storage` module); 0 for most kinds.
     pub storage: i64,
+    /// Owning one, with power enough, gives its owner the minimap (the `radar` module).
+    pub radar: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -339,6 +341,8 @@ pub struct Rules {
     pub sell: Option<SellRules>,
     /// Set unless a setting pack turns capture off.
     pub capture: Option<CaptureRules>,
+    /// Set when a setting pack turns the radar rule on: the minimap needs a powered radar building.
+    pub radar: bool,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -406,6 +410,7 @@ impl Rules {
                 vision: t.number(id, "vision").unwrap_or(2) as i32,
                 noise: t.number(id, "noise").unwrap_or(0),
                 storage: t.number(id, "storage").unwrap_or(0),
+                radar: t.number(id, "radar").unwrap_or(0) != 0,
             });
         }
         if kinds.len() > u16::MAX as usize {
@@ -577,6 +582,7 @@ impl Rules {
             sell,
             capture,
             starport,
+            radar: module("radar", "on")? != 0,
             hash: t.hash(),
         })
     }
