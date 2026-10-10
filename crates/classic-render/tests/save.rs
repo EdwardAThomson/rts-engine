@@ -66,10 +66,12 @@ fn a_save_loads_into_the_same_game_and_plays_on_the_same() {
     const SAVED: u32 = 8000;
     const END: u32 = 14_000;
     // Uninterrupted: the player and a hard opponent play to the end.
-    // Each side has its faction, which the load gives out again into a fresh game that has none.
+    // Each side has its faction, which the load gives out again into a fresh game that has none, and the game has a
+    // tech level, which the load sets again too.
     let factioned = || {
         let mut g = game(4);
         g.set_factions(&["faction_b", "faction_a"]);
+        g.set_tech_level(Some(6));
         g
     };
     let mut straight = factioned();
@@ -96,12 +98,13 @@ fn a_save_loads_into_the_same_game_and_plays_on_the_same() {
     assert!(human >= 5 && human < live.command_log().len(), "only the player's own commands are kept");
     let save = Save::parse(&text, &live.rules).unwrap();
     assert_eq!(save.to_text(&live.rules), text, "the text reads back as it was written");
-    assert!(text.contains("\nfactions faction_b,faction_a\n"));
+    assert!(text.contains("\nfactions faction_b,faction_a\ntech 6\n"));
     let mut ticks = 0;
     let (mut loaded, mut ais) = save.replay(game(4), |_| ticks += 1).unwrap();
     assert_eq!(ticks, SAVED);
     assert_eq!(loaded.hash(), live.hash());
     assert_eq!(loaded.state.players[0].faction.as_deref(), Some("faction_b"));
+    assert_eq!(loaded.state.tech_level, Some(6));
     // The saved tick's click was queued again by the load, so this first step has no clicks of its own.
     for ai in &mut ais {
         ai.tick(&mut loaded);
@@ -173,6 +176,7 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::Cancel { kind: k("battle_tank") },
         CommandOrder::Hold { kind: k("battle_tank"), on: true },
         CommandOrder::Hold { kind: k("harvester"), on: false },
+        CommandOrder::Upgrade { kind: k("heavy_factory"), on: true },
         CommandOrder::Primary,
         CommandOrder::Repair { on: true },
         CommandOrder::Repair { on: false },
@@ -184,6 +188,7 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::StarportRemove { kind: k("quad") },
         CommandOrder::StarportConfirm,
         CommandOrder::Superpower { x: 20, y: -2 },
+        CommandOrder::Deploy,
     ] {
         for ids in [vec![], vec![7], vec![7, 8, 9]] {
             let c = Command { player: 1, ids, order };

@@ -21,6 +21,7 @@
 //! player 0
 //! faction 0
 //! factions faction_a,faction_b
+//! tech 5
 //! ai 1 normal
 //! tick 4500
 //! hash <the state hash at that tick>
@@ -52,6 +53,8 @@ pub struct Save {
     /// The faction id each player was given, in player order (`-` in the file for none), which decides the
     /// faction-only kinds they may build. Loading gives them out again before the first tick.
     pub factions: Vec<Option<String>>,
+    /// The game's tech level, if it had one (`tech` in the file; none means everything may be built).
+    pub tech: Option<u32>,
     /// Each computer player and its difficulty.
     pub ais: Vec<(u32, Difficulty)>,
     pub tick: u32,
@@ -84,6 +87,7 @@ impl Save {
             player: game_info.player,
             faction: game_info.faction,
             factions: game.state.players.iter().map(|p| p.faction.clone()).collect(),
+            tech: game.state.tech_level,
             ais: ais.to_vec(),
             tick: game.state.tick,
             hash: game.hash(),
@@ -104,6 +108,9 @@ impl Save {
         if !self.factions.is_empty() {
             let ids: Vec<&str> = self.factions.iter().map(|f| f.as_deref().unwrap_or("-")).collect();
             out += &format!("factions {}\n", ids.join(","));
+        }
+        if let Some(t) = self.tech {
+            out += &format!("tech {t}\n");
         }
         for (p, d) in &self.ais {
             out += &format!("ai {p} {}\n", d.id());
@@ -131,6 +138,7 @@ impl Save {
             player: 0,
             faction: 0,
             factions: Vec::new(),
+            tech: None,
             ais: Vec::new(),
             tick: 0,
             hash: String::new(),
@@ -154,6 +162,7 @@ impl Save {
                 "player" => s.player = num(value)? as u32,
                 "faction" => s.faction = num(value)? as usize,
                 "factions" => s.factions = value.split(',').map(|f| Some(f.to_string()).filter(|f| f != "-")).collect(),
+                "tech" => s.tech = Some(num(value)? as u32),
                 "ai" => {
                     let (p, d) =
                         value.split_once(' ').ok_or_else(|| bad("an ai line needs a player and a difficulty"))?;
@@ -192,6 +201,7 @@ impl Save {
         for (p, f) in game.state.players.iter_mut().zip(&self.factions) {
             p.faction = f.clone();
         }
+        game.set_tech_level(self.tech);
         let mut ais: Vec<Ai> = self.ais.iter().map(|&(p, d)| Ai::new(p, d.settings())).collect();
         let mut next = 0;
         let give = |game: &mut Game, next: &mut usize| {
@@ -254,6 +264,7 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::Attack { target } => format!("attack {target}"),
         CommandOrder::Cancel { kind: k } => format!("cancel {}", kind(k)),
         CommandOrder::Hold { kind: k, on } => format!("hold {} {}", kind(k), on as u8),
+        CommandOrder::Upgrade { kind: k, on } => format!("upgrade {} {}", kind(k), on as u8),
         CommandOrder::Primary => "primary".to_string(),
         CommandOrder::Repair { on } => format!("repair {}", on as u8),
         CommandOrder::Sell => "sell".to_string(),
@@ -264,6 +275,7 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::StarportRemove { kind: k } => format!("starport_remove {}", kind(k)),
         CommandOrder::StarportConfirm => "starport_confirm".to_string(),
         CommandOrder::Superpower { x, y } => format!("superpower {x} {y}"),
+        CommandOrder::Deploy => "deploy".to_string(),
     };
     format!("{} {ids} {order}", c.player)
 }
@@ -294,6 +306,7 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("attack") => CommandOrder::Attack { target: num(3)? as u32 },
         Some("cancel") => CommandOrder::Cancel { kind: kind(3)? },
         Some("hold") => CommandOrder::Hold { kind: kind(3)?, on: num(4)? != 0 },
+        Some("upgrade") => CommandOrder::Upgrade { kind: kind(3)?, on: num(4)? != 0 },
         Some("primary") => CommandOrder::Primary,
         Some("repair") => CommandOrder::Repair { on: num(3)? != 0 },
         Some("sell") => CommandOrder::Sell,
@@ -304,6 +317,7 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("starport_remove") => CommandOrder::StarportRemove { kind: kind(3)? },
         Some("starport_confirm") => CommandOrder::StarportConfirm,
         Some("superpower") => CommandOrder::Superpower { x: num(3)? as i32, y: num(4)? as i32 },
+        Some("deploy") => CommandOrder::Deploy,
         other => return Err(format!("unknown order {other:?}")),
     };
     Ok(Command { player, ids, order })

@@ -12,6 +12,7 @@ use crate::blooms::{self, Blooms};
 use crate::capture;
 use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::decay::{self, Slabs};
+use crate::deploy;
 use crate::hazard::{self, Hazards, LeftReason};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
 use crate::movement;
@@ -40,6 +41,8 @@ pub enum Order {
     Capture,
     /// A vehicle on its way to, or waiting at, the repair pad in `goal`.
     Repair,
+    /// A unit turning into its building where it stands, once it has finished its step and the ground is clear.
+    Deploy,
 }
 
 /// A harvester's step in its loop.
@@ -62,6 +65,7 @@ impl Order {
             Order::Attack => "attack",
             Order::Capture => "capture",
             Order::Repair => "repair",
+            Order::Deploy => "deploy",
         }
     }
 }
@@ -153,6 +157,10 @@ pub struct Entity {
     pub primary: bool,
     /// Buildings only: how many of its footprint tiles held its owner's slab when it was placed (the `decay` module).
     pub foundation: u32,
+    /// Deploying: the tick it gives up if units still stand where its building would go.
+    pub deploy_by: Option<u32>,
+    /// Producing buildings only: how many times it has been upgraded.
+    pub level: u32,
 }
 
 impl Entity {
@@ -195,6 +203,8 @@ impl Canon for EntityCanon<'_> {
             // Written only when set, as are `expires`, `fuse` and `revertsAt`, so a game without the faction specials
             // hashes as it did before them.
             .opt("convertedFrom", converted_from.as_ref())
+            // Written only while deploying, so a game where nothing deploys hashes as it did before.
+            .opt("deployBy", e.deploy_by.as_ref())
             .opt("expires", e.expires.as_ref())
             .opt("facing", (e.facing != 0).then_some(&e.facing))
             // Written only when set, so a game without slabs hashes as it did before them.
@@ -207,6 +217,8 @@ impl Canon for EntityCanon<'_> {
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
             .opt("lastAttacker", attacker.as_ref())
+            // Written only once upgraded, so a game without upgrades hashes as it did before them.
+            .opt("level", (e.level != 0).then_some(&e.level))
             .opt("noise", (e.noise != 0).then_some(&e.noise))
             .field("order", &e.order)
             .field("owner", &e.owner)
@@ -294,6 +306,9 @@ pub struct GameState {
     pub slabs: Option<Slabs>,
     /// Resource blooms on the map and those to come; set while the `blooms` module is on.
     pub blooms: Option<Blooms>,
+    /// The game's tech level, 1 to 8, which limits what can be built and how far buildings can be upgraded; `None`
+    /// limits nothing (rules-economy-production.md, section 11).
+    pub tech_level: Option<u32>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -325,6 +340,8 @@ impl Canon for GameState {
             .opt("slabs", self.slabs.as_ref())
             // Written only while a palace power is on its way.
             .opt("strikes", (!self.strikes.is_empty()).then_some(&self.strikes))
+            // Written only when set, so a game with no tech level hashes as it did before them.
+            .opt("techLevel", self.tech_level.as_ref())
             .field("tick", &self.tick)
             // Written only when fog is on, so a game without it hashes as it did before.
             .opt("vision", self.vision.as_ref().map(|v| VisionCanon(v, &self.kind_ids)).as_ref())
@@ -373,6 +390,12 @@ pub enum CommandOrder {
     },
     /// Make the first factory in `ids` its owner's primary one of its kind.
     Primary,
+    /// Queue an upgrade of the building in `ids`, else the player's primary building of this kind (`on`), or take the
+    /// last queued one back out with a refund.
+    Upgrade {
+        kind: Kind,
+        on: bool,
+    },
     /// Turn repair on or off for the buildings in `ids`.
     Repair {
         on: bool,
@@ -404,6 +427,8 @@ pub enum CommandOrder {
         x: i32,
         y: i32,
     },
+    /// Turn the units in `ids` that can deploy into their building where they stand (the `deploy` module).
+    Deploy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -564,6 +589,13 @@ pub enum Event {
         owner: u32,
         damage: i64,
         health: i64,
+    },
+    /// A building's upgrade finished: it is now at `level`.
+    UpgradeCompleted {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+        level: u32,
     },
     /// Its owner put an entry on hold.
     ProductionHeld {
@@ -916,6 +948,23 @@ pub enum Event {
         palace: u32,
         unit: u32,
     },
+    /// A unit turned into a building, `entity`, with its top-left tile at (x, y); the unit is gone.
+    Deployed {
+        tick: u32,
+        unit: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
+        x: i32,
+        y: i32,
+    },
+    /// A unit could not deploy where it stands, for the placement reason given; it stays a unit.
+    DeployRefused {
+        tick: u32,
+        player: u32,
+        unit: u32,
+        reason: PlaceError,
+    },
 }
 
 impl Event {
@@ -934,6 +983,7 @@ impl Event {
             Event::ProductionPaused { .. } => "production_paused",
             Event::ProductionHeld { .. } => "production_held",
             Event::SlabLaid { .. } => "slab_laid",
+            Event::UpgradeCompleted { .. } => "upgrade_completed",
             Event::BloomSeeded { .. } => "bloom_seeded",
             Event::BloomBurst { .. } => "bloom_burst",
             Event::BloomHurt { .. } => "bloom_hurt",
@@ -984,6 +1034,8 @@ impl Event {
             Event::MissileImpact { .. } => "power_missile_impact",
             Event::GuerrillasArrived { .. } => "guerrillas_arrived",
             Event::SaboteurArrived { .. } => "saboteur_arrived",
+            Event::Deployed { .. } => "deployed",
+            Event::DeployRefused { .. } => "deploy_refused",
         }
     }
 
@@ -1002,6 +1054,7 @@ impl Event {
             | Event::ProductionPaused { tick, .. }
             | Event::ProductionHeld { tick, .. }
             | Event::SlabLaid { tick, .. }
+            | Event::UpgradeCompleted { tick, .. }
             | Event::BloomSeeded { tick, .. }
             | Event::BloomBurst { tick, .. }
             | Event::BloomHurt { tick, .. }
@@ -1044,7 +1097,9 @@ impl Event {
             | Event::MissileLaunched { tick, .. }
             | Event::MissileImpact { tick, .. }
             | Event::GuerrillasArrived { tick, .. }
-            | Event::SaboteurArrived { tick, .. } => tick,
+            | Event::SaboteurArrived { tick, .. }
+            | Event::Deployed { tick, .. }
+            | Event::DeployRefused { tick, .. } => tick,
             Event::RepairStarted { tick, .. }
             | Event::RepairStopped { tick, .. }
             | Event::UnitRepaired { tick, .. }
@@ -1102,6 +1157,8 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         autonomous: None,
         primary: false,
         foundation: 0,
+        deploy_by: None,
+        level: 0,
     });
     id
 }
@@ -1171,7 +1228,7 @@ pub(crate) fn path_or_empty(pf: &mut Pathfinder, from: Tile, to: Tile) -> VecDeq
 }
 
 /// Ground units whose remaining path now crosses a blocked tile find a new way to the same end, in id order.
-fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules) {
+pub(crate) fn reroute_around_new_building(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules) {
     for e in &mut state.entities {
         if on_ground(rules, e) && e.path.iter().any(|t| !pf.passable(t.x, t.y)) {
             let end = *e.path.back().expect("a path that crosses something is not empty");
@@ -1195,6 +1252,9 @@ pub fn apply_command(
             return production::hold(state, rules, cmd.player, &cmd.ids, kind, on, events);
         }
         CommandOrder::Primary => return production::set_primary(state, rules, cmd.player, &cmd.ids, events),
+        CommandOrder::Upgrade { kind, on } => {
+            return production::upgrade(state, rules, cmd.player, &cmd.ids, kind, on, events);
+        }
         CommandOrder::Repair { on } => return repair::order(state, rules, cmd.player, &cmd.ids, on, events),
         CommandOrder::Sell => return sell::order(state, rules, cmd.player, &cmd.ids, events),
         CommandOrder::Capture { target } => {
@@ -1296,13 +1356,22 @@ pub fn apply_command(
                 movement::stop(rules, e);
                 events.push(Event::SelfDestructStarted { tick: state.tick, unit: id, at });
             }
-            CommandOrder::SelfDestruct
+            CommandOrder::Deploy if k.deploys_into.is_some() => {
+                e.order = Order::Deploy;
+                e.deploy_by = Some(state.tick + rules.deploy.wait_ticks);
+                e.target = None;
+                e.goal = None;
+                movement::halt(e);
+            }
+            CommandOrder::Deploy
+            | CommandOrder::SelfDestruct
             | CommandOrder::Harvest
             | CommandOrder::Place { .. }
             | CommandOrder::Produce { .. }
             | CommandOrder::Cancel { .. }
             | CommandOrder::Hold { .. }
             | CommandOrder::Primary
+            | CommandOrder::Upgrade { .. }
             | CommandOrder::Repair { .. }
             | CommandOrder::Sell
             | CommandOrder::Capture { .. }
@@ -1328,8 +1397,8 @@ pub fn step(
     events: &mut Vec<Event>,
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
-    // commands, combat, movement, aircraft, crush (not built yet), the hazard, capture, repair, selling, decay, economy,
-    // world (regrowth or blooms);
+    // commands, combat, movement, aircraft, crush (not built yet), the hazard, deploying, capture, repair, selling,
+    // decay, economy, world (regrowth or blooms);
     // then each player's sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
@@ -1340,6 +1409,7 @@ pub fn step(
     movement::tick(pf, state, rules, events);
     air::tick(map, pf, state, rules, events);
     hazard::tick(map, hazard_pf, state, rules, events);
+    deploy::tick(map, pf, state, rules, events);
     capture::tick(pf, state, rules, events);
     repair::tick(pf, state, rules, events);
     sell::tick(pf, state, rules, events);

@@ -13,6 +13,10 @@
 //! refinery, towards the enemy for anything armed. The best one that keeps every factory exit and refinery dock
 //! reachable from the map edge wins (the "lanes" of the design doc, kept by a flood fill). A ready building with
 //! nowhere to go is cancelled, which refunds it.
+//!
+//! **Base builders.** With no construction yard left (ai-opponent.md, "Rebuilding"), it orders a unit that deploys
+//! into one from any factory that can make it. Any such unit it owns, built or bought, drives to the nearest tile
+//! round its home where it can deploy and deploys there, so a second one becomes a second yard.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -32,7 +36,8 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     for &i in &view.mine {
         let Some(head) = es[i].queue.first() else { continue };
         let k = game.rules.kind(head.item);
-        if !k.building {
+        // An upgrade of the building itself is not a building to place.
+        if !k.building || head.upgrade {
             continue;
         }
         busy = true;
@@ -64,6 +69,45 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     };
     if let Some(k) = next {
         out.push(Vec::new(), CommandOrder::Produce { kind: k });
+    }
+}
+
+/// Rebuild a lost construction yard from a base builder, and deploy the base builders it has.
+pub(crate) fn base_builders(game: &Game, view: &View, out: &mut Orders) {
+    let es = &game.state.entities;
+    let rules = &game.rules;
+    let Some(yard) = game.kind("construction_yard") else { return };
+    let deploys = |k: Kind| rules.kind(k).deploys_into == Some(yard);
+    let builders: Vec<usize> = view.mine.iter().copied().filter(|&i| deploys(es[i].kind)).collect();
+    let queued = view.mine.iter().flat_map(|&i| es[i].queue.iter()).any(|q| deploys(q.item));
+    if view.count(game, yard) == 0 && builders.is_empty() && !queued {
+        let kind =
+            (0..rules.kinds.len() as u16).map(Kind).find(|&k| deploys(k) && game.can_build(view.player, k).is_ok());
+        let factory = kind.and_then(|k| view.mine.iter().find(|&&i| Some(es[i].kind) == rules.kind(k).built_at));
+        if let (Some(k), Some(&f)) = (kind, factory) {
+            out.push(vec![es[f].id], CommandOrder::Produce { kind: k });
+        }
+    }
+    for i in builders {
+        let e = &es[i];
+        if matches!(e.order, Order::Deploy | Order::Move) {
+            continue;
+        }
+        let here = e.tile();
+        if game.can_deploy(e.id, here).is_ok() {
+            out.push(vec![e.id], CommandOrder::Deploy);
+            continue;
+        }
+        // The nearest tile it can deploy on, round its home if it has one, else round where it stands.
+        let from = view.home.map_or(here, |h| Tile { x: (h.x / TILE) as i32, y: (h.y / TILE) as i32 });
+        let spot = (1..=12).find_map(|r| {
+            around(from.x - r + 1, from.y - r + 1, 2 * r - 1, 2 * r - 1)
+                .filter(|&t| game.can_deploy(e.id, t).is_ok())
+                .min_by_key(|&t| (dist2(t, here), off_middle(game, crate::geo::centre(t)), t.y, t.x))
+        });
+        if let Some(t) = spot {
+            out.push(vec![e.id], CommandOrder::Move { x: t.x, y: t.y });
+        }
     }
 }
 
@@ -119,12 +163,8 @@ fn silo(ai: &Ai, game: &Game, view: &View, next: Option<Kind>) -> Option<Kind> {
     }
     let rules = &game.rules;
     let credits = game.state.players.iter().find(|p| p.id == ai.player).map_or(0, |p| p.credits);
-    let owed: i64 = view
-        .mine
-        .iter()
-        .flat_map(|&i| game.state.entities[i].queue.iter())
-        .map(|q| rules.kind(q.item).cost - q.paid)
-        .sum();
+    let owed: i64 =
+        view.mine.iter().flat_map(|&i| game.state.entities[i].queue.iter()).map(|q| q.cost(rules) - q.paid).sum();
     let spare = credits - owed - next.map_or(0, |k| rules.kind(k).cost) - ai.settings.unit_reserve;
     if spare * 100 < cap * ai.settings.silo_percent {
         return None;
@@ -167,8 +207,8 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
         army[es[i].kind.0 as usize] += 1;
         for q in &es[i].queue {
             army[q.item.0 as usize] += 1;
-            owed += rules.kind(q.item).cost - q.paid;
-            building_queued |= rules.kind(q.item).building;
+            owed += q.cost(rules) - q.paid;
+            building_queued |= rules.kind(q.item).building && !q.upgrade;
         }
     }
     // With its income stopped, nothing more is coming to save up for: what credits are left buy units, but only
@@ -189,8 +229,9 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             }
         }
     }
-    // Factories with room in their queue, each with the units it can make now.
-    let mut factories: Vec<(u32, usize, Vec<Kind>)> = Vec::new();
+    // Factories with room in their queue, each with the units it can make now and, for the primary one of a kind
+    // that may go a level higher, those an upgrade would let it make.
+    let mut factories: Vec<(u32, usize, Vec<Kind>, Vec<Kind>)> = Vec::new();
     for &i in &view.mine {
         let f = &es[i];
         if f.queue.len() >= ai.settings.factory_queue {
@@ -199,9 +240,11 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
         let made_here: Vec<Kind> = units
             .iter()
             .copied()
-            .filter(|&k| rules.kind(k).built_at == Some(f.kind) && game.can_build(ai.player, k).is_ok())
+            .filter(|&k| rules.kind(k).built_at == Some(f.kind) && rules.kind(k).factory_level <= f.level)
+            .filter(|&k| game.can_build(ai.player, k).is_ok())
             .collect();
-        if made_here.is_empty() {
+        let locked = locked(ai, game, view, i, &units);
+        if made_here.is_empty() && locked.is_empty() {
             continue;
         }
         if harvesters < want
@@ -220,30 +263,65 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
             out.push(vec![f.id], CommandOrder::Produce { kind: c });
             continue;
         }
-        factories.push((f.id, f.queue.len(), made_here));
+        factories.push((f.id, f.queue.len(), made_here, locked));
     }
     // Then one combat unit at a time, each from a different factory: of every armed unit those factories make, the
-    // one the army has fewest of for its weight (ties to the dearer one), from the factory with the shortest queue.
-    // Everything is paid as it builds, so what is queued counts against the reserve until it is paid off.
+    // one the army has fewest of for its weight (ties to one it can make now, then the dearer one), from the factory
+    // with the shortest queue. When that is a unit its factory must be upgraded for, the upgrade is queued instead (rules-economy-production.md
+    // section 11), so it upgrades when the mix calls for what the upgrade brings and not before. Everything is paid
+    // as it builds, so what is queued counts against the reserve until it is paid off.
     while credits - owed >= if dry { 0 } else { ai.settings.unit_reserve } {
         let spare = credits - owed;
         let best = factories
             .iter()
             .enumerate()
-            .flat_map(|(n, (id, queued, made))| made.iter().map(move |&k| (n, *id, *queued, k)))
-            .filter(|&(_, _, _, k)| rules.kind(k).weapon.is_some() && !is_harvester(k))
-            .filter(|&(_, _, _, k)| !dry || rules.kind(k).cost <= spare)
-            .filter_map(|(n, id, queued, k)| {
+            .flat_map(|(n, (id, queued, made, locked))| {
+                let made = made.iter().map(move |&k| (n, *id, *queued, k, false));
+                made.chain(locked.iter().filter(|_| !dry).map(move |&k| (n, *id, *queued, k, true)))
+            })
+            .filter(|&(_, _, _, k, _)| rules.kind(k).weapon.is_some() && !is_harvester(k))
+            .filter(|&(_, _, _, k, _)| !dry || rules.kind(k).cost <= spare)
+            .filter_map(|(n, id, queued, k, up)| {
                 let w = weight(ai, game, k);
-                (w > 0).then(|| ((army[k.0 as usize] * 1000 / w, -rules.kind(k).cost, k, queued, id), n))
+                (w > 0).then(|| ((army[k.0 as usize] * 1000 / w, up, -rules.kind(k).cost, k, queued, id), n))
             })
             .min();
-        let Some(((_, _, k, _, id), n)) = best else { break };
-        army[k.0 as usize] += 1;
-        owed += rules.kind(k).cost;
-        out.push(vec![id], CommandOrder::Produce { kind: k });
+        let Some(((_, up, _, k, _, id), n)) = best else { break };
+        if up {
+            let f = game.state.entity(id).map(|f| f.kind).expect("a factory of its own");
+            owed += rules.kind(f).upgrade_cost;
+            out.push(vec![id], CommandOrder::Upgrade { kind: f, on: true });
+        } else {
+            army[k.0 as usize] += 1;
+            owed += rules.kind(k).cost;
+            out.push(vec![id], CommandOrder::Produce { kind: k });
+        }
         factories.remove(n);
     }
+}
+
+/// The units in `units` that the factory at entity index `f` could make once upgraded, if it is the primary one of its
+/// kind, none of that kind has an upgrade queued or under way, and the next level is within the game's tech level:
+/// those needing a level above every one of its kind has, whose other needs are met.
+fn locked(ai: &Ai, game: &Game, view: &View, f: usize, units: &[Kind]) -> Vec<Kind> {
+    let es = &game.state.entities;
+    let rules = &game.rules;
+    let kind = es[f].kind;
+    let mine = || view.mine.iter().map(|&i| &es[i]).filter(|e| e.kind == kind);
+    let top = mine().map(|e| e.level).max().unwrap_or(0);
+    if classic_sim::production::primary(&game.state, ai.player, kind) != Some(f)
+        || mine().any(|e| e.queue.iter().any(|q| q.upgrade))
+        || top >= game.level_cap(kind)
+    {
+        return Vec::new();
+    }
+    let level = |k: Kind| rules.kind(k).factory_level;
+    units
+        .iter()
+        .copied()
+        .filter(|&k| rules.kind(k).built_at == Some(kind) && level(k) == top + 1)
+        .filter(|&k| game.can_build(ai.player, k) == Err(classic_sim::ProduceError::FactoryLevel { level: level(k) }))
+        .collect()
 }
 
 /// A unit kind's weight in the army's mix: as `Settings::unit_mix` gives it, or 1 if the list leaves it out.

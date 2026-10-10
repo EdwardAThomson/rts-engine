@@ -7,6 +7,7 @@ use rts_core::rng::seed_state;
 
 use crate::blooms;
 use crate::capture;
+use crate::deploy;
 use crate::hazard::{self, Hazards};
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
@@ -102,6 +103,7 @@ impl Game {
             strikes: Vec::new(),
             slabs: None,
             blooms: blooms::start(&map, &rules),
+            tech_level: None,
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in
@@ -162,6 +164,12 @@ impl Game {
         for (p, f) in self.state.players.iter_mut().zip(factions) {
             p.faction = Some(f.as_ref().to_string());
         }
+    }
+
+    /// Set the game's tech level (1 to 8; a mission's, or the skirmish host's choice), which limits what can be built
+    /// and how far buildings can be upgraded; `None` limits nothing. Call it before the first tick.
+    pub fn set_tech_level(&mut self, level: Option<u32>) {
+        self.state.tech_level = level.map(|t| t.clamp(1, 8));
     }
 
     /// Advance `n` ticks.
@@ -233,6 +241,11 @@ impl Game {
         storage::cap(&self.state, &self.rules, player)
     }
 
+    /// The highest level a building of `kind` can be upgraded to in this game.
+    pub fn level_cap(&self, kind: Kind) -> u32 {
+        production::level_cap(&self.state, &self.rules, kind)
+    }
+
     /// Whether `player` may order `kind` built now. Changes nothing.
     pub fn can_build(&self, player: u32, kind: Kind) -> Result<(), ProduceError> {
         production::can_build(&self.state, &self.rules, player, kind)
@@ -241,6 +254,13 @@ impl Game {
     /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
     pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
+    }
+
+    /// Whether unit `id` could deploy into its building if it stood on tile `at` now (the `deploy` module), other
+    /// units counting as in the way. Changes nothing.
+    pub fn can_deploy(&self, id: u32, at: Tile) -> Result<(), PlaceError> {
+        let e = self.state.entity(id).ok_or(PlaceError::NotABuilding)?;
+        deploy::check(&self.map, &self.state, &self.rules, e, at)
     }
 
     /// Whether `player` may send capturers against building `id` now. Changes nothing.

@@ -101,6 +101,36 @@ pub fn check(
     x: i32,
     y: i32,
 ) -> Result<(), PlaceError> {
+    site(map, state, rules, Some(player), kind, x, y, None)
+}
+
+/// Check the ground for a building that a unit deploys into (the `deploy` module): the placement rules less the
+/// one about its owner's other buildings, since a deployed building may stand anywhere, and with the deploying
+/// unit `unit` itself not in the way.
+pub fn check_deploy(
+    map: &MapData,
+    state: &GameState,
+    rules: &Rules,
+    kind: Kind,
+    x: i32,
+    y: i32,
+    unit: u32,
+) -> Result<(), PlaceError> {
+    site(map, state, rules, None, kind, x, y, Some(unit))
+}
+
+/// The placement rules: near `player`'s buildings when one is given, and with unit `ignore` not in the way.
+#[allow(clippy::too_many_arguments)]
+fn site(
+    map: &MapData,
+    state: &GameState,
+    rules: &Rules,
+    player: Option<u32>,
+    kind: Kind,
+    x: i32,
+    y: i32,
+    ignore: Option<u32>,
+) -> Result<(), PlaceError> {
     let k = rules.kinds.get(kind.0 as usize).filter(|k| k.building).ok_or(PlaceError::NotABuilding)?;
     let new = Rect { x0: x, y0: y, x1: x + k.width - 1, y1: y + k.height - 1 };
     if !map.in_bounds(new.x0, new.y0) || !map.in_bounds(new.x1, new.y1) {
@@ -125,10 +155,11 @@ pub fn check(
                 |e: &crate::world::Entity| crate::movement::step_tile(e).is_some_and(|t| t.x == tx && t.y == ty);
             // Aircraft don't block a building: one landed there takes off again.
             let solid = |e: &&crate::world::Entity| rules.kind(e.kind).building || crate::world::on_ground(rules, e);
-            if state.entities.iter().filter(solid).any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
+            let others = state.entities.iter().filter(|e| Some(e.id) != ignore);
+            if others.filter(solid).any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
                 return Err(PlaceError::Blocked { x: tx, y: ty });
             }
-            if k.slab && crate::decay::owner(state, tx, ty).is_some_and(|o| o != player) {
+            if k.slab && crate::decay::owner(state, tx, ty).is_some_and(|o| Some(o) != player) {
                 return Err(PlaceError::Blocked { x: tx, y: ty });
             }
         }
@@ -136,13 +167,15 @@ pub fn check(
     if k.slab && (new.y0..=new.y1).all(|ty| (new.x0..=new.x1).all(|tx| crate::decay::owner(state, tx, ty).is_some())) {
         return Err(PlaceError::Blocked { x: new.x0, y: new.y0 });
     }
-    let near = state
-        .entities
-        .iter()
-        .filter(|e| e.owner == player && rules.kind(e.kind).building && !rules.kind(e.kind).wall)
-        .any(|e| footprint(e).gap(new) <= rules.placement.max_gap)
-        || slab_near(map, state, player, new, rules.placement.max_gap);
-    if !near {
+    let near = |player: u32| {
+        state
+            .entities
+            .iter()
+            .filter(|e| e.owner == player && rules.kind(e.kind).building && !rules.kind(e.kind).wall)
+            .any(|e| footprint(e).gap(new) <= rules.placement.max_gap)
+            || slab_near(map, state, player, new, rules.placement.max_gap)
+    };
+    if player.is_some_and(|p| !near(p)) {
         return Err(PlaceError::TooFar);
     }
     if k.refinery {

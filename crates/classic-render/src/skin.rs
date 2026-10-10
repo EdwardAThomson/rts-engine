@@ -440,8 +440,8 @@ impl Mode {
 }
 
 /// The orders a right click on `target` gives the selected `units` beyond the plain attack or move: capturers go
-/// into an enemy building that can be taken now, and damaged vehicles go to an own repair pad. Returns those orders
-/// and the units left over for the plain one.
+/// into an enemy building that can be taken now, damaged vehicles go to an own repair pad, and a selected unit that
+/// deploys, clicked itself, deploys where it stands. Returns those orders and the units left over for the plain one.
 pub fn special_orders(
     game: &Game,
     player: u32,
@@ -451,6 +451,10 @@ pub fn special_orders(
     let Some(t) = target.and_then(|id| game.state.entity(id)) else { return (Vec::new(), units.to_vec()) };
     let rules = &game.rules;
     let kind = |id: u32| game.state.entity(id).map(|e| (e, rules.kind(e.kind)));
+    if t.owner == player && rules.kind(t.kind).deploys_into.is_some() && units.contains(&t.id) {
+        let rest = units.iter().copied().filter(|&id| id != t.id).collect();
+        return (vec![(vec![t.id], CommandOrder::Deploy)], rest);
+    }
     let (special, rest): (Vec<u32>, Vec<u32>) = if t.owner != player && game.can_capture(player, t.id).is_ok() {
         units.iter().partition(|&&id| kind(id).is_some_and(|(_, k)| k.capturer))
     } else if t.owner == player && rules.kind(t.kind).repair_pad && t.selling == 0 {
@@ -466,8 +470,7 @@ pub fn special_orders(
     (vec![(special, order)], rest)
 }
 
-/// The cursor for `p`, by the ids of `plans/rts/ui.md` section 9. Carry and deploy are drawn and wait for their
-/// orders.
+/// The cursor for `p`, by the ids of `plans/rts/ui.md` section 9. Carry is drawn and waits for its order.
 pub fn choose_cursor(game: &Game, player: u32, selected: &[u32], p: &Pointer) -> &'static str {
     const SCROLL: [[&str; 3]; 3] = [
         ["scroll_nw", "scroll_n", "scroll_ne"],
@@ -498,9 +501,13 @@ pub fn choose_cursor(game: &Game, player: u32, selected: &[u32], p: &Pointer) ->
     }
     let ids: Vec<u32> = units.iter().map(|e| e.id).collect();
     if let (Some(e), (special, _)) = (hovered, special_orders(game, player, &ids, p.hovered))
-        && !special.is_empty()
+        && let Some((_, order)) = special.first()
     {
-        return if e.owner == player { "repair_pad" } else { "enter" };
+        return match order {
+            CommandOrder::Deploy => "deploy",
+            _ if e.owner == player => "repair_pad",
+            _ => "enter",
+        };
     }
     match hovered {
         Some(e) if e.owner != player => {

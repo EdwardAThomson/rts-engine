@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); P makes the selected factory the primary one of its kind, where new orders go; ctrl+click on an item in the rail puts it on hold or resumes it; right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
+`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); P makes the selected factory the primary one of its kind, where new orders go; ctrl+click on an item in the rail puts it on hold or resumes it; the upgrade icon after a factory's items upgrades its primary factory, unlocking the items shown locked until then (right-click it, or the upgrade in the queue, to take it back), and `--tech 1` to `8` sets the game's tech level, which limits what anyone may build or upgrade; right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -103,11 +103,12 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/repair.rs` | Repair: an own building mends a step at a time for credits while repair is on, slower when its owner is short of power and waiting while they can't pay; a repair pad mends its owner's damaged vehicles parked beside it, one at a time. |
 | `crates/classic-sim/src/sell.rs` | Selling (on unless a pack turns it off): a building sold stops working for a moment, then goes and pays back half its cost scaled by health, plus what its queue had paid. |
 | `crates/classic-sim/src/capture.rs` | Capture (on unless a pack turns it off): infantry walk up to an enemy building below a quarter of its health and take it over, going inside; walls, turrets and the palace can't be taken. |
+| `crates/classic-sim/src/deploy.rs` | Deploying: a unit whose kind `deploys_into` a building (the base builder, `mcv`, into a construction yard) turns into it where it stands, on clear rock anywhere on the map, after its owner's units step out of the way; damaged, it gives a building as damaged. |
 | `crates/classic-sim/src/placement.rs` | Where a building may go: in bounds, firm empty ground, no resource, nothing in the way, near its owner's base. Buildings block ground movement; units already moving path round a new one. |
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/vision.rs` | Fog of war, when a pack turns the `fog` module on (the generic pack does): each player's explored tiles and a count of their sight sources over each tile, kept up to date by adding and removing discs as entities appear, move tile and die, from a building's edges. Fog hides enemy units out of sight and keeps a ghost of each enemy building as last seen (or, with `hide` off, shroud only: explored ground shows everything, as the original did). Targets must be in their owner's sight, attack orders need a target in sight or a ghost, and a unit that fires is shown to the player it fires at for a moment. Hashed while on. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
-| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (battle, siege and missile tanks, quads, scout bikes, single infantry and rocket infantry, and infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target leaves the wave), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Under fog it reads only what its side can see, guesses the other players' start positions and sends its fastest idle fighter to look at the nearest one it hasn't explored. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (battle, siege and missile tanks, quads, scout and raider bikes, single infantry and rocket infantry, and infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. With its construction yard lost it builds a base builder where it can and deploys it near home, as it deploys any base builder it owns. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target leaves the wave), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Under fog it reads only what its side can see, guesses the other players' start positions and sends its fastest idle fighter to look at the nearest one it hasn't explored. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
 | `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, effects (`effects.rs`: muzzle flashes, shells and rockets, smoke trails, explosions, smoke and fire on damaged things), selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `fog` draws the local player's shroud and fog with soft edges, the minimap shows them too, enemies out of sight are hidden and enemy buildings in fog drawn as last seen, and sounds from the world play only where the player can see; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
@@ -183,6 +184,11 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   sends units out of the corner facing the middle) or waits until one frees up; prerequisites, the primary factory
   (the first built, or the one the player picks, takes orders and sends out the units), an entry put on hold (its
   queue stops, paying nothing, until resumed or cancelled) and replay from the command log all hold.
+- Tech levels and factory upgrades: a game's tech level (1 to 8, none for everything) refuses whatever is above it,
+  at the starport too, and caps how far each kind of factory may be upgraded; an upgrade is an entry in that
+  factory's queue, paid as it builds and taken back with a full refund, that holds up the queue behind it and
+  raises only that building's level; an item that needs a level goes to a factory that has it even when another is
+  primary; it all replays from the command log, and saves keep the tech level.
 - Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
   heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
   nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
@@ -318,6 +324,19 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   last, so it makes its faction's special and gunships. In 120 games on `mirror-01` (20 seeds for each ordered
   pair of factions, 60,000 ticks) the 98 decided games went 38, 33 and 27 to `faction_a`, `faction_b` and
   `faction_c`, after the beam's damage went from 55 to 70 and `super_h`'s health from 600 to 500.
+- Raider bike and base builder (`crates/classic-sim/tests/deploy.rs`, rts-engine issue #70): no golden game has
+  either, so every golden hash is unchanged. `raider_bike` is `faction_c`'s bike: the scout bike's gun on 80 health
+  for 36 speed (the scout bike's 100 and 32), at 200 credits and 240 ticks. With the cost set by equal-credit fights
+  (five raider bikes against four scout bikes, sides swapped each seed: 4 won, the rest even or lost), it is
+  faster and better against infantry, worse against quads. In 20 games on `skirmish-01` (`faction_c` against
+  `faction_a`, sides swapped) it was built 57 times and moved the result from 3 wins to 7 to 3 to 6. `mcv` needs a
+  heavy factory and a repair pad (900 credits, 1,200 ticks; the starport sells one at a time). Deployed, it is a
+  construction yard with the unit's tile as its top left, on clear rock anywhere: refused at once on open ground,
+  resource, cliff, the map's edge or another building; its owner's units standing there step aside, and other units
+  are waited for 45 ticks (`deploy.wait_ticks`). A damaged one gives a yard as damaged. A player is defeated only
+  with no building and no base builder left. The computer opponent with its yard taken away at tick 6,000 built a
+  base builder at tick 8,135 and deployed it at 8,340. Right-clicking a selected base builder on itself deploys it,
+  with the `deploy` cursor.
 - Starport market (`crates/classic-sim/tests/starport.rs`): no golden game has a starport, and the market opens only
   when the first one stands, so every golden hash is unchanged. An order of up to 5 units is paid in full at the
   prices of the moment, or refused whole and left open to change; a supply ship flies in from the nearest map edge,
@@ -353,11 +372,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   that it is gone, a little before it should. Fog was checked in tests and screenshots, not yet by a person playing.
 - Collision covers vehicles only (aircraft have none, by design): no infantry positions, crushing, group formations, keep-clear tiles or
   bodies that turn before driving yet, and a blocked search returns no partial path.
-- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or tech levels; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
+- Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout and raider bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two) or attacks on the ground; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent has three levels (easy, normal, hard) with numbers in code: no brutal level, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
-  exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
+  exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. It upgrades a factory when the
+  next unit its mix calls for needs the upgrade, and never the construction yard. Its memory lives in the `Ai`
   value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
   differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
   three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
@@ -374,7 +394,10 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   50 to 21 in seeds 1 to 200 but 33 to 28 in seeds 101 to 300, so a small left edge may remain, perhaps from units
   acting in id order when even armies meet (inferred, not traced). Maps turned a quarter round are not fully fair,
   because the starting base doesn't turn with them.
-- No tech levels or factory upgrades. Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
+- Tech levels and upgrades: the tech level is set with `--tech` (or by a save), not yet on the title screen or by
+  mission data; there are no level 2 items yet, no allow or deny lists, and no `tech_changed` event; waiting entries
+  are not refunded when a required building dies. Checked in tests and computer games, not yet by a person playing.
+- Aircraft: the gunship fires one 45-damage rocket for the doc's burst of
   3 × 20; carriers lift harvesters on long trips only, not damaged units to a repair pad or units stuck on their
   way. Carriers make the economy faster, so fields run dry and more AI games end:
   of 30 seeds on `mirror-01` to 60,000 ticks, 11 were decided (10 for the right start), against 9 before aircraft
@@ -388,8 +411,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   person: `faction_a` beat `faction_c` 23 to 12, a lean these runs can't yet tell from noise.
 - Palace powers: the guerrillas don't hide on rough ground yet, the missile leaves no scorch mark, and its flight
   and blast are stand-in effects (a rocket sprite on an arc, large explosions). The private pack has its own words only
-  for `superpower_ready`; the other new lines use the engine's. Tech levels aren't built, so the powers need only a
-  palace. The computer scores the tiles of enemies it knows of rather than the design's grid. Checked in tests and
+  for `superpower_ready`; the other new lines use the engine's. The palace is tech level 8, so below that there are
+  no powers. The computer scores the tiles of enemies it knows of rather than the design's grid. Checked in tests and
   computer games, not yet by a person playing.
 - Starport: the computer opponent never builds one or buys from it, prices and stock show only on the starport's
   tab, and the supply ship has no landing or take-off effect or sound. It was checked in tests, not yet by a person

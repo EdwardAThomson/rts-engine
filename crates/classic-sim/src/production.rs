@@ -10,6 +10,14 @@
 //! where new units come out); with none picked it is the first built. An entry can be put on hold, which stops its
 //! factory's queue there, paying nothing, until the player resumes or cancels it (rules-economy-production.md,
 //! section 8).
+//!
+//! Tech levels and factory upgrades (sections 9 and 11): a game may have a tech level, 1 to 8, and an item whose
+//! `tech_level` is above it can't be built. A producing building with a `max_level` can be upgraded: an upgrade is a
+//! queue entry like any other (its item is the building's own kind, marked `upgrade`), paid and built the same way
+//! from the building's `upgrade_cost` and `upgrade_ticks`, and when it finishes the building's `level` goes up by
+//! one. Each level needs the game to allow its `level_1_tech` or `level_2_tech`. An item with a `factory_level` is
+//! built only by a factory of at least that level; orders naming no factory go to the primary one if it is high
+//! enough, else to the first that is.
 
 use rts_core::hash::{Canon, CanonHasher};
 
@@ -57,6 +65,27 @@ pub struct QueueEntry {
     pub progress: i64,
     /// Credits paid so far, never more than the cost.
     pub paid: i64,
+    /// An upgrade of the building whose queue it is in (its `item` is that building's kind), not an item to build.
+    pub upgrade: bool,
+}
+
+impl QueueEntry {
+    /// A new entry, waiting.
+    pub fn new(item: Kind) -> QueueEntry {
+        QueueEntry { item, state: EntryState::Waiting, progress: 0, paid: 0, upgrade: false }
+    }
+
+    /// What it costs in all.
+    pub fn cost(&self, rules: &Rules) -> i64 {
+        let k = rules.kind(self.item);
+        if self.upgrade { k.upgrade_cost } else { k.cost }
+    }
+
+    /// Ticks it takes at full power.
+    pub fn ticks(&self, rules: &Rules) -> i64 {
+        let k = rules.kind(self.item);
+        if self.upgrade { k.upgrade_ticks } else { k.build_ticks }.max(1)
+    }
 }
 
 /// A queue entry as the state hash writes it, with its item spelt as the generic id.
@@ -70,6 +99,8 @@ impl Canon for EntryCanon<'_> {
             .field("paid", &e.paid)
             .field("progress", &e.progress)
             .field("state", e.state.id())
+            // Written only for an upgrade, so a game without them hashes as it did before.
+            .opt("upgrade", e.upgrade.then_some(&true))
             .end();
     }
 }
@@ -90,6 +121,14 @@ pub enum ProduceError {
     Faction,
     /// Cancel, hold or resume: no such entry in the queue (none still building, for hold; none held, for resume).
     NotQueued,
+    /// The game's tech level is below the item's.
+    TechLevel,
+    /// None of the player's factories for it has been upgraded far enough.
+    FactoryLevel {
+        level: u32,
+    },
+    /// Upgrade: the building is already as high as it can go, or as the game's tech level allows.
+    MaxLevel,
 }
 
 impl ProduceError {
@@ -101,17 +140,24 @@ impl ProduceError {
             ProduceError::QueueFull => "queue_full",
             ProduceError::Faction => "faction",
             ProduceError::NotQueued => "not_queued",
+            ProduceError::TechLevel => "tech_level",
+            ProduceError::FactoryLevel { .. } => "factory_level",
+            ProduceError::MaxLevel => "max_level",
         }
     }
 }
 
-/// Whether `player` may build `item` now: something builds it, their faction may (when the kind is limited to some),
-/// and they own every building it requires. (Tech levels and factory upgrades come later.)
+/// Whether `player` may build `item` now: something builds it, the game's tech level allows it, their faction may
+/// (when the kind is limited to some), they own every building it requires, and, if they own a factory for it, one
+/// is upgraded far enough.
 pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> Result<(), ProduceError> {
     let k = rules.kinds.get(item.0 as usize).ok_or(ProduceError::NotBuildable)?;
     // Slabs only mean something while buildings decay.
     if k.built_at.is_none() || (k.slab && !crate::decay::on(rules)) {
         return Err(ProduceError::NotBuildable);
+    }
+    if state.tech_level.is_some_and(|t| k.tech_level > t) {
+        return Err(ProduceError::TechLevel);
     }
     if !k.factions.is_empty() {
         let faction = state.players.iter().find(|p| p.id == player).and_then(|p| p.faction.as_deref());
@@ -124,7 +170,19 @@ pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> R
             return Err(ProduceError::Requires { kind: r });
         }
     }
+    let maker = k.built_at.expect("checked above");
+    let mut makers = state.entities.iter().filter(|e| e.owner == player && e.kind == maker).peekable();
+    if makers.peek().is_some() && !makers.any(|e| e.level >= k.factory_level) {
+        return Err(ProduceError::FactoryLevel { level: k.factory_level });
+    }
     Ok(())
+}
+
+/// The highest level the game's tech level lets a building of this kind reach.
+pub fn level_cap(state: &GameState, rules: &Rules, kind: Kind) -> u32 {
+    let k = rules.kind(kind);
+    let allowed = |n: u32| state.tech_level.is_none_or(|t| k.level_tech[(n - 1).min(1) as usize] <= t);
+    (1..=k.max_level.min(2)).take_while(|&n| allowed(n)).last().unwrap_or(0)
 }
 
 /// The index of `player`'s primary building of kind `factory`: the one they picked, else the first built (lowest id).
@@ -146,9 +204,13 @@ fn factory_for(state: &GameState, rules: &Rules, player: u32, ids: &[u32], item:
         let e = &state.entities[*i];
         e.owner == player && e.kind == maker && e.selling == 0
     };
+    let need = rules.kind(item).factory_level;
     match ids.first() {
         Some(&id) => state.entities.binary_search_by_key(&id, |e| e.id).ok().filter(fits),
-        None => primary(state, player, maker),
+        None => primary(state, player, maker)
+            .filter(|&i| state.entities[i].level >= need)
+            .or_else(|| (0..state.entities.len()).find(|i| fits(i) && state.entities[*i].level >= need))
+            .or_else(|| primary(state, player, maker)),
     }
 }
 
@@ -174,6 +236,10 @@ pub fn produce(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], i
     let tick = state.tick;
     let result = can_build(state, rules, player, item).and_then(|()| {
         let i = factory_for(state, rules, player, ids, item).ok_or(ProduceError::NoFactory)?;
+        let need = rules.kind(item).factory_level;
+        if state.entities[i].level < need {
+            return Err(ProduceError::FactoryLevel { level: need });
+        }
         if state.entities[i].queue.len() >= rules.production.queue_size {
             return Err(ProduceError::QueueFull);
         }
@@ -182,7 +248,7 @@ pub fn produce(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], i
     match result {
         Ok(i) => {
             let f = &mut state.entities[i];
-            f.queue.push(QueueEntry { item, state: EntryState::Waiting, progress: 0, paid: 0 });
+            f.queue.push(QueueEntry::new(item));
             events.push(Event::ProductionQueued { tick, factory: f.id, kind: item });
         }
         Err(reason) => events.push(Event::ProductionRejected { tick, player, kind: item, reason }),
@@ -194,7 +260,14 @@ pub fn produce(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], i
 pub fn cancel(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], item: Kind, events: &mut Vec<Event>) {
     let tick = state.tick;
     let found = factory_for(state, rules, player, ids, item).ok_or(ProduceError::NoFactory).and_then(|i| {
-        Ok((i, state.entities[i].queue.iter().rposition(|q| q.item == item).ok_or(ProduceError::NotQueued)?))
+        Ok((
+            i,
+            state.entities[i]
+                .queue
+                .iter()
+                .rposition(|q| q.item == item && !q.upgrade)
+                .ok_or(ProduceError::NotQueued)?,
+        ))
     });
     match found {
         Ok((i, at)) => {
@@ -221,6 +294,7 @@ pub fn hold(
     let tick = state.tick;
     let open = |q: &QueueEntry| {
         q.item == item
+            && !q.upgrade
             && if on {
                 matches!(q.state, EntryState::Waiting | EntryState::Building | EntryState::Paused)
             } else {
@@ -242,6 +316,53 @@ pub fn hold(
             });
         }
         Err(reason) => events.push(Event::ProductionRejected { tick, player, kind: item, reason }),
+    }
+}
+
+/// Queue an upgrade of `player`'s building of kind `kind` (the one named in `ids`, else their primary one), or with
+/// `on` false take the last queued upgrade back out and refund what it paid.
+pub fn upgrade(
+    state: &mut GameState,
+    rules: &Rules,
+    player: u32,
+    ids: &[u32],
+    kind: Kind,
+    on: bool,
+    events: &mut Vec<Event>,
+) {
+    let tick = state.tick;
+    let fits = |e: &crate::world::Entity| e.owner == player && e.kind == kind && e.selling == 0;
+    let found = match ids.first() {
+        Some(&id) => state.entities.binary_search_by_key(&id, |e| e.id).ok().filter(|&i| fits(&state.entities[i])),
+        None => primary(state, player, kind),
+    };
+    let result = found.ok_or(ProduceError::NoFactory).and_then(|i| {
+        let f = &state.entities[i];
+        let queued = f.queue.iter().filter(|q| q.upgrade).count() as u32;
+        if !on {
+            return f.queue.iter().rposition(|q| q.upgrade).map(|at| (i, at)).ok_or(ProduceError::NotQueued);
+        }
+        if f.level + queued >= level_cap(state, rules, kind) {
+            return Err(ProduceError::MaxLevel);
+        }
+        if f.queue.len() >= rules.production.queue_size {
+            return Err(ProduceError::QueueFull);
+        }
+        Ok((i, f.queue.len()))
+    });
+    match result {
+        Ok((i, at)) if on => {
+            let f = &mut state.entities[i];
+            f.queue.insert(at, QueueEntry { upgrade: true, ..QueueEntry::new(kind) });
+            events.push(Event::ProductionQueued { tick, factory: f.id, kind });
+        }
+        Ok((i, at)) => {
+            let entry = state.entities[i].queue.remove(at);
+            let factory = state.entities[i].id;
+            credit(state, player, entry.paid);
+            events.push(Event::ProductionCancelled { tick, factory, kind, refund: entry.paid });
+        }
+        Err(reason) => events.push(Event::ProductionRejected { tick, player, kind, reason }),
     }
 }
 
@@ -340,10 +461,10 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
         let k = rules.kind(head.item);
         let mut entry = head;
         if matches!(entry.state, EntryState::Waiting | EntryState::Building | EntryState::Paused) {
-            let total = k.build_ticks * 100;
+            let total = entry.ticks(rules) * 100;
             let speed = if rules.production.instant_build { total } else { factors[p] };
             let progress = (entry.progress + speed).min(total);
-            let due = k.cost * progress / total;
+            let due = entry.cost(rules) * progress / total;
             if due - entry.paid > state.players[p].credits {
                 if entry.state != EntryState::Paused {
                     events.push(Event::ProductionPaused { tick, factory, kind: head.item });
@@ -354,6 +475,13 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
                 entry.paid = due;
                 entry.progress = progress;
                 entry.state = EntryState::Building;
+                if progress == total && entry.upgrade {
+                    let f = &mut state.entities[i];
+                    f.level += 1;
+                    f.queue.remove(0);
+                    events.push(Event::UpgradeCompleted { tick, factory, kind: head.item, level: f.level });
+                    continue;
+                }
                 if progress == total {
                     entry.state = if k.building { EntryState::Ready } else { EntryState::Blocked };
                     if k.building {

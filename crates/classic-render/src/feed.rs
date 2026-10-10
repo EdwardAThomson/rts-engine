@@ -261,6 +261,11 @@ impl Feed {
                 Event::PlacementRejected { player, kind, .. } if player == local => {
                     self.say(game, "cannot_place", Some(kind), Tone::Warn)
                 }
+                // A unit that can't deploy where it stands: the building can't go there, in the same words.
+                Event::DeployRefused { player, unit, .. } if player == local => {
+                    let into = game.state.entity(unit).and_then(|e| game.rules.kind(e.kind).deploys_into);
+                    self.say(game, "cannot_place", into, Tone::Warn)
+                }
                 Event::ProductionRejected { player, kind, reason, .. } if player == local => match reason {
                     ProduceError::QueueFull => self.say(game, "queue_full", None, Tone::Warn),
                     ProduceError::Requires { .. } => self.say(game, "needs_building", Some(kind), Tone::Warn),
@@ -268,7 +273,10 @@ impl Feed {
                     ProduceError::NotBuildable
                     | ProduceError::NoFactory
                     | ProduceError::NotQueued
-                    | ProduceError::Faction => {}
+                    | ProduceError::Faction
+                    | ProduceError::TechLevel
+                    | ProduceError::FactoryLevel { .. }
+                    | ProduceError::MaxLevel => {}
                 },
                 Event::ProductionPaused { factory, kind, .. } if Self::owner(game, factory) == Some(local) => {
                     self.say(game, "no_credits", Some(kind), Tone::Warn)
@@ -411,11 +419,14 @@ impl Feed {
                 | Event::CarrierDropoff { .. }
                 | Event::CarrierLostCargo { .. }
                 | Event::BuildingPlaced { .. }
+                | Event::Deployed { .. }
+                | Event::DeployRefused { .. }
                 | Event::ProductionQueued { .. }
                 | Event::ProductionCancelled { .. }
                 | Event::ProductionHeld { .. }
                 | Event::ProductionResumed { .. }
                 | Event::PrimarySet { .. }
+                | Event::UpgradeCompleted { .. }
                 | Event::SlabLaid { .. }
                 | Event::BloomSeeded { .. }
                 | Event::BloomBurst { .. }
