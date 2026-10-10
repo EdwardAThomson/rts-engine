@@ -400,8 +400,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   file by file, so a pack draws only what it changes. Icons in the rail are still the placeholders, and wrecks and the build-up frames
   aren't drawn. Squads are drawn as three soldiers; their walk and death clips show once the studio's infantry are packed. The player was checked under a virtual display
   with a software GPU, not on a real desktop GPU.
-- Sound is effects, interface sounds and a pack's spoken lines: no music, looping sounds or
-  volume sliders yet. In the browser, sound starts only after the first click or key press (browsers' rule), and
+- Sound is effects, interface sounds, engine and harvester loops, a pack's spoken lines (the advisor's queued by
+  priority) and music that turns to battle tracks while the player fights. Music has no battle-music switch or
+  per-track volume in the options yet, and the browser fetches the music with the rest before the game starts. In the browser, sound starts only after the first click or key press (browsers' rule), and
   it has not been heard there. The placeholder sounds were checked by tests and numbers
   (length, peak, never clipping), not yet by ear, and the player has not been run with a real sound card.
 - The browser build was checked only in headless Chromium on its software GPU, not in Firefox or Safari, on a

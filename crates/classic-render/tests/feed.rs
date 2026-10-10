@@ -179,7 +179,7 @@ fn the_engine_has_a_reply_for_every_voice_and_moment_and_planned_ids_are_new() {
     let lines = Lines::engine();
     for voice in VOICES {
         for m in Moment::ALL {
-            let said = &lines.acks[&(voice, m)];
+            let said = &lines.acks[&(voice.to_string(), m)];
             println!("{voice}.{}: {said:?}", m.id());
             assert!(!said.is_empty());
         }
@@ -250,7 +250,7 @@ fn the_advisor_warns_of_massing_enemies_and_hazards_now_and_then_and_says_how_th
     hud.after_step(&game);
     let reply = hud.feed.reply.clone().expect("a reply");
     assert_eq!(reply.id, "cant");
-    assert!(Lines::engine().acks[&("vehicle", Moment::Cant)].contains(&reply.text));
+    assert!(Lines::engine().acks[&("vehicle".to_string(), Moment::Cant)].contains(&reply.text));
 
     // The end of the game, once.
     hud.feed.over(&game, true);
@@ -296,16 +296,26 @@ fn a_pack_gives_each_faction_its_own_lines_and_mistakes_are_warned_about() {
         }"#,
     );
     let factions = ["faction_a".to_string(), "faction_b".to_string()];
-    let a = Lines::load(&pack, &factions, Some("faction_a"));
+    let a = Lines::load(&pack, &factions, &[], Some("faction_a"));
     println!("warnings: {:#?}", a.warnings);
     assert_eq!(a.advisor["low_power"], ["A: power low", "A: lights dim"], "the faction's own words win");
     assert_eq!(a.advisor["superpower_ready"], ["Ready to strike"], "a pack may give the advisor its own words");
-    assert_eq!(a.acks[&("vehicle", Moment::Select)], ["A here."]);
-    assert_eq!(a.acks[&("vehicle", Moment::Move)], ["Pack rolling.", "Pack driving."], "pack-wide lines carry over");
-    assert_eq!(a.acks[&("infantry", Moment::Move)], Lines::engine().acks[&("infantry", Moment::Move)]);
-    let b = Lines::load(&pack, &factions, Some("faction_b"));
+    assert_eq!(a.acks[&("vehicle".to_string(), Moment::Select)], ["A here."]);
+    assert_eq!(
+        a.acks[&("vehicle".to_string(), Moment::Move)],
+        ["Pack rolling.", "Pack driving."],
+        "pack-wide lines carry over"
+    );
+    assert_eq!(
+        a.acks[&("infantry".to_string(), Moment::Move)],
+        Lines::engine().acks[&("infantry".to_string(), Moment::Move)]
+    );
+    let b = Lines::load(&pack, &factions, &[], Some("faction_b"));
     assert_eq!(b.advisor["low_power"], ["Everyone: power low"]);
-    assert_eq!(b.acks[&("vehicle", Moment::Select)], Lines::engine().acks[&("vehicle", Moment::Select)]);
+    assert_eq!(
+        b.acks[&("vehicle".to_string(), Moment::Select)],
+        Lines::engine().acks[&("vehicle".to_string(), Moment::Select)]
+    );
     // Every faction's part is checked, whichever faction is played.
     assert_eq!(a.warnings, b.warnings);
     for w in [
@@ -381,7 +391,8 @@ fn the_private_packs_lines_read_without_mistakes_when_they_are_cloned_in() {
         let pack = setting::load(dir.to_str().unwrap()).unwrap();
         let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
         for f in &factions {
-            let lines = Lines::load(&Files::Dir(dir.clone()), &factions, Some(f));
+            let units: Vec<String> = pack.rules.entities.keys().cloned().collect();
+            let lines = Lines::load(&Files::Dir(dir.clone()), &factions, &units, Some(f));
             assert!(lines.warnings.is_empty(), "{}: {:?}", dir.display(), lines.warnings);
             println!("{} {f}: {} advisor lines", dir.display(), lines.advisor.len());
         }
@@ -406,4 +417,40 @@ fn the_advisor_says_storage_is_full_when_a_harvest_fills_it_or_is_lost_and_not_e
     let full: Vec<_> = said.iter().filter(|(_, t)| t == &feed::default_words()["storage_full"]).collect();
     assert_eq!(full.len(), 1, "once, when it filled; the loss that follows is the same news");
     assert_eq!(game.state.players[0].credits, cap);
+}
+
+#[test]
+fn aircraft_answer_in_their_own_voice_and_a_pack_can_give_one_unit_a_voice_of_its_own() {
+    let dir = pack_with_lines(
+        "unit-voice-pack",
+        r#"{ "acks": { "gunship": { "select": ["Gunship up."] }, "spaceship": { "move": "x" } } }"#,
+    );
+    let (mut game, _) = game_with_fog(false);
+    let pack = setting::load("generic").unwrap();
+    let mut hud = Hud::new(&pack, &dir, &game, 0, 0);
+    println!("warnings: {:?}", hud.feed.warnings);
+    assert!(hud.feed.warnings.iter().any(|w| w.contains("spaceship")), "an unknown voice set is warned about");
+    let [gunship, carrier, tank] = ["gunship", "carrier", "battle_tank"].map(|k| game.kind(k).unwrap());
+    let g = game.spawn(gunship, 0, 20, 20);
+    let c = game.spawn(carrier, 0, 21, 20);
+    let t = game.spawn(tank, 0, 22, 20);
+    let reply = |game: &mut Game, hud: &mut Hud, moment, units: &[u32]| {
+        // Far enough apart that every reply is said.
+        for _ in 0..REPLY_EVERY {
+            game.step(1);
+        }
+        hud.feed.reply(game, moment, units);
+        let said = std::mem::take(&mut hud.feed.spoken);
+        (said[0].who.clone(), hud.feed.reply.clone().unwrap().text)
+    };
+    assert_eq!(reply(&mut game, &mut hud, Moment::Select, &[g]), ("gunship".to_string(), "Gunship up.".to_string()));
+    // A moment its own set leaves out, it says in the aircraft set; so do mixed aircraft.
+    let engine = Lines::engine();
+    let (who, text) = reply(&mut game, &mut hud, Moment::Move, &[g]);
+    assert_eq!(who, "aircraft");
+    assert!(engine.acks[&("aircraft".to_string(), Moment::Move)].contains(&text));
+    assert_eq!(reply(&mut game, &mut hud, Moment::Select, &[g, c]).0, "aircraft");
+    // Aircraft with a ground vehicle answer as vehicles.
+    assert_eq!(reply(&mut game, &mut hud, Moment::Select, &[g, t]).0, "vehicle");
+    assert!(VOICES.contains(&"aircraft"));
 }

@@ -1,6 +1,10 @@
 {
   "about": "Placeholder sounds for the generic pack, synthesised from code by crates/classic-tools/src/sound.rs (run: cargo run --bin sounds). Paths are relative to the pack; each sound id lists its takes, and one is picked at random each time it plays. Which events play which sound id, and each id's bus, level and limits, are the engine's (data/audio/).",
   "sounds": {
+    "sfx_exit_barracks": { "files": ["audio/sfx/exit_barracks_1.wav"] },
+    "sfx_exit_light_factory": { "files": ["audio/sfx/exit_light_factory_1.wav"] },
+    "sfx_exit_heavy_factory": { "files": ["audio/sfx/exit_heavy_factory_1.wav"] },
+    "sfx_exit_air_factory": { "files": ["audio/sfx/exit_air_factory_1.wav"] },
     "sfx_cannon": { "files": ["audio/sfx/cannon_1.wav", "audio/sfx/cannon_2.wav"] },
     "sfx_rocket": { "files": ["audio/sfx/rocket_1.wav", "audio/sfx/rocket_2.wav"] },
     "sfx_gun": { "files": ["audio/sfx/gun_1.wav", "audio/sfx/gun_2.wav", "audio/sfx/gun_3.wav"] },
@@ -21,6 +25,11 @@
     "ui_order": { "files": ["audio/ui/order_1.wav"] },
     "ui_credits": { "files": ["audio/ui/credits_1.wav"] },
     "ui_power_down": { "files": ["audio/ui/power_down_1.wav"] },
-    "ui_power_up": { "files": ["audio/ui/power_up_1.wav"] }
+    "ui_power_up": { "files": ["audio/ui/power_up_1.wav"] },
+    "loop_engine_light": { "files": ["audio/loops/engine_light.wav"] },
+    "loop_engine_heavy": { "files": ["audio/loops/engine_heavy.wav"] },
+    "loop_engine_air": { "files": ["audio/loops/engine_air.wav"] },
+    "loop_harvest": { "files": ["audio/loops/harvest.wav"] },
+    "loop_unload": { "files": ["audio/loops/unload.wav"] }
   }
 }

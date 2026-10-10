@@ -8,13 +8,12 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use classic_data::ARMOURS;
 use classic_data::json::{self, Value};
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{CaptureError, Event, IdleReason, MoveEnd};
 use classic_sim::{Game, Kind, ProduceError, StarportError, SuperpowerError};
 
-use crate::lines::{Lines, Moment, Speech, VOICES};
+use crate::lines::{Lines, Moment, Speech};
 use crate::platform::Files;
 
 const MESSAGES: &str = include_str!("../../../data/ui/messages.json");
@@ -97,7 +96,7 @@ pub struct Feed {
     over: bool,
     /// The engine's own words and replies, to tell which lines the pack left in them (`Speech::engine`).
     engine_words: BTreeMap<String, String>,
-    engine_acks: BTreeMap<(&'static str, Moment), Vec<String>>,
+    engine_acks: BTreeMap<(String, Moment), Vec<String>>,
     pub warnings: Vec<String>,
 }
 
@@ -187,7 +186,7 @@ impl Feed {
         }
         let at = self.turn(id, said.len());
         let engine = !self.speech.advisor.contains_key(id) && self.words.get(id) == self.engine_words.get(id);
-        self.voice(Speech { who: "advisor", key: id.to_string(), variant: at, engine });
+        self.voice(Speech { who: "advisor".into(), key: id.to_string(), variant: at, engine });
         let text = said[at].clone();
         self.lines.push_back(Line { id, text, tone, tick });
         while self.lines.len() > MAX_LINES {
@@ -218,7 +217,7 @@ impl Feed {
     }
 
     /// The local player's `units` answer an order or being selected: one of them says a line from its voice set
-    /// (infantry when they all are, else vehicle) as a subtitle. Others' units, buildings and clicks coming faster
+    /// ([`crate::lines::voice_of`]) as a subtitle. Others' units, buildings and clicks coming faster
     /// than `REPLY_EVERY` say nothing.
     pub fn reply(&mut self, game: &Game, moment: Moment, units: &[u32]) {
         let mine: Vec<_> = units
@@ -233,12 +232,10 @@ impl Feed {
         if self.reply.as_ref().is_some_and(|r| tick.saturating_sub(r.tick) < REPLY_EVERY) {
             return;
         }
-        let infantry = ARMOURS.iter().position(|&a| a == "infantry");
-        let voice =
-            if mine.iter().all(|e| Some(game.rules.kind(e.kind).armour) == infantry) { VOICES[0] } else { VOICES[1] };
-        let Some(said) = self.speech.acks.get(&(voice, moment)).cloned() else { return };
+        let voice = crate::lines::voice_of(game, &mine, &self.speech, moment);
+        let Some(said) = self.speech.acks.get(&(voice.clone(), moment)).cloned() else { return };
         let at = self.turn(&format!("{voice}.{}", moment.id()), said.len());
-        let engine = self.engine_acks.get(&(voice, moment)) == Some(&said);
+        let engine = self.engine_acks.get(&(voice.clone(), moment)) == Some(&said);
         self.voice(Speech { who: voice, key: moment.id().to_string(), variant: at, engine });
         let text = said[at].clone();
         self.reply = Some(Line { id: moment.id(), text, tone: Tone::Info, tick });

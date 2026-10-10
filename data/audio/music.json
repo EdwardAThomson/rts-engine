@@ -1,0 +1,12 @@
+{
+  "about": "How the music follows the game (crates/classic-render/src/music.rs). Tension rises by tension_per_hit for each hit the local player takes or deals and by tension_per_loss for each thing they lose or destroy, and drains by tension_drain_per_second. The music turns to the pack's `battle` tracks once tension has stayed above battle_above for battle_after_s seconds, and back to `calm` once it has stayed below calm_below for calm_after_s seconds. Changes of track crossfade over crossfade_ms; gain_db sets every track's level on the music bus. A pack's audio/music.json gives only its tracks. Our own starting values, to be tuned by ear.",
+  "tension_per_hit": 2,
+  "tension_per_loss": 6,
+  "tension_drain_per_second": 3,
+  "battle_above": 20,
+  "battle_after_s": 3,
+  "calm_below": 6,
+  "calm_after_s": 20,
+  "crossfade_ms": 2000,
+  "gain_db": 0
+}

@@ -1,0 +1,12 @@
+{
+  "about": "Placeholder music for the generic pack, composed and synthesised from code by crates/classic-tools/src/music.rs (run: cargo run --bin sounds). Each track names its file, its pool (menu, calm, battle, won or lost) and its volume from 0 to 100 (0 leaves it out). How the music follows the game is the engine's (data/audio/music.json).",
+  "tracks": {
+    "menu_1": { "file": "audio/music/menu_1.wav", "pool": "menu", "volume": 100 },
+    "calm_1": { "file": "audio/music/calm_1.wav", "pool": "calm", "volume": 100 },
+    "calm_2": { "file": "audio/music/calm_2.wav", "pool": "calm", "volume": 100 },
+    "battle_1": { "file": "audio/music/battle_1.wav", "pool": "battle", "volume": 100 },
+    "battle_2": { "file": "audio/music/battle_2.wav", "pool": "battle", "volume": 100 },
+    "won_1": { "file": "audio/music/won_1.wav", "pool": "won", "volume": 100 },
+    "lost_1": { "file": "audio/music/lost_1.wav", "pool": "lost", "volume": 100 }
+  }
+}

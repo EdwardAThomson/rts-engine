@@ -11,7 +11,14 @@
 //! it showed ([`Speech`]) and [`SoundBoard::speak`] plays the matching take on the voice bus, one line of each kind at
 //! a time and no reply over the advisor, holding the sound effects down while it lasts ([`SoundBoard::duck`]).
 //! A pack's voices replace the generic pack's whole, so no line is spoken by a voice from another cast. The generic
-//! pack's voices speak the engine's own words, so they only play a line the pack left in those words.
+//! pack's voices speak the engine's own words, so they only play a line the pack left in those words. An advisor
+//! line that comes while another is speaking waits in a short queue, most important first, and is dropped if it
+//! waits too long ([`SoundBoard::next_line`]); the priorities and limits are `voices` in `data/audio/sounds.json`.
+//!
+//! **Loops** (engines, a harvester at work) follow what units are doing rather than events: `loops` in
+//! `data/audio/events.json` says which loop plays for a unit moving, flying, mining or unloading, and
+//! [`SoundBoard::update_loops`] keeps one loop per sound id going while any unit the local player can see needs it,
+//! as loud as the nearest one and a little louder for a crowd, panned towards them.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -22,7 +29,7 @@ use classic_sim::{Event, Game};
 
 use crate::lines::Speech;
 use crate::platform::Files;
-use crate::platform::audio::{Bus, ClipId, Mixer, Sound, db};
+use crate::platform::audio::{Bus, ClipId, LoopId, Mixer, Sound, db};
 use crate::platform::wav;
 
 /// A pack's sound index, from the pack's folder: which files each sound id plays.
@@ -35,6 +42,12 @@ pub const VOICE_INDEX: &str = "audio/voices.json";
 /// one at a time; a reply waits out the advisor (see [`SoundBoard::speak`]).
 pub const ADVISOR_KEY: u32 = 0xFFFF_0000;
 pub const REPLY_KEY: u32 = 0xFFFF_0001;
+
+/// How long a loop fades in, and out once nothing needs it, in seconds.
+const LOOP_FADE_IN: f32 = 0.15;
+const LOOP_FADE_OUT: f32 = 0.4;
+/// Ticks a loop keeps going after the last unit stopped needing it, so a tank pausing to turn doesn't cut out.
+const LOOP_LINGER: u32 = 5;
 
 /// Every file the voice index `index` names, for the browser build.
 pub fn voice_files_named(index: &str) -> Vec<String> {
@@ -144,6 +157,8 @@ pub struct SoundDef {
     pub max_instances: i64,
     pub spatial: bool,
     pub jitter_percent: i64,
+    /// Played round and round while units need it (`loops` in `events.json`), not by an event.
+    pub looping: bool,
     pub clips: Vec<ClipId>,
 }
 
@@ -165,16 +180,56 @@ struct Rule {
     armour: Option<String>,
     local: bool,
     power: Option<PowerTurn>,
+    /// The generic id of the factory a unit came out of.
+    factory: Option<String>,
+    /// Plays as well as the rule that follows, rather than instead of it.
+    also: bool,
+}
+
+/// What a unit is doing that a loop can follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Doing {
+    /// On the ground and on the move.
+    Moving,
+    /// Off the ground (an aircraft, moving or not).
+    Flying,
+    /// A harvester taking up the resource.
+    Mining,
+    /// A harvester emptying at a refinery.
+    Unloading,
+}
+
+const DOINGS: [(&str, Doing); 4] =
+    [("moving", Doing::Moving), ("flying", Doing::Flying), ("mining", Doing::Mining), ("unloading", Doing::Unloading)];
+
+/// One line of `loops` in `data/audio/events.json`.
+#[derive(Clone, Debug)]
+struct LoopRule {
+    doing: Doing,
+    armour: Option<String>,
+    sound: usize,
 }
 
 /// How spoken lines are mixed, from `data/audio/sounds.json` `voices`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VoiceMix {
     /// Level and priority of the advisor's lines and of the units' replies.
     pub advisor: (i64, i64),
     pub unit: (i64, i64),
-    /// How far the sound effects drop while someone speaks.
+    /// How far the sound effects and music drop while someone speaks.
     pub duck_db: i64,
+    /// Advisor lines that may wait while one speaks, and how long one may wait before it is dropped.
+    pub queue: usize,
+    pub stale_ms: i64,
+    /// Each advisor line's place in the queue, higher first; lines not listed take `default`.
+    pub line_priority: BTreeMap<String, i64>,
+    pub default_priority: i64,
+}
+
+impl VoiceMix {
+    pub fn priority(&self, line: &str) -> i64 {
+        self.line_priority.get(line).copied().unwrap_or(self.default_priority)
+    }
 }
 
 /// The engine's sound tables, before any files are loaded.
@@ -182,6 +237,7 @@ pub struct VoiceMix {
 pub struct Tables {
     pub defs: Vec<SoundDef>,
     rules: Vec<Rule>,
+    loops: Vec<LoopRule>,
     pub silent: Vec<String>,
     pub voices: VoiceMix,
 }
@@ -215,6 +271,7 @@ impl Tables {
                     .as_bool()
                     .ok_or_else(|| format!("{id}.spatial: not true or false"))?,
                 jitter_percent: int("jitter_percent")?,
+                looping: v.get("loop").and_then(Value::as_bool).unwrap_or(false),
                 clips: Vec::new(),
             });
         }
@@ -226,7 +283,31 @@ impl Tables {
             let o = field(v, k, "voices")?;
             Ok((num(o, "gain_db", k)?, num(o, "priority", k)?))
         };
-        let voices = VoiceMix { advisor: pair("advisor")?, unit: pair("unit")?, duck_db: num(v, "duck_db", "voices")? };
+        let queue = field(v, "queue", "voices")?;
+        let priorities =
+            field(v, "line_priority", "voices")?.as_object().ok_or("voices.line_priority: not an object")?;
+        let known = crate::lines::advisor_ids();
+        let mut line_priority = BTreeMap::new();
+        let mut default_priority = None;
+        for (id, p) in priorities {
+            let p = p.as_int().ok_or_else(|| format!("voices.line_priority.{id}: not a whole number"))?;
+            if id == "default" {
+                default_priority = Some(p);
+            } else if known.contains(id) {
+                line_priority.insert(id.clone(), p);
+            } else if id != "about" {
+                return Err(format!("voices.line_priority: no advisor line `{id}`"));
+            }
+        }
+        let voices = VoiceMix {
+            advisor: pair("advisor")?,
+            unit: pair("unit")?,
+            duck_db: num(v, "duck_db", "voices")?,
+            queue: num(queue, "size", "queue")?.max(0) as usize,
+            stale_ms: num(queue, "stale_ms", "queue")?,
+            line_priority,
+            default_priority: default_priority.ok_or("voices.line_priority: no `default`")?,
+        };
         let events = json::parse(events).map_err(|e| format!("events.json: {e:?}"))?;
         let mut rules = Vec::new();
         for (i, r) in field(&events, "rules", "events.json")?
@@ -244,6 +325,9 @@ impl Tables {
             let sound = text("sound").ok_or_else(|| format!("{at}: no `sound`"))?;
             let sound =
                 defs.iter().position(|d| d.id == sound).ok_or_else(|| format!("{at}: unknown sound {sound}"))?;
+            if defs[sound].looping {
+                return Err(format!("{at}: {} is a loop, played from `loops`", defs[sound].id));
+            }
             let warhead = text("warhead");
             if let Some(w) = &warhead
                 && !classic_data::WARHEADS.contains(&w.as_str())
@@ -271,7 +355,37 @@ impl Tables {
                 armour,
                 local: r.get("local").and_then(Value::as_bool).unwrap_or(false),
                 power,
+                factory: text("factory"),
+                also: r.get("also").and_then(Value::as_bool).unwrap_or(false),
             });
+        }
+        let mut loops = Vec::new();
+        for (i, r) in field(&events, "loops", "events.json")?
+            .as_array()
+            .ok_or("events.json: `loops` not a list")?
+            .iter()
+            .enumerate()
+        {
+            let at = format!("events.json loop {i}");
+            let text = |k: &str| r.get(k).and_then(Value::as_str).map(str::to_string);
+            let doing = text("while").ok_or_else(|| format!("{at}: no `while`"))?;
+            let doing =
+                DOINGS.iter().find(|d| d.0 == doing).map(|d| d.1).ok_or_else(|| {
+                    format!("{at}: `while` is one of {}, not {doing}", DOINGS.map(|d| d.0).join(", "))
+                })?;
+            let sound = text("sound").ok_or_else(|| format!("{at}: no `sound`"))?;
+            let sound =
+                defs.iter().position(|d| d.id == sound).ok_or_else(|| format!("{at}: unknown sound {sound}"))?;
+            if !defs[sound].looping {
+                return Err(format!("{at}: {} is not a loop (`\"loop\": true` in sounds.json)", defs[sound].id));
+            }
+            let armour = text("armour");
+            if let Some(a) = &armour
+                && !classic_data::ARMOURS.contains(&a.as_str())
+            {
+                return Err(format!("{at}: unknown armour {a}"));
+            }
+            loops.push(LoopRule { doing, armour, sound });
         }
         let silent: Vec<String> = field(&events, "silent", "events.json")?
             .as_array()
@@ -289,12 +403,13 @@ impl Tables {
         if let Some(s) = silent.iter().find(|s| !EVENT_NAMES.contains(&s.as_str())) {
             return Err(format!("events.json: silent lists {s}, which is no event"));
         }
-        Ok(Tables { defs, rules, silent, voices })
+        Ok(Tables { defs, rules, loops, silent, voices })
     }
 
-    /// Ids that some event plays.
+    /// Ids that some event or loop plays.
     pub fn played_ids(&self) -> Vec<&str> {
         let mut ids: Vec<&str> = self.rules.iter().map(|r| self.defs[r.sound].id.as_str()).collect();
+        ids.extend(self.loops.iter().map(|r| self.defs[r.sound].id.as_str()));
         ids.sort();
         ids.dedup();
         ids
@@ -349,6 +464,8 @@ struct Facts {
     at: Option<(i64, i64)>,
     shortfall: Option<i64>,
     power_player: Option<u32>,
+    /// The factory a unit came out of.
+    factory: Option<classic_sim::Kind>,
 }
 
 fn facts(ev: &Event, game: &Game) -> Facts {
@@ -383,9 +500,13 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         Event::PowerChanged { player, shortfall, .. } => {
             Facts { owner: Some(player), shortfall: Some(shortfall), power_player: Some(player), ..none }
         }
-        Event::UnitBuilt { entity, kind, .. } => {
-            Facts { owner: owner_of(entity), building: Some(is_building(kind)), at: at_of(entity), ..none }
-        }
+        Event::UnitBuilt { entity, kind, factory, .. } => Facts {
+            owner: owner_of(entity),
+            building: Some(is_building(kind)),
+            at: at_of(entity),
+            factory: game.state.entity(factory).map(|f| f.kind),
+            ..none
+        },
         Event::Fired { unit, weapon, .. } => {
             Facts { owner: owner_of(unit), weapon: Some(weapon), at: at_of(unit), ..none }
         }
@@ -479,8 +600,14 @@ pub struct SoundBoard {
     pub voices: BTreeMap<(String, String, String), Vec<ClipId>>,
     /// Whether `voices` are the first pack's (the generic pack's), which speak only the engine's own words.
     pub engine_voices: bool,
-    /// The sound effects' level before a voice held it down, while it does.
-    ducked: Option<f32>,
+    /// The sound effects' and music's levels before a voice held them down, while it does.
+    ducked: Option<(f32, f32)>,
+    /// Advisor lines waiting for the one speaking to finish: the cue, its priority and when it came, in seconds.
+    queue: Vec<(Cue, i64, f64)>,
+    /// The loops playing, by sound id: the mixer's loop, and the last tick some unit needed it.
+    playing_loops: BTreeMap<usize, (LoopId, u32)>,
+    /// Where each unit was last tick, to tell which are moving.
+    was_at: BTreeMap<u32, (i64, i64)>,
     pub warnings: Vec<String>,
 }
 
@@ -558,6 +685,9 @@ impl SoundBoard {
             voices,
             engine_voices: voiced == Some(0),
             ducked: None,
+            queue: Vec::new(),
+            playing_loops: BTreeMap::new(),
+            was_at: BTreeMap::new(),
             warnings,
         }
     }
@@ -601,14 +731,52 @@ impl SoundBoard {
         self.cue(def, 1.0, 0.0)
     }
 
-    /// The take that speaks `s` for `faction`, on the voice bus, or `None` when the pack has no voice for it, the
-    /// voices are the generic pack's and `s` isn't in the engine's words, or a unit would talk over the advisor, who
-    /// `mixer` is still playing.
-    pub fn speak(&self, faction: &str, s: &Speech, mixer: &Mixer) -> Option<Cue> {
+    /// The take that speaks `s` for `faction`, on the voice bus, to play now; `None` when the pack has no voice for
+    /// it, the voices are the generic pack's and `s` isn't in the engine's words, or a unit would talk over the
+    /// advisor, who `mixer` is still playing. An advisor line joins the queue and the next line due comes back
+    /// (see [`SoundBoard::next_line`]). `now` is any clock in seconds, the same one each call.
+    pub fn speak(&mut self, faction: &str, s: &Speech, mixer: &Mixer, now: f64) -> Option<Cue> {
         let advisor = s.who == "advisor";
         if (!advisor && mixer.playing_key(ADVISOR_KEY) > 0) || (self.engine_voices && !s.engine) {
             return None;
         }
+        let Some(cue) = self.voice(faction, s) else {
+            return if advisor { self.next_line(mixer, now) } else { None };
+        };
+        if !advisor {
+            return Some(cue);
+        }
+        let priority = self.tables.voices.priority(&s.key);
+        // Highest first; a stable sort keeps lines of the same priority in the order they came.
+        self.queue.push((cue, priority, now));
+        self.queue.sort_by_key(|q| std::cmp::Reverse(q.1));
+        self.next_line(mixer, now)
+    }
+
+    /// The advisor's next line, once the one speaking in `mixer` has finished: the most important waiting, unless it
+    /// has waited longer than `voices.queue.stale_ms`, when it is dropped (stale news is worse than none). While one
+    /// speaks, at most `voices.queue.size` wait, and the least important beyond that are dropped. Call once a frame,
+    /// and play what comes back.
+    pub fn next_line(&mut self, mixer: &Mixer, now: f64) -> Option<Cue> {
+        let stale = self.tables.voices.stale_ms as f64 / 1000.0;
+        self.queue.retain(|q| now - q.2 <= stale);
+        let line = if mixer.playing_key(ADVISOR_KEY) == 0 && !self.queue.is_empty() {
+            Some(self.queue.remove(0).0)
+        } else {
+            None
+        };
+        self.queue.truncate(self.tables.voices.queue);
+        line
+    }
+
+    /// Advisor lines waiting, most important first, by cue id.
+    pub fn waiting(&self) -> Vec<&str> {
+        self.queue.iter().map(|q| q.0.id.as_str()).collect()
+    }
+
+    /// The cue that speaks `s` for `faction`, if the pack voiced it.
+    fn voice(&self, faction: &str, s: &Speech) -> Option<Cue> {
+        let advisor = s.who == "advisor";
         let key = (faction.to_string(), s.who.to_string(), s.key.clone());
         let clip = *self.voices.get(&key)?.get(s.variant)?;
         let (gain_db, priority) = if advisor { self.tables.voices.advisor } else { self.tables.voices.unit };
@@ -627,30 +795,130 @@ impl SoundBoard {
         })
     }
 
-    /// Hold the sound effects down while a line is spoken, and bring them back after. Call once a frame.
-    /// Set the buses' levels (the player's volume settings), keeping the effects ducked if a voice is speaking.
+    /// Set the buses' levels (the player's volume settings), keeping the effects and music ducked if a voice is
+    /// speaking.
     pub fn set_levels(&mut self, mixer: &mut Mixer, gain: [f32; 4]) {
-        let sfx = Bus::Sfx as usize;
+        let (sfx, music) = (Bus::Sfx as usize, Bus::Music as usize);
         mixer.bus_gain = gain;
         if self.ducked.is_some() {
-            self.ducked = Some(gain[sfx]);
-            mixer.bus_gain[sfx] *= db(self.tables.voices.duck_db as f32);
+            self.ducked = Some((gain[sfx], gain[music]));
+            let duck = db(self.tables.voices.duck_db as f32);
+            mixer.bus_gain[sfx] *= duck;
+            mixer.bus_gain[music] *= duck;
         }
     }
 
+    /// Hold the sound effects and music down while a line is spoken, and bring them back after. Call once a frame.
     pub fn duck(&mut self, mixer: &mut Mixer) {
-        let sfx = Bus::Sfx as usize;
+        let (sfx, music) = (Bus::Sfx as usize, Bus::Music as usize);
+        let duck = db(self.tables.voices.duck_db as f32);
         match (mixer.playing_key(ADVISOR_KEY) + mixer.playing_key(REPLY_KEY) > 0, self.ducked) {
             (true, None) => {
-                self.ducked = Some(mixer.bus_gain[sfx]);
-                mixer.bus_gain[sfx] *= db(self.tables.voices.duck_db as f32);
+                self.ducked = Some((mixer.bus_gain[sfx], mixer.bus_gain[music]));
+                mixer.bus_gain[sfx] *= duck;
+                mixer.bus_gain[music] *= duck;
             }
-            (false, Some(level)) => {
-                mixer.bus_gain[sfx] = level;
+            (false, Some((s, m))) => {
+                mixer.bus_gain[sfx] = s;
+                mixer.bus_gain[music] = m;
                 self.ducked = None;
             }
             _ => {}
         }
+    }
+
+    /// Keep the loops in `mixer` in step with what the units the local player can see are doing, heard from
+    /// `listener`. Call once a game tick.
+    pub fn update_loops(&mut self, game: &Game, listener: &Listener, mixer: &mut Mixer) {
+        let tick = game.state.tick;
+        // Per loop sound: the loudest unit's gain, the gain-weighted pan, and how many units need it.
+        let mut wanted: BTreeMap<usize, (f32, f32, f32, u32)> = BTreeMap::new();
+        let mut was_at = BTreeMap::new();
+        for e in &game.state.entities {
+            let k = game.rules.kind(e.kind);
+            if k.building {
+                continue;
+            }
+            was_at.insert(e.id, (e.x, e.y));
+            if e.carried_by.is_some() || !game.visible(self.local, e.id) {
+                continue;
+            }
+            let moved = self.was_at.get(&e.id).is_some_and(|&p| p != (e.x, e.y));
+            let doing = |d: Doing| match d {
+                Doing::Flying => e.altitude > 0,
+                Doing::Moving => e.altitude == 0 && (moved || !e.path.is_empty()),
+                Doing::Mining => e.task == Some(classic_sim::Task::Mining),
+                Doing::Unloading => e.task == Some(classic_sim::Task::Unloading),
+            };
+            let Some(rule) = self
+                .tables
+                .loops
+                .iter()
+                .find(|r| doing(r.doing) && r.armour.as_ref().is_none_or(|a| classic_data::ARMOURS[k.armour] == a))
+            else {
+                continue;
+            };
+            let (gain, pan) = listener.place(e.x as f32, e.y as f32);
+            if gain <= 0.01 {
+                continue;
+            }
+            let w = wanted.entry(rule.sound).or_insert((0.0, 0.0, 0.0, 0));
+            *w = (w.0.max(gain), w.1 + pan * gain, w.2 + gain, w.3 + 1);
+        }
+        self.was_at = was_at;
+        for (&def, &(gain, pan_sum, weight, count)) in &wanted {
+            let d = &self.tables.defs[def];
+            // A little louder for a crowd: up to half as loud again.
+            let gain = gain * (1.0 + 0.1 * (count - 1) as f32).min(1.5) * db(d.gain_db as f32);
+            let pan = pan_sum / weight.max(1e-6);
+            match self.playing_loops.get_mut(&def) {
+                Some((id, last)) if mixer.looping(*id) => {
+                    mixer.set_loop(*id, gain, pan);
+                    *last = tick;
+                }
+                _ => {
+                    let Some(&clip) = d.clips.first() else { continue };
+                    let sound = Sound {
+                        clip,
+                        key: def as u32,
+                        bus: d.bus,
+                        gain,
+                        pan,
+                        speed: 1.0,
+                        priority: d.priority as i32,
+                        max_instances: 1,
+                    };
+                    match mixer.start_loop(sound, LOOP_FADE_IN) {
+                        Some(id) => {
+                            self.playing_loops.insert(def, (id, tick));
+                        }
+                        None => {
+                            self.playing_loops.remove(&def);
+                        }
+                    }
+                }
+            }
+        }
+        self.playing_loops.retain(|def, (id, last)| {
+            let keep = wanted.contains_key(def) || tick.saturating_sub(*last) < LOOP_LINGER;
+            if !keep {
+                mixer.stop_loop(*id, LOOP_FADE_OUT);
+            }
+            keep
+        });
+    }
+
+    /// Fade every loop out: the game is paused or over.
+    pub fn stop_loops(&mut self, mixer: &mut Mixer) {
+        for (_, (id, _)) in std::mem::take(&mut self.playing_loops) {
+            mixer.stop_loop(id, LOOP_FADE_OUT);
+        }
+        self.was_at.clear();
+    }
+
+    /// The loops playing, by sound id.
+    pub fn loops_playing(&self) -> Vec<&str> {
+        self.playing_loops.keys().map(|&d| self.tables.defs[d].id.as_str()).collect()
     }
 
     /// The sounds for every event since the last call, heard from `listener`.
@@ -674,7 +942,8 @@ impl SoundBoard {
                 }
             });
             let weapon = f.weapon.map(|w| game.rules.weapon(w));
-            let rule = self.tables.rules.iter().find(|r| {
+            let factory = f.factory.map(|k| game.rules.kind(k).id.as_str());
+            let holds = |r: &Rule| {
                 r.event == name
                     && (!r.local || f.owner == Some(self.local))
                     && r.building.is_none_or(|b| f.building == Some(b))
@@ -682,20 +951,30 @@ impl SoundBoard {
                     && r.power.is_none_or(|p| turn == Some(p))
                     && r.weapon.as_ref().is_none_or(|w| weapon.is_some_and(|x| &x.id == w))
                     && r.warhead.as_ref().is_none_or(|w| weapon.is_some_and(|x| classic_data::WARHEADS[x.warhead] == w))
-            });
-            let Some(def) = rule.map(|r| r.sound) else { continue };
-            // Under fog of war the local player hears what happens out in the world only where they can see it.
-            let tile = |v: i64| v.div_euclid(classic_sim::map::TILE) as i32;
-            if let (true, Some((x, y))) = (self.tables.defs[def].spatial, f.at)
-                && game.tile_view(self.local, tile(x), tile(y)) != classic_sim::TileView::Visible
-            {
-                continue;
-            }
-            let (gain, pan) = match (self.tables.defs[def].spatial, f.at) {
-                (true, Some((x, y))) => listener.place(x as f32, y as f32),
-                _ => (1.0, 0.0),
+                    && r.factory.as_ref().is_none_or(|k| factory == Some(k.as_str()))
             };
-            cues.extend(self.cue(def, gain, pan));
+            // Every `also` rule that holds before the first plain one plays, then that plain one.
+            let mut defs = Vec::new();
+            for r in self.tables.rules.iter().filter(|r| holds(r)) {
+                defs.push(r.sound);
+                if !r.also {
+                    break;
+                }
+            }
+            for def in defs {
+                // Under fog of war the local player hears what happens out in the world only where they can see it.
+                let tile = |v: i64| v.div_euclid(classic_sim::map::TILE) as i32;
+                if let (true, Some((x, y))) = (self.tables.defs[def].spatial, f.at)
+                    && game.tile_view(self.local, tile(x), tile(y)) != classic_sim::TileView::Visible
+                {
+                    continue;
+                }
+                let (gain, pan) = match (self.tables.defs[def].spatial, f.at) {
+                    (true, Some((x, y))) => listener.place(x as f32, y as f32),
+                    _ => (1.0, 0.0),
+                };
+                cues.extend(self.cue(def, gain, pan));
+            }
         }
         self.seen = game.events.len();
         cues

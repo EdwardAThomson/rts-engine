@@ -183,7 +183,8 @@ impl Hud {
         let ids = game.rules.kinds.iter().map(|k| k.id.clone());
         let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
         let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
-        let speech = Lines::load(pack_files, &factions, factions.get(faction).map(String::as_str));
+        let units: Vec<String> = game.rules.kinds.iter().filter(|k| !k.building).map(|k| k.id.clone()).collect();
+        let speech = Lines::load(pack_files, &factions, &units, factions.get(faction).map(String::as_str));
         let players = game.state.players.len();
         let owners = crate::art::player_factions(factions.len(), players, player as usize, faction);
         let owner_factions = owners.into_iter().filter_map(|f| factions.get(f).cloned()).collect();

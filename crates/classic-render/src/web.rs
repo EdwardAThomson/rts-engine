@@ -12,6 +12,7 @@ use crate::art::{self, ART_INDEX};
 use crate::feed::MESSAGES_FILE;
 use crate::lines::LINES_FILE;
 use crate::menu::map_name;
+use crate::music;
 use crate::platform::{Files, web};
 use crate::skin;
 use crate::sound::{self, SOUND_INDEX};
@@ -92,6 +93,11 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
         && web::fetch_files(&format!("{ROOT}{dir}/"), &[sound::VOICE_INDEX.to_string()])
             .await?
             .contains_key(sound::VOICE_INDEX);
+    // Music likewise: only one pack's plays.
+    let own_music = dir != GENERIC
+        && web::fetch_files(&format!("{ROOT}{dir}/"), &[music::MUSIC_INDEX.to_string()])
+            .await?
+            .contains_key(music::MUSIC_INDEX);
     let mut sounds = Vec::new();
     for d in if dir == GENERIC { vec![GENERIC.to_string()] } else { vec![GENERIC.to_string(), dir.clone()] } {
         let base = format!("{ROOT}{d}/");
@@ -108,6 +114,15 @@ pub async fn load(setting: &str, map: &str, only: bool) -> Result<Loaded, String
             names.extend(sound::voice_files_named(&String::from_utf8_lossy(index)));
         }
         files.extend(voices);
+        let tracks = if d == GENERIC && own_music {
+            Default::default()
+        } else {
+            web::fetch_files(&base, &[music::MUSIC_INDEX.to_string()]).await?
+        };
+        if let Some(index) = tracks.get(music::MUSIC_INDEX) {
+            names.extend(music::files_named(&String::from_utf8_lossy(index)));
+        }
+        files.extend(tracks);
         files.extend(web::fetch_files(&base, &names).await?);
         sounds.push(Files::Memory { label: d, files });
     }

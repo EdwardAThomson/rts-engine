@@ -1,3 +1,7 @@
+{"file": "audio/sfx/exit_barracks_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/exit_light_factory_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/exit_heavy_factory_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/exit_air_factory_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/cannon_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/cannon_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/rocket_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
@@ -27,3 +31,8 @@
 {"file": "audio/ui/credits_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/ui/power_down_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/ui/power_up_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/loops/engine_light.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/loops/engine_heavy.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/loops/engine_air.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/loops/harvest.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/loops/unload.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
