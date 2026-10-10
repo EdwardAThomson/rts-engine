@@ -605,6 +605,16 @@ impl SoundBoard {
     }
 
     /// Hold the sound effects down while a line is spoken, and bring them back after. Call once a frame.
+    /// Set the buses' levels (the player's volume settings), keeping the effects ducked if a voice is speaking.
+    pub fn set_levels(&mut self, mixer: &mut Mixer, gain: [f32; 4]) {
+        let sfx = Bus::Sfx as usize;
+        mixer.bus_gain = gain;
+        if self.ducked.is_some() {
+            self.ducked = Some(gain[sfx]);
+            mixer.bus_gain[sfx] *= db(self.tables.voices.duck_db as f32);
+        }
+    }
+
     pub fn duck(&mut self, mixer: &mut Mixer) {
         let sfx = Bus::Sfx as usize;
         match (mixer.playing_key(ADVISOR_KEY) + mixer.playing_key(REPLY_KEY) > 0, self.ducked) {

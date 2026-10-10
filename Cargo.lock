@@ -293,6 +293,7 @@ dependencies = [
  "pollster",
  "rts-platform",
  "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
  "winit",
 ]

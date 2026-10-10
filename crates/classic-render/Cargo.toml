@@ -34,3 +34,5 @@ pollster = "1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "30", features = ["webgl"] }
 wasm-bindgen-futures = "0.4"
+# The page's local storage keeps the player's settings and saved game (`store.rs`).
+web-sys = { version = "0.3", features = ["Storage", "Window"] }
