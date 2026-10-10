@@ -12,8 +12,17 @@ use classic_tools::setting;
 const MAP: &str = include_str!("../../../maps/skirmish-01.txt");
 
 fn game() -> (Game, Hud) {
+    game_with_fog(true)
+}
+
+/// The generic pack's game, with its fog of war on or off.
+fn game_with_fog(fog: bool) -> (Game, Hud) {
     let pack = setting::load("generic").unwrap();
-    let rules = Rules::from_table(&pack.rules).unwrap();
+    let mut table = pack.rules.clone();
+    if !fog {
+        table.modules.get_mut("fog").unwrap().numbers.get_mut("on").unwrap().value = 0;
+    }
+    let rules = Rules::from_table(&table).unwrap();
     let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
     let hud = Hud::new(&pack, &Files::Dir(pack.dir.clone()), &game, 0, 0);
     (game, hud)
@@ -184,11 +193,31 @@ fn the_engine_has_a_reply_for_every_voice_and_moment_and_planned_ids_are_new() {
     assert!(ids.len() >= words.len(), "every message is an advisor id; planned ones come on top");
 }
 
+/// Only armed enemy units the player can see make a wave: not unarmed ones, and not tanks hidden by fog.
+#[test]
+fn a_wave_is_armed_enemies_in_sight() {
+    let (mut game, _) = game();
+    let tank = game.kind("battle_tank").unwrap();
+    let harvester = game.kind("harvester").unwrap();
+    let edge = 8 + feed::WAVE_RANGE;
+    let hidden: Vec<u32> = (0..3).map(|i| game.spawn(tank, 1, edge, 2 + i)).collect();
+    let harv = game.spawn(harvester, 1, edge - 2, 2);
+    game.step(1);
+    assert!(hidden.iter().all(|&t| !game.visible(0, t)), "out of the base's sight");
+    assert_eq!(feed::enemies_near_base(&game, 0), 0, "unseen tanks and a harvester are no wave");
+    // A scout of player 0's beside them brings them into sight.
+    game.spawn(tank, 0, edge - 1, 3);
+    game.step(1);
+    assert!(hidden.iter().all(|&t| game.visible(0, t)) && game.visible(0, harv));
+    assert_eq!(feed::enemies_near_base(&game, 0), hidden.len(), "the tanks, not the harvester in sight too");
+}
+
 /// A pack in `target/` with `lines` as its `lines.json`.
 #[test]
 fn the_advisor_warns_of_massing_enemies_and_hazards_now_and_then_and_says_how_the_game_ended() {
     use classic_sim::world::{Event, MoveEnd};
-    let (mut game, mut hud) = game();
+    // Without fog, so every enemy tank is in sight.
+    let (mut game, mut hud) = game_with_fog(false);
     let mut said = Vec::new();
     let tank = game.kind("battle_tank").unwrap();
     // A few enemy tanks far off and then near player 0's base: only enough of them near it is a wave.

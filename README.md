@@ -391,7 +391,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   the card's unit chips can't be clicked. The advisor and the units speak in text (the feed, and a subtitle when units
   are selected or ordered) and aloud where a pack has voices for them; the generic pack's placeholder voices speak
   the engine's own words, and a pack's own voices replace them. The advisor also warns of a harvester under attack,
-  a hazard appearing and enemy units massing near the base, and says how the game ended; a move order no unit can
+  a hazard appearing and armed enemy units in sight near the base (2 within 12 tiles, from AI games), and says how
+  the game ended; a move order no unit can
   walk to gets the refused-order reply (the units still go as near as they can). Storage and superweapon lines wait
   for those mechanics. A pack's own art (the Blender
   studio's packed sprites in `art/sprites/`, its terrain tiles in `art/tiles/`) is drawn over the generic pack's,
