@@ -21,6 +21,7 @@ pub mod repair;
 pub mod sell;
 pub mod starport;
 pub mod storage;
+pub mod superpower;
 pub mod units;
 pub mod vision;
 pub mod world;
@@ -33,6 +34,9 @@ pub use placement::PlaceError;
 pub use power::Power;
 pub use production::{EntryState, ProduceError, QueueEntry};
 pub use starport::{Delivery, Market, StarportError};
-pub use units::{AirRules, CaptureRules, FogRules, HazardRules, Kind, RepairRules, Rules, SellRules, WeaponId};
+pub use superpower::{Strike, SuperpowerError};
+pub use units::{
+    AirRules, CaptureRules, FogRules, HazardRules, Kind, RepairRules, Rules, SellRules, Superpower, WeaponId,
+};
 pub use vision::{Ghost, TileView, Vision};
 pub use world::{CaptureError, Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};

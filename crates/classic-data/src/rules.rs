@@ -54,6 +54,8 @@ pub struct Weapon {
 pub struct Module {
     pub built: bool,
     pub numbers: BTreeMap<String, Number>,
+    /// A choice per pack faction, by faction id, such as the superpowers module's palace power.
+    pub by_faction: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -327,7 +329,16 @@ impl RulesTable {
             }
             let built = status(v, &at, &mut errors);
             let numbers = numbers(v, &at, built, &mut errors);
-            table.modules.insert(id.clone(), Module { built, numbers });
+            let mut by_faction = BTreeMap::new();
+            for (f, choice) in v.get("by_faction").and_then(Value::as_object).unwrap_or_default() {
+                match choice.as_str() {
+                    Some(c) if is_generic_id(f) && is_generic_id(c) => {
+                        by_faction.insert(f.clone(), c.to_string());
+                    }
+                    _ => errors.push(format!("{at}: by_faction.{f}: must be a generic id")),
+                }
+            }
+            table.modules.insert(id.clone(), Module { built, numbers, by_faction });
         }
         if errors.is_empty() { Ok(table) } else { Err(errors) }
     }

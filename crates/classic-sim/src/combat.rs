@@ -295,7 +295,17 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         let (tx, ty, tid) = (state.entities[i].x, state.entities[i].y, state.entities[t].id);
         let (dx, dy) = (state.entities[t].x - tx, state.entities[t].y - ty);
         let d2 = dx * dx + dy * dy;
-        let in_range = d2 <= w.range * w.range && d2 >= w.min_range * w.min_range;
+        let mut in_range = d2 <= w.range * w.range && d2 >= w.min_range * w.min_range;
+        // A sapper has to reach the building itself: its range counts to the nearest point of the footprint, where
+        // other weapons measure to the building's anchor.
+        let tk = rules.kind(state.entities[t].kind);
+        if k.sapper && tk.building {
+            let at = state.entities[t].tile();
+            let (x0, y0) = (at.x as i64 * TILE, at.y as i64 * TILE);
+            let nx = tx.clamp(x0, x0 + tk.width as i64 * TILE) - tx;
+            let ny = ty.clamp(y0, y0 + tk.height as i64 * TILE) - ty;
+            in_range = nx * nx + ny * ny <= w.range * w.range;
+        }
         // An attack order closes in until the target is in range, then stands.
         if state.entities[i].order == Order::Attack && !k.building {
             if in_range {

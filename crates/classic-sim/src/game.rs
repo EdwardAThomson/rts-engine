@@ -98,6 +98,7 @@ impl Game {
             vision: None,
             market: None,
             deliveries: Vec::new(),
+            strikes: Vec::new(),
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in
@@ -115,6 +116,7 @@ impl Game {
                 delivered: 0,
                 lost: 0,
                 lost_warned: None,
+                charge: None,
                 faction: None,
             });
             let (y, r, pk) = (rules.kind(yard), rules.kind(refinery), rules.kind(plant));

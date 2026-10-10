@@ -1,5 +1,5 @@
 {
-  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number takes that number's default (the hazard and fog off, selling and capture on) unless a pack's setting.json \"features\" says otherwise; the pack loader sets `on` from it.",
+  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number takes that number's default (the hazard and fog off, selling and capture on) unless a pack's setting.json \"features\" says otherwise; the pack loader sets `on` from it. `superpowers`' `by_faction` gives each pack faction its palace power (`power_missile`, `power_guerrillas` or `power_saboteur`); a player with no faction has none.",
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
@@ -172,7 +172,28 @@
         "max_order": { "default": 5, "min": 1, "max": 20 }
       }
     },
-    "superpowers": { "status": "planned" },
+    "superpowers": {
+      "status": "built",
+      "by_faction": { "faction_a": "power_guerrillas", "faction_b": "power_missile", "faction_c": "power_saboteur" },
+      "numbers": {
+        "on": { "default": 1, "min": 0, "max": 1 },
+        "missile_charge_ticks": { "default": 6750, "min": 1, "max": 100000 },
+        "guerrillas_charge_ticks": { "default": 3600, "min": 1, "max": 100000 },
+        "saboteur_charge_ticks": { "default": 3150, "min": 1, "max": 100000 },
+        "missile_flight_ticks": { "default": 30, "min": 0, "max": 1000 },
+        "missile_flight_ticks_per_tile": { "default": 2, "min": 0, "max": 100 },
+        "missile_spread": { "default": 2, "min": 0, "max": 16 },
+        "missile_spread_tiles": { "default": 10, "min": 1, "max": 1000 },
+        "missile_damage_0": { "default": 800, "min": 0, "max": 10000 },
+        "missile_damage_1": { "default": 600, "min": 0, "max": 10000 },
+        "missile_damage_2": { "default": 350, "min": 0, "max": 10000 },
+        "missile_damage_3": { "default": 150, "min": 0, "max": 10000 },
+        "guerrillas_delay_ticks": { "default": 45, "min": 0, "max": 1000 },
+        "guerrillas_count": { "default": 5, "min": 1, "max": 20 },
+        "guerrillas_min_range": { "default": 3, "min": 0, "max": 16 },
+        "guerrillas_max_range": { "default": 6, "min": 1, "max": 16 }
+      }
+    },
     "decay": { "status": "planned" }
   }
 }

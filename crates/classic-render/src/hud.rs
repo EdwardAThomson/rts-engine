@@ -9,8 +9,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use classic_sim::Superpower;
 use classic_sim::production::has_ready;
 use classic_sim::starport::{self, Stage};
+use classic_sim::superpower;
 use classic_sim::units::TICKS_PER_SECOND;
 use classic_sim::world::{Entity, Order, Task};
 use classic_sim::{CommandOrder, EntryState, Game, Kind, ProduceError, Terrain};
@@ -34,6 +36,8 @@ const GAP: f32 = 4.0;
 const QUEUE_W: f32 = 36.0;
 const QUEUE_H: f32 = 27.0;
 const READOUT_H: f32 = 66.0;
+/// The palace power's button, under the readout, while the player has one.
+const POWER_H: f32 = 16.0;
 /// The minimap's square, at UI scale 1; the map is fitted inside it.
 const MINIMAP: f32 = 192.0;
 /// The selection card's height, above the queue.
@@ -132,6 +136,8 @@ pub struct Layout {
     pub minimap: Rect,
     /// On the starport's tab with an order open: the button that pays for it and sends for it.
     pub send: Option<Rect>,
+    /// The palace power's charge, and the button that aims it once charged, while the player has a power.
+    pub power: Option<Rect>,
     /// The sell and repair buttons above the card, each with its mode; sell only when the rules allow selling.
     pub modes: Vec<(Mode, Rect)>,
 }
@@ -153,6 +159,8 @@ pub struct Hud {
     pub tab: Option<Kind>,
     /// A ready building on the cursor, waiting to be placed.
     pub placing: Option<Kind>,
+    /// The charged palace power on the cursor, waiting for a tile.
+    pub aiming: bool,
     /// Grid rows scrolled past.
     pub scroll: usize,
     /// What the local player has been told lately.
@@ -184,6 +192,7 @@ impl Hud {
             scale: 1.0,
             tab: None,
             placing: None,
+            aiming: false,
             scroll: 0,
             feed: Feed::new(pack_files, names.clone(), player, speech),
             theme: Theme::load(pack_files).0,
@@ -297,6 +306,9 @@ impl Hud {
         let rail = Rect::new(w - RAIL_W * s, 0.0, RAIL_W * s, h);
         let x0 = rail.x;
         let readout = Rect::new(x0, 0.0, RAIL_W * s, READOUT_H * s);
+        let power = superpower::charge(&game.state, &game.rules, self.player)
+            .map(|_| Rect::new(x0 + 5.0 * s, readout.h + 6.0 * s, rail.w - 10.0 * s, POWER_H * s));
+        let tabs_top = power.map_or(readout.h, |p| p.y + p.h);
         let factories = self.factories(game);
         let per_row = 4;
         let tabs: Vec<Tab> = factories
@@ -306,7 +318,7 @@ impl Hud {
                 let (col, row) = ((i % per_row) as f32, (i / per_row) as f32);
                 let rect = Rect::new(
                     x0 + (5.0 + col * (TAB_W + 2.0)) * s,
-                    readout.h + (6.0 + row * (TAB_H + 2.0)) * s,
+                    tabs_top + (6.0 + row * (TAB_H + 2.0)) * s,
                     TAB_W * s,
                     TAB_H * s,
                 );
@@ -314,7 +326,7 @@ impl Hud {
             })
             .collect();
         let open = self.tab.filter(|t| factories.contains(t)).or(factories.first().copied());
-        let grid_top = tabs.last().map_or(readout.h + 6.0 * s, |t| t.rect.y + t.rect.h + 8.0 * s);
+        let grid_top = tabs.last().map_or(tabs_top + 6.0 * s, |t| t.rect.y + t.rect.h + 8.0 * s);
         // The minimap, the map's shape fitted and centred in a square at the bottom of the rail.
         // The minimap: the map's shape fitted into a square at the bottom of the rail, sitting on its foot.
         let side = MINIMAP * s;
@@ -375,7 +387,7 @@ impl Hud {
                 }
             }
         }
-        Layout { rail, tabs, open, icons, queue, readout, card, minimap, send, modes }
+        Layout { rail, tabs, open, icons, queue, readout, card, minimap, send, power, modes }
     }
 
     /// Whether a screen point is on the HUD rather than the world.
@@ -406,6 +418,17 @@ impl Hud {
         if self.placing.is_some_and(|k| !has_ready(&game.state, self.player, k)) {
             self.placing = None;
         }
+        if !superpower::ready(&game.state, &game.rules, self.player) {
+            self.aiming = false;
+        }
+    }
+
+    /// F, or a click on the power's button: put the charged palace power on the cursor, or take it off again.
+    pub fn aim(&mut self, game: &Game) {
+        self.aiming = !self.aiming && superpower::ready(&game.state, &game.rules, self.player);
+        if self.aiming {
+            self.placing = None;
+        }
     }
 
     /// A mouse click at (x, y), with shift held or not.
@@ -430,6 +453,8 @@ impl Hud {
             if let Some(t) = l.tabs.iter().find(|t| t.rect.contains(x, y)) {
                 self.tab = Some(t.factory);
                 self.scroll = 0;
+            } else if l.power.is_some_and(|r| r.contains(x, y)) {
+                self.aim(game);
             } else if l.send.is_some_and(|r| r.contains(x, y)) {
                 game.order(self.player, &[], CommandOrder::StarportConfirm);
             } else if let Some(icon) = l.icons.iter().find(|i| i.rect.contains(x, y)) {
@@ -445,6 +470,15 @@ impl Hud {
                     game.order(self.player, &[], CommandOrder::Cancel { kind: item });
                 }
             }
+            return Click::Taken;
+        }
+        // The power on the cursor goes off at the tile clicked; a right click puts it back.
+        if self.aiming {
+            if button == Button::Left {
+                let (tx, ty) = view.tile_at(x, y);
+                game.order(self.player, &[], CommandOrder::Superpower { x: tx, y: ty });
+            }
+            self.aiming = false;
             return Click::Taken;
         }
         let Some(ghost) = self.ghost(game, view, x, y) else { return Click::World };
@@ -504,9 +538,9 @@ impl Hud {
         }
     }
 
-    /// Escape: put back the building on the cursor. Returns whether there was one.
+    /// Escape: put back the building or the palace power on the cursor. Returns whether there was one.
     pub fn cancel(&mut self) -> bool {
-        self.placing.take().is_some()
+        std::mem::take(&mut self.aiming) | self.placing.take().is_some()
     }
 
     /// Tab (or shift-tab): open the next (or previous) factory's tab.
@@ -571,8 +605,49 @@ impl Hud {
             batch.outline(dst, 1.0, if g.ok { self.theme.good } else { self.theme.bad });
         }
 
+        // The palace power on the cursor: the tile it would go off at, and for the missile the rings it hurts.
+        if self.aiming && !over {
+            let (tx, ty) = view.tile_at(mouse.0, mouse.1);
+            let rings = match superpower::power(&game.state, &game.rules, self.player) {
+                Some(Superpower::Missile) => 3,
+                _ => 0,
+            };
+            let size = view.tile * view.cam.zoom;
+            let (sx, sy) = view.cam.to_screen((tx - rings) as f32 * view.tile, (ty - rings) as f32 * view.tile);
+            let span = (2 * rings + 1) as f32 * size;
+            let area = Rect::new(sx, sy, span, span);
+            batch.fill(area, [self.theme.bad[0], self.theme.bad[1], self.theme.bad[2], 50]);
+            batch.outline(area, 1.0, self.theme.bad);
+            let (cx, cy) = view.cam.to_screen(tx as f32 * view.tile, ty as f32 * view.tile);
+            batch.outline(Rect::new(cx, cy, size, size), 2.0, if pulse { self.theme.bad } else { self.theme.text });
+        }
+
         let l = self.layout(game, view.screen);
         skin.frame(batch, "rail", 0, l.rail, s, self.theme.panel);
+        if let (Some(r), Some((_, charged, full))) =
+            (l.power, superpower::charge(&game.state, &game.rules, self.player))
+        {
+            let ready = charged >= full && superpower::ready(&game.state, &game.rules, self.player);
+            let hover = r.contains(mouse.0, mouse.1);
+            skin.frame(batch, "button", (hover || self.aiming) as usize, r, s, self.theme.button);
+            let bar = Rect::new(r.x + 2.0 * s, r.y + r.h - 4.0 * s, r.w - 4.0 * s, 2.0 * s);
+            batch.fill(bar, [0, 0, 0, 255]);
+            let share = charged as f32 / full.max(1) as f32;
+            batch.fill(
+                Rect::new(bar.x, bar.y, bar.w * share.min(1.0), bar.h),
+                if ready { self.theme.warn } else { self.theme.good },
+            );
+            let text = if self.aiming {
+                "PICK A TARGET".to_string()
+            } else if ready {
+                "SUPERPOWER READY (F)".to_string()
+            } else {
+                format!("SUPERPOWER {}%", (share * 100.0) as i32)
+            };
+            let colour = if ready && pulse { self.theme.warn } else { self.theme.text };
+            let w = skin.width(Style::Small, &text, s);
+            skin.text(batch, Style::Small, &text, r.x + (r.w - w) / 2.0, r.y + 2.0 * s, s, colour);
+        }
         for t in &l.tabs {
             let open = l.open == Some(t.factory);
             skin.frame(batch, "tab", open as usize, t.rect, s, if open { self.theme.hover } else { self.theme.button });

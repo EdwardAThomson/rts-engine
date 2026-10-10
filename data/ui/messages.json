@@ -31,6 +31,11 @@
     "starport_funds": "Not enough credits for the order",
     "starport_out_of_stock": "{name} out of stock",
     "starport_refunded": "Starport lost: order refunded",
+    "superpower_ready": "Superpower ready",
+    "superpower_charging": "Superpower still charging",
+    "missile_warning": "Missile launched",
+    "guerrillas_arrived": "Guerrillas have arrived",
+    "saboteur_ready": "Saboteur ready",
     "enemy_wave": "Enemy forces approaching",
     "game_won": "Battle won",
     "game_lost": "Battle lost"

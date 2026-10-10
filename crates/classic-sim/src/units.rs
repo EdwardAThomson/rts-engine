@@ -260,6 +260,68 @@ pub struct StarportRules {
     pub max_order: usize,
 }
 
+/// A palace power (rules-world.md, section 8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Superpower {
+    /// A slow, inaccurate missile with a large blast, at any explored tile.
+    Missile,
+    /// A band of fighters that appear near an explored tile and fight there on their own.
+    Guerrillas,
+    /// A cloaked sapper that appears at the palace.
+    Saboteur,
+}
+
+impl Superpower {
+    pub const ALL: [Superpower; 3] = [Superpower::Missile, Superpower::Guerrillas, Superpower::Saboteur];
+
+    /// Its generic id.
+    pub fn id(self) -> &'static str {
+        match self {
+            Superpower::Missile => "power_missile",
+            Superpower::Guerrillas => "power_guerrillas",
+            Superpower::Saboteur => "power_saboteur",
+        }
+    }
+}
+
+/// The palace powers (rules-world.md, section 8; the `superpowers` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SuperpowerRules {
+    /// Each pack faction's power, by faction id, in id order.
+    pub by_faction: Vec<(String, Superpower)>,
+    /// Ticks each power takes to charge, in `Superpower::ALL` order.
+    pub charge: [u32; 3],
+    /// The missile flies `flight + flight_per_tile` ticks per tile of distance, and lands off target by up to
+    /// `spread + distance / spread_tiles` tiles.
+    pub missile_flight: u32,
+    pub missile_flight_per_tile: u32,
+    pub missile_spread: i64,
+    pub missile_spread_tiles: i64,
+    /// Its damage to everything 0, 1, 2 and 3 tiles (the larger offset) from where it lands.
+    pub missile_damage: [i64; 4],
+    /// The weapon its hits are reported as.
+    pub missile_weapon: WeaponId,
+    /// The guerrillas: ticks before they arrive, how many, and how far from the target tile.
+    pub guerrillas_delay: u32,
+    pub guerrillas_count: u32,
+    pub guerrillas_min_range: i32,
+    pub guerrillas_max_range: i32,
+    pub guerrilla: Kind,
+    pub saboteur: Kind,
+}
+
+impl SuperpowerRules {
+    /// The power a faction's palace gives, if any.
+    pub fn of(&self, faction: Option<&str>) -> Option<Superpower> {
+        let f = faction?;
+        self.by_faction.iter().find(|(id, _)| id == f).map(|&(_, p)| p)
+    }
+
+    pub fn charge_ticks(&self, p: Superpower) -> u32 {
+        self.charge[p as usize]
+    }
+}
+
 /// Fog of war (rules-world.md, sections 2 and 3; the `fog` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FogRules {
@@ -336,6 +398,8 @@ pub struct Rules {
     pub fog: Option<FogRules>,
     /// Set while the starport module is on.
     pub starport: Option<StarportRules>,
+    /// Set while the superpowers module is on and the rules have a palace.
+    pub superpowers: Option<SuperpowerRules>,
     pub repair: RepairRules,
     /// Set unless a setting pack turns selling off.
     pub sell: Option<SellRules>,
@@ -531,6 +595,46 @@ impl Rules {
         } else {
             None
         };
+        let kind_index = |id: &str| kinds.binary_search_by(|k| k.id.as_str().cmp(id)).ok().map(|i| Kind(i as u16));
+        let su = |name: &str| module("superpowers", name);
+        let superpowers = if su("on")? != 0 && kind_index("palace").is_some() {
+            let by_faction = t.modules["superpowers"]
+                .by_faction
+                .iter()
+                .map(|(f, p)| {
+                    let power = Superpower::ALL.into_iter().find(|s| s.id() == p);
+                    power.map(|power| (f.clone(), power)).ok_or(format!("superpowers.by_faction.{f}: no power {p}"))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let need = |id: &str| kind_index(id).ok_or(format!("the superpowers module needs the {id} entity"));
+            Some(SuperpowerRules {
+                by_faction,
+                charge: [
+                    (su("missile_charge_ticks")? as u32).max(1),
+                    (su("guerrillas_charge_ticks")? as u32).max(1),
+                    (su("saboteur_charge_ticks")? as u32).max(1),
+                ],
+                missile_flight: su("missile_flight_ticks")? as u32,
+                missile_flight_per_tile: su("missile_flight_ticks_per_tile")? as u32,
+                missile_spread: su("missile_spread")?,
+                missile_spread_tiles: su("missile_spread_tiles")?.max(1),
+                missile_damage: [
+                    su("missile_damage_0")?,
+                    su("missile_damage_1")?,
+                    su("missile_damage_2")?,
+                    su("missile_damage_3")?,
+                ],
+                missile_weapon: weapon_index("missile_strike").ok_or("the superpowers module needs missile_strike")?,
+                guerrillas_delay: su("guerrillas_delay_ticks")? as u32,
+                guerrillas_count: su("guerrillas_count")? as u32,
+                guerrillas_min_range: su("guerrillas_min_range")? as i32,
+                guerrillas_max_range: su("guerrillas_max_range")? as i32,
+                guerrilla: need("guerrilla")?,
+                saboteur: need("saboteur")?,
+            })
+        } else {
+            None
+        };
         Ok(Rules {
             kinds,
             regrowth: Regrowth {
@@ -582,6 +686,7 @@ impl Rules {
             sell,
             capture,
             starport,
+            superpowers,
             radar: module("radar", "on")? != 0,
             hash: t.hash(),
         })

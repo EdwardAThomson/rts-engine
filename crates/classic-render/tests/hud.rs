@@ -160,6 +160,36 @@ fn the_starport_tab_is_a_market_that_orders_and_sends() {
 }
 
 #[test]
+fn the_palace_power_shows_its_charge_and_goes_off_where_clicked() {
+    let (mut game, mut hud) = game();
+    let v = view();
+    game.set_factions(&["faction_b", "faction_a"]);
+    assert!(hud.layout(&game, SCREEN).power.is_none(), "no palace, no power button");
+    let yard = game.state.entities.iter().find(|e| e.owner == 0 && game.rules.kind(e.kind).id == "construction_yard");
+    let t = yard.unwrap().tile();
+    let (palace, plant) = (game.kind("palace").unwrap(), game.kind("power_plant").unwrap());
+    game.spawn(palace, 0, t.x + 4, t.y + 4);
+    game.spawn(plant, 0, t.x + 8, t.y + 4);
+    game.step(10);
+    let button = hud.layout(&game, SCREEN).power.expect("a power button");
+    hud.click(&mut game, &v, centre(button), Button::Left, false);
+    assert!(!hud.aiming, "still charging");
+    let full = game.rules.superpowers.as_ref().unwrap().charge_ticks(classic_sim::Superpower::Missile);
+    game.state.players[0].charge = Some(full);
+    hud.aim(&game);
+    assert!(hud.aiming, "F puts it on the cursor");
+    hud.click(&mut game, &v, tile_point(10, 10), Button::Right, false);
+    assert!(!hud.aiming, "a right click puts it back");
+    hud.click(&mut game, &v, centre(button), Button::Left, false);
+    assert!(hud.aiming);
+    hud.click(&mut game, &v, tile_point(10, 10), Button::Left, false);
+    game.step(1);
+    assert!(!hud.aiming);
+    let launched = game.events.iter().any(|ev| matches!(*ev, Event::MissileLaunched { x: 10, y: 10, player: 0, .. }));
+    assert!(launched, "the missile went at the tile clicked");
+}
+
+#[test]
 fn a_ready_building_goes_where_the_simulation_allows_and_nowhere_else() {
     let (mut game, mut hud) = game();
     let v = view();

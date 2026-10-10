@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 49] = [
+pub const EVENT_NAMES: [&str; 55] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -123,6 +123,12 @@ pub const EVENT_NAMES: [&str; 49] = [
     "supply_ship_landed",
     "starport_order_refunded",
     "supply_ship_left",
+    "superpower_ready",
+    "superpower_refused",
+    "power_missile_launched",
+    "power_missile_impact",
+    "guerrillas_arrived",
+    "saboteur_arrived",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
@@ -409,6 +415,15 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         }
         Event::SelfDestructStarted { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
         Event::MarketPricesChanged { .. } => none,
+        Event::SuperpowerReady { player, .. } | Event::SuperpowerRefused { player, .. } => {
+            Facts { owner: Some(player), ..none }
+        }
+        // Heard at the palace it leaves, and where it lands.
+        Event::MissileLaunched { player, palace, .. } => Facts { owner: Some(player), at: centre_of(palace), ..none },
+        Event::MissileImpact { player, x, y, .. } | Event::GuerrillasArrived { player, x, y, .. } => {
+            Facts { owner: Some(player), at: Some((x as i64 * TILE + TILE / 2, y as i64 * TILE + TILE / 2)), ..none }
+        }
+        Event::SaboteurArrived { player, unit, .. } => Facts { owner: Some(player), at: at_of(unit), ..none },
         Event::StarportRefused { player, .. }
         | Event::StarportOrderPlaced { player, .. }
         | Event::StarportOrderRefunded { player, .. } => Facts { owner: Some(player), ..none },

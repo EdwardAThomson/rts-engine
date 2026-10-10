@@ -95,9 +95,14 @@ pub(crate) fn repair(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     }
 }
 
-/// The first entry of the build order it has fewer of than it wants and may build now.
+/// The first entry of the build order it has fewer of than it wants and may build now. A palace is skipped when its
+/// faction has no palace power, since then it only costs credits.
 fn next_building(ai: &Ai, game: &Game, view: &View) -> Option<Kind> {
+    let power = classic_sim::superpower::power(&game.state, &game.rules, ai.player).is_some();
     ai.settings.build_order.iter().find_map(|(id, want)| {
+        if id == "palace" && !power {
+            return None;
+        }
         let k = game.kind(id)?;
         (view.count(game, k) < *want && buildable(game, view, ai.player, k)).then_some(k)
     })
