@@ -133,6 +133,7 @@ fn take(state: &mut GameState, u: usize, b: usize, events: &mut Vec<Event>) {
     }
     e.owner = to;
     e.queue.clear();
+    e.primary = false;
     e.repairing = false;
     e.repair_due = 0;
     e.selling = 0;

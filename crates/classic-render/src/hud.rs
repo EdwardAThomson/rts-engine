@@ -4,13 +4,13 @@
 //! world's top left. Design: `plans/rts/ui.md`, sections 2 to 4 and 10.
 //!
 //! The HUD is client state only. It reads the game to draw and turns clicks into the same commands any player
-//! sends (`Produce`, `Cancel`, `Place`); it never decides a rule itself, so whether a building fits is always the
+//! sends (`Produce`, `Hold`, `Cancel`, `Place`); it never decides a rule itself, so whether a building fits is always the
 //! simulation's `can_place`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use classic_sim::Superpower;
-use classic_sim::production::has_ready;
+use classic_sim::production::{self, has_ready};
 use classic_sim::starport::{self, Stage};
 use classic_sim::superpower;
 use classic_sim::units::TICKS_PER_SECOND;
@@ -205,7 +205,11 @@ impl Hud {
         };
         let mut queued = 0;
         let mut head = None;
-        for e in game.state.entities.iter().filter(|e| e.owner == self.player) {
+        // The primary factory's head first, as that is where clicks send their orders.
+        let first = game.rules.kind(item).built_at.and_then(|f| production::primary(&game.state, self.player, f));
+        let owned = game.state.entities.iter().enumerate().filter(|(_, e)| e.owner == self.player);
+        let (front, rest): (Vec<_>, Vec<_>) = owned.partition(|&(i, _)| Some(i) == first);
+        for (_, e) in front.into_iter().chain(rest) {
             queued += e.queue.iter().filter(|q| q.item == item).count();
             if let Some(q) = e.queue.first().filter(|q| q.item == item)
                 && head.is_none()
@@ -349,7 +353,9 @@ impl Hud {
                         send = Some(Rect::new(x0 + rail.w - 64.0 * s, queue_top - 13.0 * s, 59.0 * s, 12.0 * s));
                     }
                 }
-            } else if let Some(f) = game.state.entities.iter().find(|e| e.owner == self.player && e.kind == factory) {
+            } else if let Some(f) =
+                production::primary(&game.state, self.player, factory).map(|i| &game.state.entities[i])
+            {
                 for (i, q) in f.queue.iter().enumerate() {
                     let rect =
                         Rect::new(x0 + (5.0 + i as f32 * (QUEUE_W + 2.0)) * s, queue_top, QUEUE_W * s, QUEUE_H * s);
@@ -401,11 +407,25 @@ impl Hud {
 
     /// A mouse click at (x, y), with shift held or not.
     ///
-    /// On the minimap a left click asks to centre the view there and a right click asks for an order there. On an icon a left click orders one (shift: up to five, as the queue has room), or picks up a ready building;
-    /// a right click cancels the last one queued, with its refund. A click on a queue entry cancels that item.
-    /// With a building on the cursor, a left click on the world places it if the simulation allows, and a right
-    /// click puts it back.
-    pub fn click(&mut self, game: &mut Game, view: &View, (x, y): (f32, f32), button: Button, shift: bool) -> Click {
+    /// On the minimap a left click asks to centre the view there and a right click asks for an order there. On an
+    /// icon a left click orders one (shift: up to five, as the queue has room), or picks up a ready building; a right
+    /// click cancels the last one queued, with its refund. A click on a queue entry cancels that item. With a building
+    /// on the cursor, a left click on the world places it if the simulation allows, and a right click puts it back.
+    pub fn click(&mut self, game: &mut Game, view: &View, at: (f32, f32), button: Button, shift: bool) -> Click {
+        self.click_with(game, view, at, button, shift, false)
+    }
+
+    /// `click`, with ctrl held or not: ctrl and a left click on an icon put the one being built on hold, or resume
+    /// it (`plans/rts/ui.md`, section 2).
+    pub fn click_with(
+        &mut self,
+        game: &mut Game,
+        view: &View,
+        (x, y): (f32, f32),
+        button: Button,
+        shift: bool,
+        ctrl: bool,
+    ) -> Click {
         self.check_placing(game);
         let l = self.layout(game, view.screen);
         if l.rail.contains(x, y) || l.readout.contains(x, y) {
@@ -426,7 +446,7 @@ impl Hud {
                 if l.open.is_some_and(|f| self.is_market(game, f)) {
                     self.click_market(game, icon.item, button, shift);
                 } else {
-                    self.click_icon(game, icon, button, shift);
+                    self.click_icon(game, icon, button, shift, ctrl);
                 }
             } else if let Some(&(item, _)) = l.queue.iter().find(|(_, r)| r.contains(x, y)) {
                 if l.open.is_some_and(|f| self.is_market(game, f)) {
@@ -472,11 +492,15 @@ impl Hud {
         }
     }
 
-    fn click_icon(&mut self, game: &mut Game, icon: &Icon, button: Button, shift: bool) {
+    fn click_icon(&mut self, game: &mut Game, icon: &Icon, button: Button, shift: bool, ctrl: bool) {
         let item = icon.item;
         match button {
             Button::Right if self.placing == Some(item) => self.placing = None,
             Button::Right => game.order(self.player, &[], CommandOrder::Cancel { kind: item }),
+            Button::Left if ctrl => {
+                let on = !matches!(icon.status.head, Some((EntryState::Held, _)));
+                game.order(self.player, &[], CommandOrder::Hold { kind: item, on });
+            }
             Button::Left if icon.status.needs.is_some() => {}
             Button::Left
                 if game.rules.kind(item).building && matches!(icon.status.head, Some((EntryState::Ready, _))) =>
@@ -486,12 +510,9 @@ impl Hud {
             Button::Left => {
                 let n = if shift {
                     let maker = game.rules.kind(item).built_at;
-                    let used = game
-                        .state
-                        .entities
-                        .iter()
-                        .find(|e| e.owner == self.player && Some(e.kind) == maker)
-                        .map_or(0, |f| f.queue.len());
+                    let used = maker
+                        .and_then(|m| production::primary(&game.state, self.player, m))
+                        .map_or(0, |i| game.state.entities[i].queue.len());
                     SHIFT_COUNT.min(game.rules.production.queue_size.saturating_sub(used)).max(1)
                 } else {
                     1
@@ -667,13 +688,17 @@ impl Hud {
                 skin.text(batch, Style::Small, &text, r.x + (r.w - w) / 2.0, band.y + 2.0 * s, s, colour);
             }
             match st.head {
-                Some((state @ (EntryState::Building | EntryState::Paused), share)) => {
+                Some((state @ (EntryState::Building | EntryState::Paused | EntryState::Held), share)) => {
                     batch.fill(Rect::new(r.x, r.y, r.w, r.h * (1.0 - share)), [0, 0, 0, 140]);
                     let bar = Rect::new(r.x, r.y + r.h - 4.0 * s, r.w, 4.0 * s);
                     batch.fill(bar, [0, 0, 0, 255]);
-                    let colour = if state == EntryState::Paused { self.theme.warn } else { self.theme.good };
+                    let colour = match state {
+                        EntryState::Paused => self.theme.warn,
+                        EntryState::Held => self.theme.dim,
+                        _ => self.theme.good,
+                    };
                     batch.fill(Rect::new(bar.x, bar.y, bar.w * share, bar.h), colour);
-                    if state == EntryState::Paused {
+                    if state != EntryState::Building {
                         let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
                         batch.fill(Rect::new(cx - 7.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), self.theme.text);
                         batch.fill(Rect::new(cx + 2.0 * s, cy - 9.0 * s, 5.0 * s, 18.0 * s), self.theme.text);
@@ -859,10 +884,18 @@ impl Hud {
                 let name = self.name(game, q.item);
                 return match q.state {
                     EntryState::Ready => (format!("{name} READY"), self.theme.good),
-                    EntryState::Paused => (format!("{name} ON HOLD"), self.theme.warn),
+                    EntryState::Paused => (format!("{name}: NO CREDITS"), self.theme.warn),
+                    EntryState::Held => (format!("{name} ON HOLD"), self.theme.warn),
                     EntryState::Blocked => (format!("{name}: EXIT BLOCKED"), self.theme.warn),
                     EntryState::Building | EntryState::Waiting => (format!("{name} {share}%"), self.theme.good),
                 };
+            }
+            // Of two or more factories of a kind, the one taking orders says so.
+            let several = game.state.entities.iter().filter(|o| o.owner == e.owner && o.kind == e.kind).count() > 1;
+            if several
+                && production::primary(&game.state, e.owner, e.kind).map(|i| game.state.entities[i].id) == Some(e.id)
+            {
+                return ("PRIMARY".to_string(), self.theme.good);
             }
             return match k.power {
                 p if p > 0 => (format!("POWER +{p}"), self.theme.good),
@@ -1104,6 +1137,7 @@ impl Hud {
                 Some((format!("BUILDING {}%", (share * 100.0) as i32), self.theme.good))
             }
             (_, Some((EntryState::Paused, _))) => Some(("PAUSED: NOT ENOUGH CREDITS".to_string(), self.theme.warn)),
+            (_, Some((EntryState::Held, _))) => Some(("ON HOLD: CTRL+CLICK TO RESUME".to_string(), self.theme.warn)),
             (_, Some((EntryState::Ready, _))) => Some(("READY: CLICK TO PLACE".to_string(), self.theme.good)),
             (_, Some((EntryState::Blocked, _))) => Some(("EXIT BLOCKED".to_string(), self.theme.warn)),
             _ => None,

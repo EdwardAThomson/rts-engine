@@ -447,7 +447,8 @@ impl App {
     fn hud_click(&mut self, button: Button) -> bool {
         let view = self.view();
         let shift = self.shift();
-        let click = self.hud.click(&mut self.game, &view, self.mouse, button, shift);
+        let ctrl = self.keys.contains(&KeyCode::ControlLeft) || self.keys.contains(&KeyCode::ControlRight);
+        let click = self.hud.click_with(&mut self.game, &view, self.mouse, button, shift, ctrl);
         let taken = click.taken();
         match click {
             Click::Centre { x, y } => {
@@ -1048,6 +1049,11 @@ impl ApplicationHandler for App {
                             Some(Bind::Mute) => self.toggle_mute(),
                             Some(Bind::Sell) => self.building_key(Mode::Sell),
                             Some(Bind::Repair) => self.building_key(Mode::Repair),
+                            // The first selected factory becomes the one of its kind that takes orders.
+                            Some(Bind::Primary) => {
+                                let ids = self.scene.selected.clone();
+                                self.game.order(self.player, &ids, CommandOrder::Primary);
+                            }
                             // F (a fixed key, unless rebound to another action): aim the charged palace power
                             // (or put it back).
                             None if code == KeyCode::KeyF => self.hud.aim(&self.game),

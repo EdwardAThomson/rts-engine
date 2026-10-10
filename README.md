@@ -45,7 +45,7 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
+`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); P makes the selected factory the primary one of its kind, where new orders go; ctrl+click on an item in the rail puts it on hold or resumes it; right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
@@ -180,8 +180,9 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   it pauses without losing progress when credits run out and resumes by itself; cancelling refunds exactly what
   was paid; a finished building waits at the yard until placed, and only a ready building can be placed; a
   finished unit leaves by the free tile round its factory nearest the middle of the map (a factory in a corner
-  sends units out of the corner facing the middle) or waits until one frees up; prerequisites, the primary factory and replay
-  from the command log all hold.
+  sends units out of the corner facing the middle) or waits until one frees up; prerequisites, the primary factory
+  (the first built, or the one the player picks, takes orders and sends out the units), an entry put on hold (its
+  queue stops, paying nothing, until resumed or cancelled) and replay from the command log all hold.
 - Combat: tanks in sight pick each other, turn their turrets the short way and trade shells; a full shell hit on
   heavy armour does exactly its damage; a destroyed unit is removed, credits its killer, and its death blast hurts
   nearby enemies twice as much as its own side; two units can kill each other on the same tick; an attack order
@@ -377,10 +378,10 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - The menus have one save per setting pack (no slots, autosave, thumbnails or quick keys), and loading replays
   every tick from the start, which on a long game takes a moment rather than an instant (about 0.2 s for 30 game
   minutes of two computer players in a native release build; slower in the browser, not measured there). The settings have no
-  master volume, UI scale or display options, and only ten actions can be rebound. A save from an older engine
+  master volume, UI scale or display options, and only eleven actions can be rebound. A save from an older engine
   that plays differently refuses to load rather than being upgraded. The settings, keys and end screens were drawn
   in a test and the player started under a virtual display, but no person has played through them. The rail has
-  no tabs by category, pause per item or primary factory choice yet,
+  no tabs by category, and the primary factory is picked with a key (P) rather than a button on the card,
   the card's unit chips can't be clicked. The advisor and the units speak in text (the feed, and a subtitle when units
   are selected or ordered) and aloud where a pack has voices for them; the generic pack's placeholder voices speak
   the engine's own words, and a pack's own voices replace them. The advisor also warns of a harvester under attack,
