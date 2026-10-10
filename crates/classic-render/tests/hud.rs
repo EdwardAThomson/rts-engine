@@ -417,3 +417,28 @@ fn without_radar_the_minimap_shows_static_and_the_feed_says_when_it_comes_and_go
     hud.after_step(&game);
     assert_eq!(hud.feed.lines.back().map(|l| l.id), Some("radar_offline"));
 }
+
+/// SELL and REPAIR sit side by side above the selection card and pick their modes; SELL only where the rules allow
+/// selling.
+#[test]
+fn the_sell_and_repair_buttons_sit_above_the_card_and_pick_their_modes() {
+    use classic_render::skin::Mode;
+    let (mut game, mut hud) = game();
+    let v = view();
+    let l = hud.layout(&game, SCREEN);
+    let modes: Vec<Mode> = l.modes.iter().map(|m| m.0).collect();
+    assert_eq!(modes, [Mode::Sell, Mode::Repair]);
+    for (mode, r) in l.modes.clone() {
+        assert!(r.y + r.h <= l.card.y && r.x >= l.card.x && r.x + r.w <= l.card.x + l.card.w, "{mode:?} over the card");
+        assert!(l.icons.iter().all(|i| i.rect.y + i.rect.h <= r.y), "the grid keeps clear of {mode:?}");
+        assert!(matches!(hud.click(&mut game, &v, centre(r), Button::Left, false), Click::Mode(m) if m == mode));
+    }
+    // A pack that turns selling off keeps REPAIR alone.
+    let pack = setting::load("generic").unwrap();
+    let mut table = pack.rules.clone();
+    table.modules.get_mut("sell").unwrap().numbers.get_mut("on").unwrap().value = 0;
+    let rules = Rules::from_table(&table).unwrap();
+    let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let modes: Vec<Mode> = hud.layout(&game, SCREEN).modes.iter().map(|m| m.0).collect();
+    assert_eq!(modes, [Mode::Repair]);
+}
