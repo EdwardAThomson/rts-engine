@@ -215,6 +215,16 @@ impl Game {
         self.state.entity(id).is_some_and(|e| vision::known(&self.state, &self.rules, player, e))
     }
 
+    /// Whether `player` has radar (rules-world.md, section 4): with the `radar` module on, they own a building that
+    /// gives it and their power supply meets demand; with it off, always. It is read from the state, not kept in it.
+    pub fn radar(&self, player: u32) -> bool {
+        if !self.rules.radar {
+            return true;
+        }
+        let owns = self.state.entities.iter().any(|e| e.owner == player && self.rules.kind(e.kind).radar);
+        owns && !self.power(player).is_short()
+    }
+
     /// A player's storage cap now: the most credits deliveries can bring them to.
     pub fn storage(&self, player: u32) -> i64 {
         storage::cap(&self.state, &self.rules, player)

@@ -209,6 +209,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   lights exactly its own pixels. The minimap keeps the map's shape, maps its corners and centre to the map's,
   shows the player's base in their colour, and its clicks move the view or ask for an order without ordering
   anything itself.
+- Radar, emblems and the card's buttons: with the `radar` module on (the generic pack turns it on), the minimap
+  shows only grey static and "NO RADAR" until the player owns a radar with power enough, its clicks do nothing
+  then, and the feed says "Radar online" and "Radar offline" as that changes (never at the start). With the module
+  off, as in the builtin rules, the minimap always works. The readout shows the local faction's emblem and the
+  selection card its owner's. SELL and REPAIR buttons above the card work like Z and C, SELL only where the rules
+  allow selling, and show pressed while their mode is on. Radar is read from the state, so no hash changed.
 - The selection card and message feed: the card draws in its place between the grid and the queue; the feed tells
   the local player that their building is ready (another player's is not mentioned), that power ran short and came
   back, that units are under attack (at most once per 20 seconds however many hits) and that a harvester was lost,
@@ -325,7 +331,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 
 ## Not verified / not built yet
 
-- Fog of war has no radar yet (the minimap shows explored ground without one), and paths are still planned with the
+- Radar powers only the minimap: it reveals nothing on the map, and the minimap without one is static, not a
+  last-seen picture. Fog of war's paths are still planned with the
   whole map known, so a path can give away ground nobody has seen (rules-world.md wants unexplored tiles treated as
   passable). Sight counts work on whole tiles with a loop over each disc's square, not the precomputed row spans and
   changed-tiles list performance.md plans; the bench runs with fog off. Effects (shots, explosions) in fog are still

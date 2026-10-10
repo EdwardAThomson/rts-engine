@@ -71,6 +71,8 @@ SAY = {
     "cannot_capture": "That building is too strong to take yet.",
     "starport_ordered": "Order placed. Delivery is on its way.",
     "starport_funds": "Not enough credits for that order.",
+    "radar_online": "Radar is online.",
+    "radar_offline": "Radar is offline.",
     "starport_out_of_stock": "That unit is out of stock.",
     "starport_refunded": "We lost the starport. The order is refunded.",
     "superpower_ready": "The superpower is ready. Pick a target.",

@@ -9,6 +9,8 @@
     "no_credits": "Not enough credits: {name} on hold",
     "low_power": "Low power",
     "power_restored": "Power restored",
+    "radar_online": "Radar online",
+    "radar_offline": "Radar offline",
     "base_attacked": "Base under attack",
     "units_attacked": "Units under attack",
     "building_lost": "{name} destroyed",

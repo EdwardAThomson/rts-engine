@@ -259,6 +259,8 @@ fn the_hud_draws_over_the_world_in_its_own_place() {
     let font = Font::new(&gpu, &mut batch);
     let skin = Skin::load(&gpu, &mut batch, &[&Files::Dir(pack.dir.clone())]).unwrap();
     let v = view();
+    // The generic pack has the radar rule on: a radar building gives the minimap.
+    game.spawn(game.kind("radar").unwrap(), 0, 1, 1);
     let at = centre(icon(&game, &hud, "power_plant").rect);
     hud.click(&mut game, &v, at, Button::Left, true);
     game.step(60);
@@ -339,6 +341,12 @@ fn the_minimap_moves_the_view_and_sends_orders_but_never_orders_itself() {
     assert!((m.w / m.h - game.map.width as f32 / game.map.height as f32).abs() < 0.01, "keeps the map's shape");
     // The minimap's centre is the map's centre; its corners are the map's corners.
     let mid = centre(m);
+    // Without radar (the generic pack's rule) the minimap is blank and a click on it does nothing.
+    assert!(!game.radar(0));
+    assert_eq!(hud.minimap_point(&l, &game, mid.0, mid.1), None);
+    assert!(!matches!(hud.click(&mut game, &v, mid, Button::Left, false), Click::Centre { .. }));
+    game.spawn(game.kind("radar").unwrap(), 0, 1, 1);
+    assert!(game.radar(0));
     let at = |x: f32, y: f32| hud.minimap_point(&l, &game, x, y).unwrap();
     let (cx, cy) = at(mid.0, mid.1);
     assert!((cx - game.map.width as f32 / 2.0).abs() < 0.5 && (cy - game.map.height as f32 / 2.0).abs() < 0.5);
@@ -362,4 +370,75 @@ fn the_clock_shows_hours_minutes_and_seconds() {
     assert_eq!(clock_text(252), "0:04:12");
     assert_eq!(clock_text(4500), "1:15:00");
     assert_eq!(clock_text(36_000 + 59), "10:00:59");
+}
+
+#[test]
+fn without_radar_the_minimap_shows_static_and_the_feed_says_when_it_comes_and_goes() {
+    use classic_render::feed::Tone;
+    let gpu = Gpu::headless().expect("a GPU adapter (a software one will do)");
+    let (mut game, mut hud) = game();
+    let pack = setting::load("generic").unwrap();
+    let ramps = art::player_ramps(&pack, game.state.players.len());
+    let mut batch = SpriteBatch::new(&gpu, OFFSCREEN_FORMAT);
+    let art = Art::load(&gpu, &mut batch, &art::art_dirs(&pack), &ramps).unwrap();
+    let skin = Skin::load(&gpu, &mut batch, &[&Files::Dir(pack.dir.clone())]).unwrap();
+    let v = view();
+    let (w, h) = (SCREEN.0 as u32, SCREEN.1 as u32);
+    let l = hud.layout(&game, SCREEN);
+    let m = l.minimap;
+    // The minimap's colours: few greys without radar, the map's colours with it.
+    let colours = |batch: &mut SpriteBatch, hud: &mut Hud, game: &Game, name: &str| {
+        hud.draw(batch, &art, &skin, game, &v, (0.0, 0.0), &[]);
+        let img = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
+        let out = setting::root().join(format!("target/hud-test-{name}.png"));
+        std::fs::write(&out, classic_tools::art::png::encode(w as usize, h as usize, &img)).unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut grey = true;
+        for y in (m.y as u32 + 2)..(m.y + m.h) as u32 - 2 {
+            for x in (m.x as u32 + 2)..(m.x + m.w) as u32 - 2 {
+                let p = &img[((y * w + x) * 4) as usize..][..3];
+                seen.insert([p[0], p[1], p[2]]);
+                grey &= p[0] == p[1] && p[1] == p[2];
+            }
+        }
+        (seen.len(), grey)
+    };
+    hud.after_step(&game);
+    let (blank, grey) = colours(&mut batch, &mut hud, &game, "no-radar");
+    assert!(grey, "no radar: only grey static and grey words");
+    let radar = game.spawn(game.kind("radar").unwrap(), 0, 1, 1);
+    hud.after_step(&game);
+    let (full, grey) = colours(&mut batch, &mut hud, &game, "radar");
+    println!("minimap colours: without radar {blank} (all grey), with it {full}");
+    assert!(!grey);
+    let said: Vec<(&str, Tone)> = hud.feed.lines.iter().map(|l| (l.id, l.tone)).collect();
+    assert_eq!(said, [("radar_online", Tone::Good)], "the start without radar isn't news; getting it is");
+    game.state.entities.retain(|e| e.id != radar);
+    hud.after_step(&game);
+    assert_eq!(hud.feed.lines.back().map(|l| l.id), Some("radar_offline"));
+}
+
+/// SELL and REPAIR sit side by side above the selection card and pick their modes; SELL only where the rules allow
+/// selling.
+#[test]
+fn the_sell_and_repair_buttons_sit_above_the_card_and_pick_their_modes() {
+    use classic_render::skin::Mode;
+    let (mut game, mut hud) = game();
+    let v = view();
+    let l = hud.layout(&game, SCREEN);
+    let modes: Vec<Mode> = l.modes.iter().map(|m| m.0).collect();
+    assert_eq!(modes, [Mode::Sell, Mode::Repair]);
+    for (mode, r) in l.modes.clone() {
+        assert!(r.y + r.h <= l.card.y && r.x >= l.card.x && r.x + r.w <= l.card.x + l.card.w, "{mode:?} over the card");
+        assert!(l.icons.iter().all(|i| i.rect.y + i.rect.h <= r.y), "the grid keeps clear of {mode:?}");
+        assert!(matches!(hud.click(&mut game, &v, centre(r), Button::Left, false), Click::Mode(m) if m == mode));
+    }
+    // A pack that turns selling off keeps REPAIR alone.
+    let pack = setting::load("generic").unwrap();
+    let mut table = pack.rules.clone();
+    table.modules.get_mut("sell").unwrap().numbers.get_mut("on").unwrap().value = 0;
+    let rules = Rules::from_table(&table).unwrap();
+    let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let modes: Vec<Mode> = hud.layout(&game, SCREEN).modes.iter().map(|m| m.0).collect();
+    assert_eq!(modes, [Mode::Repair]);
 }
