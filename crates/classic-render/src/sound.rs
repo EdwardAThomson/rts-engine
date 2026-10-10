@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 60] = [
+pub const EVENT_NAMES: [&str; 63] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -87,6 +87,9 @@ pub const EVENT_NAMES: [&str; 60] = [
     "production_resumed",
     "primary_set",
     "slab_laid",
+    "bloom_seeded",
+    "bloom_burst",
+    "bloom_hurt",
     "decayed",
     "production_cancelled",
     "building_ready",
@@ -449,6 +452,10 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
         }
         Event::UnitRepaired { unit, owner, .. } => Facts { owner: Some(owner), at: at_of(unit), ..none },
+        Event::BloomSeeded { x, y, .. } | Event::BloomBurst { x, y, .. } => {
+            Facts { at: Some((x as i64 * TILE + TILE / 2, y as i64 * TILE + TILE / 2)), ..none }
+        }
+        Event::BloomHurt { unit, .. } => Facts { owner: owner_of(unit), at: at_of(unit), ..none },
         Event::SlabLaid { kind, owner, x, y, .. } => {
             let k = game.rules.kind(kind);
             let centre = |t: i32, n: i32| t as i64 * TILE + n as i64 * TILE / 2;

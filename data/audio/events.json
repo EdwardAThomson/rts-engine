@@ -30,6 +30,7 @@
     { "event": "hazard_spawned", "sound": "sfx_hazard_rumble" },
     { "event": "hazard_left", "sound": "sfx_hazard_rumble" },
     { "event": "hazard_ate", "sound": "sfx_hazard_eat" },
+    { "event": "bloom_burst", "sound": "sfx_bloom_burst" },
     { "event": "power_missile_launched", "sound": "sfx_rocket" },
     { "event": "power_missile_impact", "sound": "sfx_explode_large" },
     { "event": "superpower_refused", "local": true, "sound": "ui_error" }
@@ -41,6 +42,8 @@
     "production_paused",
     "production_cancelled",
     "decayed",
+    "bloom_seeded",
+    "bloom_hurt",
     "target_acquired",
     "projectile_spawned",
     "hit",

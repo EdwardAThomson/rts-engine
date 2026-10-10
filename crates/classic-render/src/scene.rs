@@ -230,6 +230,21 @@ impl Scene {
                 }
             }
         }
+        // Resource blooms, only where the viewer sees the ground now.
+        for b in game.state.blooms.iter().flat_map(|b| &b.list) {
+            let seen = viewer.is_none_or(|p| {
+                game.state.vision.as_ref().is_some_and(|v| v.tile(p, b.tile.x, b.tile.y) == vision::TileView::Visible)
+            });
+            if !seen || b.tile.x < x0 || b.tile.x >= x1 || b.tile.y < y0 || b.tile.y >= y1 {
+                continue;
+            }
+            let (sx, sy) = cam.to_screen(b.tile.x as f32 * tile, b.tile.y as f32 * tile);
+            let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
+            match art.sprite("resource_bloom", 0) {
+                Some(s) => batch.sprite(s.tex, s.facing_frame(0, 0), dst, [255; 4]),
+                None => batch.fill(dst, [200, 120, 40, 255]),
+            }
+        }
         // Buildings, then units in screen order (higher up first), then shells.
         let at = |e: &Entity| -> (f32, f32) {
             let (ox, oy) = self.prev.get(&e.id).copied().unwrap_or((e.x, e.y));

@@ -15,6 +15,7 @@
 {"file": "audio/sfx/explode_large_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/explode_large_2.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/hazard_strike_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
+{"file": "audio/sfx/bloom_burst_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/hazard_rumble_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/build_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}
 {"file": "audio/sfx/repair_1.wav", "source": "original", "made_by": "synthesised from code: crates/classic-tools/src/sound.rs", "licence": "MIT"}

@@ -402,6 +402,9 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             continue;
         }
         events.push(Event::ProjectileHit { tick, projectile: p.id, weapon: p.weapon, x: p.to_x, y: p.to_y });
+        if !p.air {
+            crate::blooms::shot(state, p.to_x, p.to_y);
+        }
         if w.converts > 0 {
             gas(state, rules, &p, &mut converts);
         } else {

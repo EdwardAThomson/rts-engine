@@ -21,6 +21,7 @@
     "ui_power_up": { "bus": "ui", "gain_db": -6, "priority": 90, "max_instances": 1, "spatial": false, "jitter_percent": 0 },
     "sfx_gun": { "bus": "sfx", "gain_db": -9, "priority": 35, "max_instances": 3, "spatial": true, "jitter_percent": 8 },
     "sfx_infantry_die": { "bus": "sfx", "gain_db": -6, "priority": 55, "max_instances": 2, "spatial": true, "jitter_percent": 10 },
+    "sfx_bloom_burst": { "bus": "sfx", "gain_db": -2, "priority": 75, "max_instances": 2, "spatial": true, "jitter_percent": 6 },
     "sfx_hazard_eat": { "bus": "sfx", "gain_db": -2, "priority": 85, "max_instances": 1, "spatial": true, "jitter_percent": 5 }
   },
   "voices": {
