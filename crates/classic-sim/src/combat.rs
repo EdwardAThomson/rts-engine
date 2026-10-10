@@ -136,7 +136,7 @@ fn on_body(rules: &Rules, e: &Entity, x: i64, y: i64) -> bool {
 
 /// Whether weapon `w` may aim at `t` where it is now: something targetable, not being carried, in the air for a
 /// weapon that hits air or on the ground for one that hits ground.
-fn aims_at(rules: &Rules, w: WeaponId, t: &Entity) -> bool {
+pub fn aims_at(rules: &Rules, w: WeaponId, t: &Entity) -> bool {
     let wr = rules.weapon(w);
     rules.kind(t.kind).targetable && t.carried_by.is_none() && if t.airborne() { wr.hits_air } else { wr.hits_ground }
 }

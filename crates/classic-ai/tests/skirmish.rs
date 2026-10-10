@@ -551,3 +551,61 @@ fn rebuilds_a_lost_yard_from_a_base_builder() {
     assert_eq!(count(&g, 0, "construction_yard"), 1);
     assert_eq!(count(&g, 0, "mcv"), 0);
 }
+
+#[test]
+fn a_wave_leaves_behind_a_unit_far_from_the_rest() {
+    // A unit jammed in at home would hold the whole wave back for ever: the wave marches in step with its rearmost.
+    let (mut g, mut ai) = odds(false);
+    while !ai[0].wave.as_ref().is_some_and(|w| w.staging.is_none()) && g.state.tick < 3000 {
+        play(&mut g, &mut ai, 1);
+    }
+    let wave = ai[0].wave.clone().expect("a wave set out");
+    let back = *wave.units.last().unwrap();
+    let home = g.map.start[0].unwrap();
+    let e = g.state.entities.iter_mut().find(|e| e.id == back).unwrap();
+    (e.x, e.y) = (home.x as i64 * 256 + 128, (home.y as i64 + 4) * 256 + 128);
+    let think = ai[0].settings.think_every;
+    play(&mut g, &mut ai, think);
+    let units = ai[0].wave.as_ref().map(|w| w.units.clone()).unwrap_or_default();
+    println!("a wave of {} with tank {back} put back at home: wave now {units:?}", wave.units.len());
+    assert!(!units.is_empty(), "the rest go on");
+    assert!(!units.contains(&back), "the one left behind is no longer waited for");
+}
+
+#[test]
+fn a_wave_never_waits_under_an_aircraft_it_cannot_hit() {
+    // Player 1 is down to its yard and a gunship flying beside it (made harmless here, so the test is about the
+    // wave's choice). Tanks can't shoot at aircraft in flight: the wave goes for the yard, not for the gunship.
+    let mut t = classic_data::RulesTable::builtin();
+    let tuning = r#"{ "weapons": { "air_rocket": { "hits_ground": 0 } } }"#;
+    assert!(t.apply_tuning(&classic_data::json::parse(tuning).unwrap()).is_empty());
+    let rules = classic_sim::Rules::from_table(&t).unwrap();
+    let mut g = Game::new(GameOptions { map: SKIRMISH, seed: 8, players: None, rules: Some(&rules) }).unwrap();
+    let yard = g.kind("construction_yard").unwrap();
+    for e in g.state.entities.iter_mut().filter(|e| e.owner == 1 && e.kind != yard) {
+        e.health = 0;
+    }
+    g.step(1);
+    let at = g.state.entities.iter().find(|e| e.owner == 1 && e.kind == yard).unwrap().tile();
+    let gunship = g.spawn(g.kind("gunship").unwrap(), 1, at.x - 3, at.y);
+    g.state.entities.iter_mut().find(|e| e.id == gunship).unwrap().altitude = g.rules.air.cruise_altitude;
+    let tank = g.kind("battle_tank").unwrap();
+    for x in 6..10 {
+        g.spawn(tank, 0, x, 15);
+    }
+    let settings = Settings { first_wave_tick: 0, first_wave: 4, ..Settings::normal() };
+    let mut ai = [Ai::new(0, settings)];
+    let (mut end, mut up) = (None, 0);
+    while end.is_none() && g.state.tick < 6000 {
+        // Its player keeps it flying to and fro beside the yard; an aircraft with nothing to do lands.
+        if g.state.tick.is_multiple_of(20) {
+            let y = at.y - 8 * (g.state.tick / 20 % 2) as i32;
+            g.order(1, &[gunship], CommandOrder::Move { x: at.x - 3, y });
+        }
+        end = play(&mut g, &mut ai, 1);
+        up += g.state.entity(gunship).is_some_and(|e| e.airborne()) as u32;
+    }
+    println!("four tanks against a yard with a gunship over it: winner and tick {end:?}, gunship up for {up} ticks");
+    assert!(end.is_some_and(|(_, t)| up * 10 >= t * 9), "the gunship was in the air nearly all the time");
+    assert_eq!(end.map(|(w, _)| w), Some(0), "the wave destroyed the yard");
+}

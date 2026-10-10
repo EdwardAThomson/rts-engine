@@ -121,3 +121,31 @@ fn two_ais_under_fog_play_the_same_game_every_time() {
     println!("AI against AI under fog, seed 3: {a:?}");
     assert_eq!(a, b);
 }
+
+#[test]
+fn its_search_looks_at_ground_it_never_saw_until_it_finds_the_last_building() {
+    // The enemy's last building stands in the far corner of its own half, on ground the computer has never seen,
+    // over a point of a coarse search grid and out of sight of every other: a search that only looks from those
+    // points never finds it.
+    for hide in [1, 0] {
+        let r = rules(&format!(r#"{{ "modules": {{ "fog": {{ "hide": {hide} }} }} }}"#));
+        let mut g = game(&r, 1);
+        for e in g.state.entities.iter_mut().filter(|e| e.owner == 0) {
+            e.health = 0;
+        }
+        g.step(1);
+        // Standing on the search point at (3, 39) of a grid every six tiles, five tiles or more from every other.
+        let plant = g.spawn(g.kind("power_plant").unwrap(), 0, 2, 38);
+        let unseen = g.tile_view(1, 2, 38) == TileView::Shroud;
+        let tank = g.kind("battle_tank").unwrap();
+        let home = g.map.start[1].unwrap();
+        for i in 0..8 {
+            g.spawn(tank, 1, home.x - 4 + i % 4, home.y - 3 - i / 4);
+        }
+        let mut ai = [Ai::new(1, Settings { first_wave_tick: 0, ..Settings::normal() })];
+        let end = play(&mut g, &mut ai, 20_000);
+        println!("fog hide {hide}: plant {plant} unseen at first: {unseen}; winner and tick {end:?}");
+        assert!(unseen);
+        assert_eq!(end.map(|(w, _)| w), Some(1), "it found the plant and destroyed it");
+    }
+}

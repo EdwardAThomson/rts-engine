@@ -17,7 +17,7 @@
 
 use std::collections::BTreeSet;
 
-use classic_sim::{CommandOrder, Entity, Game, Order, Tile};
+use classic_sim::{CommandOrder, Entity, Game, Order, Tile, TileView};
 
 use classic_sim::map::TILE;
 
@@ -142,9 +142,14 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     let middle = Point { x: sx / n, y: sy / n };
     let from_middle = |e: &Entity| d2(at(game, e), middle);
     let enemies = || view.enemies.iter().map(|&i| &es[i]);
+    // Only what some unit in the wave can shoot where it is now: a gunship hovering over a base the wave has
+    // levelled is no target for tanks, and the wave would wait under it for ever.
+    let hittable = |t: &Entity| units.iter().any(|u| can_hit(game, u, t));
+    // Of those, one every unit can shoot first, so the wave fights together.
+    let by_all = |t: &Entity| units.iter().all(|u| can_hit(game, u, t));
     let near_armed = enemies()
-        .filter(|e| armed(game, e) && from_middle(e) <= 64 * TILE * TILE)
-        .min_by_key(|e| (from_middle(e), e.id));
+        .filter(|e| armed(game, e) && hittable(e) && from_middle(e) <= 64 * TILE * TILE)
+        .min_by_key(|e| (!by_all(e), from_middle(e), e.id));
 
     // Gathering: everyone to the staging point, until most are there, it has waited long enough for the slowest, or
     // it is in a fight.
@@ -190,8 +195,11 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     let building = enemies()
         .filter(|e| rules.kind(e.kind).building && !rules.kind(e.kind).wall)
         .min_by_key(|e| (from_middle(e), e.id));
-    let Some(target) =
-        near_armed.or(objective).or(building).or_else(|| enemies().min_by_key(|e| (from_middle(e), e.id)))
+    let objective = objective.filter(|o| hittable(o));
+    let Some(target) = near_armed
+        .or(objective)
+        .or(building)
+        .or_else(|| enemies().filter(|e| hittable(e)).min_by_key(|e| (from_middle(e), e.id)))
     else {
         // Its objective is gone and, under fog, it knows of nothing else: the wave is over, and its units are free to
         // search (`scout`). Kept, it would wait for ever, and so would every unit in it.
@@ -220,10 +228,14 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
             })
         })
     };
-    w.units.retain(|&id| game.state.entity(id).is_none_or(|e| !stuck(e)));
-    let units: Vec<&Entity> = units.into_iter().filter(|e| !stuck(e)).collect();
+    // So does one left far behind once the wave has gathered (jammed in at home, say): the wave marches in step
+    // with its rearmost unit, and would wait for that one for ever.
+    let straggler = |e: &Entity| from_middle(e) > STRAY * STRAY * TILE * TILE;
+    w.units.retain(|&id| game.state.entity(id).is_none_or(|e| !stuck(e) && !straggler(e)));
+    let units: Vec<&Entity> = units.into_iter().filter(|e| !stuck(e) && !straggler(e)).collect();
     let to_target = |e: &Entity| isqrt(d2(at(game, e), at(game, target)) as u64) as i64;
-    let rear = units.iter().map(|e| to_target(e)).max().unwrap_or(0);
+    // Only the units that can shoot the target close in on it, so only they keep step with each other.
+    let rear = units.iter().filter(|e| can_hit(game, e, target)).map(|e| to_target(e)).max().unwrap_or(0);
     let engaged = |e: &Entity| {
         enemies().any(|x| {
             let r = reach(x).max(reach(e)) + TILE;
@@ -240,7 +252,7 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
     let target_armed = armed(game, target);
     let send: Vec<u32> = units
         .iter()
-        .filter(|e| !ahead.contains(&e.id))
+        .filter(|e| !ahead.contains(&e.id) && can_hit(game, e, target))
         .filter(|e| match e.order {
             Order::Attack => {
                 e.target != Some(target.id)
@@ -259,42 +271,62 @@ pub(crate) fn think(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
 /// Under fog, knowing no enemy building: send the fastest fighter at home (idle and not in a wave) to look at the
 /// nearest other player's start position it has not explored, unless one is already on its way. With every start
 /// explored, the enemy has buildings it has never seen (built in fog, or out of its scout's sight): it searches the
-/// map (`search_point`).
+/// map (`search_point`) with one scout for every `SEARCHERS_PER` fighters idle at home, up to `MAX_SEARCHERS`,
+/// each to a different point. A point counts as searched once a scout has been to it, in sight or not: a point it
+/// can't stand on may stay out of sight from the nearest tile it can, and would be visited for ever.
 pub(crate) fn scout(ai: &mut Ai, game: &Game, view: &View, out: &mut Orders) {
+    const SEARCHERS_PER: usize = 4;
+    const MAX_SEARCHERS: usize = 8;
     if view.knows_building || game.state.vision.is_none() {
-        ai.scout = None;
+        ai.scouts.clear();
         ai.searched.clear();
         return;
     }
-    let Some(spot) = view.unexplored_start.or_else(|| search_point(ai, game)) else {
-        ai.scout = None;
-        return;
-    };
     let on_way = |id: u32| game.state.entity(id).is_some_and(|e| e.owner == ai.player && e.order == Order::Move);
-    if ai.scout.is_some_and(on_way) {
-        return;
+    for &(id, spot) in &ai.scouts {
+        if !on_way(id) && game.state.entity(id).is_some_and(|e| e.owner == ai.player) {
+            ai.searched.insert((spot.y, spot.x));
+        }
     }
+    ai.scouts.retain(|&(id, _)| on_way(id));
     let in_wave = |id: u32| ai.wave.as_ref().is_some_and(|w| w.units.contains(&id));
     let es = &game.state.entities;
-    let pick = view
+    let mut idle: Vec<&Entity> = view
         .mine
         .iter()
         .map(|&i| &es[i])
         .filter(|e| fighter(game, e) && e.order == Order::Idle && !in_wave(e.id))
-        .max_by_key(|e| (game.rules.kind(e.kind).speed, std::cmp::Reverse(e.id)));
-    // The start tile holds the enemy's yard when it is there: go to the nearest tile a unit can stand on.
-    let Some(to) = standable(game, centre(spot)) else { return };
-    ai.scout = pick.map(|e| e.id);
-    if let Some(e) = pick {
+        .collect();
+    // Fastest first.
+    idle.sort_by_key(|e| (std::cmp::Reverse(game.rules.kind(e.kind).speed), e.id));
+    let want = match view.unexplored_start {
+        Some(_) => 1,
+        None => (1 + idle.len() / SEARCHERS_PER).min(MAX_SEARCHERS),
+    };
+    for e in idle {
+        if ai.scouts.len() >= want {
+            break;
+        }
+        let taken: Vec<Tile> = ai.scouts.iter().map(|&(_, t)| t).collect();
+        let Some(spot) = view.unexplored_start.or_else(|| search_point(ai, game, &taken)) else { return };
+        // The start tile holds the enemy's yard when it is there: go to the nearest tile a unit can stand on.
+        let Some(to) = standable(game, centre(spot)) else { return };
+        if e.tile() == to {
+            ai.searched.insert((spot.y, spot.x));
+            continue;
+        }
+        ai.scouts.push((e.id, spot));
         out.push(vec![e.id], CommandOrder::Move { x: to.x, y: to.y });
     }
 }
 
 /// The next point of a search for enemy buildings it has never seen: of points every `SEARCH_STEP` tiles that a
-/// unit can stand on, the one nearest another player's start position that hasn't been in its sight since the
-/// search began (the enemy builds near home); once every point has been, it starts again.
-fn search_point(ai: &mut Ai, game: &Game) -> Option<Tile> {
-    const SEARCH_STEP: i32 = 6;
+/// unit can stand on, and that haven't been in its sight since the search began, less those in `taken`, one it has
+/// never explored if any (what it has never seen is where an unseen building can be), the one nearest another
+/// player's start position (the enemy builds near home); once every point has been, it starts again. The points
+/// are closer together than most units see, so a search leaves no gap a building could hide in.
+fn search_point(ai: &mut Ai, game: &Game, taken: &[Tile]) -> Option<Tile> {
+    const SEARCH_STEP: i32 = 3;
     let (w, h) = (game.map.width, game.map.height);
     let points: Vec<Tile> = (SEARCH_STEP / 2..h)
         .step_by(SEARCH_STEP as usize)
@@ -302,7 +334,7 @@ fn search_point(ai: &mut Ai, game: &Game) -> Option<Tile> {
         .filter(|t| game.pathfinder.passable(t.x, t.y))
         .collect();
     for t in &points {
-        if game.tile_view(ai.player, t.x, t.y) == classic_sim::TileView::Visible {
+        if game.tile_view(ai.player, t.x, t.y) == TileView::Visible {
             ai.searched.insert((t.y, t.x));
         }
     }
@@ -316,7 +348,11 @@ fn search_point(ai: &mut Ai, game: &Game) -> Option<Tile> {
         .collect();
     let near_start = |t: &Tile| starts.iter().map(|&s| d2(centre(*t), s)).min().unwrap_or(0);
     let next = |searched: &BTreeSet<(i32, i32)>| {
-        points.iter().filter(|t| !searched.contains(&(t.y, t.x))).min_by_key(|t| (near_start(t), t.y, t.x)).copied()
+        points
+            .iter()
+            .filter(|t| !searched.contains(&(t.y, t.x)) && !taken.contains(t))
+            .min_by_key(|t| (game.tile_view(ai.player, t.x, t.y) != TileView::Shroud, near_start(t), t.y, t.x))
+            .copied()
     };
     next(&ai.searched).or_else(|| {
         ai.searched.clear();
@@ -326,6 +362,14 @@ fn search_point(ai: &mut Ai, game: &Game) -> Option<Tile> {
 
 fn armed(game: &Game, e: &Entity) -> bool {
     game.rules.kind(e.kind).weapon.is_some()
+}
+
+/// How far, in tiles, a wave's unit may fall behind the wave's middle before it leaves the wave.
+const STRAY: i64 = 20;
+
+/// Whether `unit`'s weapon may aim at `target` where it is now (aircraft in flight only for weapons that hit air).
+fn can_hit(game: &Game, unit: &Entity, target: &Entity) -> bool {
+    game.rules.kind(unit.kind).weapon.is_some_and(|w| classic_sim::combat::aims_at(&game.rules, w, target))
 }
 
 /// Whether an armed enemy can join a fight at `p`: a unit within eight tiles, an armed building whose weapon reaches

@@ -253,8 +253,8 @@ pub struct Ai {
     pub waves_sent: u32,
     /// Thinks so far, for the managers that think less often.
     thinks: u32,
-    /// The unit it sent to find the enemy under fog, while it is on its way.
-    scout: Option<u32>,
+    /// The units it sent to find the enemy under fog, while they are on their way, each with the point it went to look at.
+    scouts: Vec<(u32, Tile)>,
     /// Under fog, knowing no enemy building once every start is explored: the search points it has had in sight
     /// since the search began, as (y, x).
     searched: BTreeSet<(i32, i32)>,
@@ -273,7 +273,7 @@ impl Ai {
             wave_size,
             waves_sent: 0,
             thinks: 0,
-            scout: None,
+            scouts: Vec::new(),
             searched: BTreeSet::new(),
             delivered: 0,
             delivered_at: 0,
