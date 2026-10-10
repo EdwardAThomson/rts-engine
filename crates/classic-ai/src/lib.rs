@@ -114,6 +114,7 @@ impl Settings {
             ("rocket_infantry", 1),
             ("infantry", 1),
             ("scout_bike", 1),
+            ("raider_bike", 1),
         ];
         Settings {
             think_every: 30,
@@ -311,6 +312,7 @@ impl Ai {
         }
         let view = View::new(game, self.player);
         base::think(self, game, &view, &mut out);
+        base::base_builders(game, &view, &mut out);
         base::produce(self, game, &view, &mut out);
         base::repair(self, game, &view, &mut out);
         if self.thinks.is_multiple_of(4) {
@@ -337,6 +339,7 @@ impl Orders {
 
 /// What one think works from: indices into `game.state.entities`, in id order.
 pub(crate) struct View {
+    pub player: u32,
     /// Its own entities, less those it can't command for long: units fighting on their own, and sappers, which go
     /// for the building their palace power aimed them at.
     pub mine: Vec<usize>,
@@ -392,7 +395,7 @@ impl View {
         };
         let enemy_home = enemy_home.or(starts.first().map(|&t| geo::centre(t)));
         let unexplored_start = starts.into_iter().find(|t| game.tile_view(player, t.x, t.y) == TileView::Shroud);
-        View { mine, enemies, home, enemy_home, unexplored_start, knows_building: enemy_home_known }
+        View { player, mine, enemies, home, enemy_home, unexplored_start, knows_building: enemy_home_known }
     }
 
     pub fn count(&self, game: &Game, kind: Kind) -> usize {
@@ -400,9 +403,13 @@ impl View {
     }
 }
 
-/// Whether a player has lost: no buildings left. (Units left over can't build again.)
+/// Whether a player has lost: no buildings left, and no unit that can deploy into one. (Other units left over can't
+/// build again.)
 pub fn defeated(game: &Game, player: u32) -> bool {
-    !game.state.entities.iter().any(|e| e.owner == player && game.rules.kind(e.kind).building)
+    !game.state.entities.iter().any(|e| {
+        let k = game.rules.kind(e.kind);
+        e.owner == player && (k.building || k.deploys_into.is_some())
+    })
 }
 
 /// The one player not defeated, once all the others are.

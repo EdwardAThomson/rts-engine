@@ -686,7 +686,8 @@ impl App {
         if ids.is_empty() {
             return;
         }
-        // Capturers into a building that can be taken, damaged vehicles to a repair pad; the rest as usual.
+        // Capturers into a building that can be taken, damaged vehicles to a repair pad, a unit that deploys clicked
+        // itself deploys; the rest as usual.
         let (special, ids) = skin::special_orders(&self.game, self.player, &ids, target);
         for (units, order) in &special {
             self.game.order(self.player, units, *order);

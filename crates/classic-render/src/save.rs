@@ -264,6 +264,7 @@ pub fn command_text(rules: &Rules, c: &Command) -> String {
         CommandOrder::StarportRemove { kind: k } => format!("starport_remove {}", kind(k)),
         CommandOrder::StarportConfirm => "starport_confirm".to_string(),
         CommandOrder::Superpower { x, y } => format!("superpower {x} {y}"),
+        CommandOrder::Deploy => "deploy".to_string(),
     };
     format!("{} {ids} {order}", c.player)
 }
@@ -304,6 +305,7 @@ pub fn parse_command(text: &str, rules: &Rules) -> Result<Command, String> {
         Some("starport_remove") => CommandOrder::StarportRemove { kind: kind(3)? },
         Some("starport_confirm") => CommandOrder::StarportConfirm,
         Some("superpower") => CommandOrder::Superpower { x: num(3)? as i32, y: num(4)? as i32 },
+        Some("deploy") => CommandOrder::Deploy,
         other => return Err(format!("unknown order {other:?}")),
     };
     Ok(Command { player, ids, order })

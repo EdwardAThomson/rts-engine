@@ -6,6 +6,7 @@ use rts_core::replay::{CommandQueue, Logged};
 use rts_core::rng::seed_state;
 
 use crate::capture;
+use crate::deploy;
 use crate::hazard::{self, Hazards};
 use crate::map::{MapData, Tile, parse_map};
 use crate::path::Pathfinder;
@@ -238,6 +239,13 @@ impl Game {
     /// Whether `player` could place `kind` with its top-left tile at (x, y) now. Changes nothing.
     pub fn can_place(&self, player: u32, kind: Kind, x: i32, y: i32) -> Result<(), PlaceError> {
         placement::check(&self.map, &self.state, &self.rules, player, kind, x, y)
+    }
+
+    /// Whether unit `id` could deploy into its building if it stood on tile `at` now (the `deploy` module), other
+    /// units counting as in the way. Changes nothing.
+    pub fn can_deploy(&self, id: u32, at: Tile) -> Result<(), PlaceError> {
+        let e = self.state.entity(id).ok_or(PlaceError::NotABuilding)?;
+        deploy::check(&self.map, &self.state, &self.rules, e, at)
     }
 
     /// Whether `player` may send capturers against building `id` now. Changes nothing.

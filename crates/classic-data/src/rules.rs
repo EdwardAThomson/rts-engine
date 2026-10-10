@@ -40,6 +40,8 @@ pub struct Entry {
     pub self_destruct: Option<String>,
     /// The generic faction ids (`faction_a`, ...) that may build it; empty means every faction.
     pub factions: Vec<String>,
+    /// The building a unit turns into when its owner deploys it (the `deploy` module), if it can.
+    pub deploys_into: Option<String>,
     pub numbers: BTreeMap<String, Number>,
 }
 
@@ -233,6 +235,7 @@ impl RulesTable {
             let text = |k: &str| v.get(k).and_then(Value::as_str).map(String::from);
             let (armour, weapon, death) = (text("armour"), text("weapon"), text("death"));
             let self_destruct = text("self_destruct");
+            let deploys_into = text("deploys_into");
             let mut factions = Vec::new();
             for f in v.get("factions").and_then(Value::as_array).unwrap_or_default() {
                 match f.as_str() {
@@ -254,6 +257,7 @@ impl RulesTable {
                     death,
                     self_destruct,
                     factions,
+                    deploys_into,
                     numbers,
                 },
             );
@@ -308,10 +312,13 @@ impl RulesTable {
         for (id, e) in &table.entities {
             let at = format!("entities.json: {id}");
             let is_building = |b: &str| table.entities.get(b).is_some_and(|x| x.built && x.kind == "building");
-            for b in e.built_at.iter().chain(&e.requires) {
+            for b in e.built_at.iter().chain(&e.requires).chain(&e.deploys_into) {
                 if e.built && !is_building(b) {
                     errors.push(format!("{at}: \"{b}\" is not a built building"));
                 }
+            }
+            if e.built && e.deploys_into.is_some() && e.kind != "unit" {
+                errors.push(format!("{at}: only a unit can have \"deploys_into\""));
             }
             if e.built && e.built_at.is_some() {
                 for n in ["cost", "build_ticks"] {

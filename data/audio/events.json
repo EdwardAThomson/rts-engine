@@ -15,6 +15,8 @@
     { "event": "building_sold", "local": true, "sound": "ui_credits" },
     { "event": "captured", "local": true, "sound": "sfx_build" },
     { "event": "capture_refused", "local": true, "sound": "ui_error" },
+    { "event": "deployed", "local": true, "sound": "sfx_build" },
+    { "event": "deploy_refused", "local": true, "sound": "ui_error" },
     { "event": "building_ready", "local": true, "sound": "ui_ready" },
     { "event": "unit_built", "local": true, "sound": "ui_unit_ready" },
     { "event": "placement_rejected", "local": true, "sound": "ui_error" },

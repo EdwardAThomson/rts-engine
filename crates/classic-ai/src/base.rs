@@ -13,6 +13,10 @@
 //! refinery, towards the enemy for anything armed. The best one that keeps every factory exit and refinery dock
 //! reachable from the map edge wins (the "lanes" of the design doc, kept by a flood fill). A ready building with
 //! nowhere to go is cancelled, which refunds it.
+//!
+//! **Base builders.** With no construction yard left (ai-opponent.md, "Rebuilding"), it orders a unit that deploys
+//! into one from any factory that can make it. Any such unit it owns, built or bought, drives to the nearest tile
+//! round its home where it can deploy and deploys there, so a second one becomes a second yard.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -64,6 +68,45 @@ pub(crate) fn think(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
     };
     if let Some(k) = next {
         out.push(Vec::new(), CommandOrder::Produce { kind: k });
+    }
+}
+
+/// Rebuild a lost construction yard from a base builder, and deploy the base builders it has.
+pub(crate) fn base_builders(game: &Game, view: &View, out: &mut Orders) {
+    let es = &game.state.entities;
+    let rules = &game.rules;
+    let Some(yard) = game.kind("construction_yard") else { return };
+    let deploys = |k: Kind| rules.kind(k).deploys_into == Some(yard);
+    let builders: Vec<usize> = view.mine.iter().copied().filter(|&i| deploys(es[i].kind)).collect();
+    let queued = view.mine.iter().flat_map(|&i| es[i].queue.iter()).any(|q| deploys(q.item));
+    if view.count(game, yard) == 0 && builders.is_empty() && !queued {
+        let kind =
+            (0..rules.kinds.len() as u16).map(Kind).find(|&k| deploys(k) && game.can_build(view.player, k).is_ok());
+        let factory = kind.and_then(|k| view.mine.iter().find(|&&i| Some(es[i].kind) == rules.kind(k).built_at));
+        if let (Some(k), Some(&f)) = (kind, factory) {
+            out.push(vec![es[f].id], CommandOrder::Produce { kind: k });
+        }
+    }
+    for i in builders {
+        let e = &es[i];
+        if matches!(e.order, Order::Deploy | Order::Move) {
+            continue;
+        }
+        let here = e.tile();
+        if game.can_deploy(e.id, here).is_ok() {
+            out.push(vec![e.id], CommandOrder::Deploy);
+            continue;
+        }
+        // The nearest tile it can deploy on, round its home if it has one, else round where it stands.
+        let from = view.home.map_or(here, |h| Tile { x: (h.x / TILE) as i32, y: (h.y / TILE) as i32 });
+        let spot = (1..=12).find_map(|r| {
+            around(from.x - r + 1, from.y - r + 1, 2 * r - 1, 2 * r - 1)
+                .filter(|&t| game.can_deploy(e.id, t).is_ok())
+                .min_by_key(|&t| (dist2(t, here), off_middle(game, crate::geo::centre(t)), t.y, t.x))
+        });
+        if let Some(t) = spot {
+            out.push(vec![e.id], CommandOrder::Move { x: t.x, y: t.y });
+        }
     }
 }
 

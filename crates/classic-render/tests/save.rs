@@ -184,6 +184,7 @@ fn every_order_reads_back_from_its_text() {
         CommandOrder::StarportRemove { kind: k("quad") },
         CommandOrder::StarportConfirm,
         CommandOrder::Superpower { x: 20, y: -2 },
+        CommandOrder::Deploy,
     ] {
         for ids in [vec![], vec![7], vec![7, 8, 9]] {
             let c = Command { player: 1, ids, order };

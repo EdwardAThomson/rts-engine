@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 58] = [
+pub const EVENT_NAMES: [&str; 60] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -132,6 +132,8 @@ pub const EVENT_NAMES: [&str; 58] = [
     "power_missile_impact",
     "guerrillas_arrived",
     "saboteur_arrived",
+    "deployed",
+    "deploy_refused",
 ];
 
 /// How one sound id is mixed, from `data/audio/sounds.json`, and the takes the pack gave it.
@@ -458,6 +460,10 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             Facts { owner: Some(to), building: Some(true), at: centre_of(entity), ..none }
         }
         Event::CaptureRefused { player, .. } => Facts { owner: Some(player), ..none },
+        Event::Deployed { entity, owner, .. } => {
+            Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
+        }
+        Event::DeployRefused { player, unit, .. } => Facts { owner: Some(player), at: at_of(unit), ..none },
         Event::Regrowth { x, y, .. } => {
             Facts { at: Some((x as i64 * TILE + TILE / 2, y as i64 * TILE + TILE / 2)), ..none }
         }
