@@ -41,6 +41,8 @@ pub struct MapData {
     pub resource: Vec<i64>,
     /// Player start positions; index 0 is player 1. A gap in the numbering leaves `None`.
     pub start: Vec<Option<Tile>>,
+    /// Where resource blooms start (the `blooms` module), in row order.
+    pub blooms: Vec<Tile>,
 }
 
 /// Sub-tile units per tile; positions are integers in these units.
@@ -50,6 +52,7 @@ pub const RESOURCE_PER_TILE: i64 = 300;
 /// Parse an ASCII map:
 ///   `.` open ground   `#` rock (buildable)   `X` cliff (impassable)
 ///   `~` open ground with resource           `1`-`8` player start (on rock)
+///   `*` open ground with a bloom point
 /// Lines starting with `;` are comments.
 pub fn parse_map(text: &str) -> Result<MapData, String> {
     let rows: Vec<Vec<char>> = text
@@ -63,6 +66,7 @@ pub fn parse_map(text: &str) -> Result<MapData, String> {
     let mut terrain = Vec::with_capacity(width * height);
     let mut resource = Vec::with_capacity(width * height);
     let mut start: Vec<Option<Tile>> = Vec::new();
+    let mut blooms = Vec::new();
     for (y, row) in rows.iter().enumerate() {
         for x in 0..width {
             let c = row.get(x).copied().unwrap_or('.');
@@ -78,13 +82,17 @@ pub fn parse_map(text: &str) -> Result<MapData, String> {
                     Terrain::Rock
                 }
                 '.' | '~' => Terrain::Open,
+                '*' => {
+                    blooms.push(Tile { x: x as i32, y: y as i32 });
+                    Terrain::Open
+                }
                 _ => return Err(format!("map: unknown tile '{c}' at {x},{y}")),
             };
             terrain.push(t);
             resource.push(if c == '~' { RESOURCE_PER_TILE } else { 0 });
         }
     }
-    Ok(MapData { width: width as i32, height: height as i32, terrain, resource, start })
+    Ok(MapData { width: width as i32, height: height as i32, terrain, resource, start, blooms })
 }
 
 impl MapData {

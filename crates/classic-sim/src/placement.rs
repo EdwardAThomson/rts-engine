@@ -2,7 +2,9 @@
 //! on firm, empty ground (rock only, unless a pack tunes `rock_only` off), with no resource, building or unit on it,
 //! within `max_gap` empty tiles of a building its owner already has (walls don't extend the area; 0 means touching,
 //! diagonals included), and a refinery's dock must not be a cliff. The numbers come from the `placement` module in
-//! the rules data.
+//! the rules data. The player's concrete slabs (the `decay` module) count as their buildings for that distance. A
+//! slab follows the same rules, may lie over the player's own slab (only new tiles are laid) but not another
+//! player's, and must lay at least one new tile.
 
 use crate::map::{MapData, Terrain, Tile};
 use crate::units::{Kind, Rules};
@@ -74,6 +76,21 @@ impl Rect {
     }
 }
 
+/// Whether one of `player`'s slab tiles is within `max_gap` empty tiles of `new`.
+fn slab_near(map: &MapData, state: &GameState, player: u32, new: Rect, max_gap: i32) -> bool {
+    if state.slabs.is_none() {
+        return false;
+    }
+    let r = max_gap + 1;
+    (new.y0 - r..=new.y1 + r).any(|ty| {
+        (new.x0 - r..=new.x1 + r).any(|tx| {
+            map.in_bounds(tx, ty)
+                && crate::decay::owner(state, tx, ty) == Some(player)
+                && Rect { x0: tx, y0: ty, x1: tx, y1: ty }.gap(new) <= max_gap
+        })
+    })
+}
+
 /// Check a placement without changing anything.
 pub fn check(
     map: &MapData,
@@ -111,13 +128,20 @@ pub fn check(
             if state.entities.iter().filter(solid).any(|e| footprint(e).contains(tx, ty) || heading_here(e)) {
                 return Err(PlaceError::Blocked { x: tx, y: ty });
             }
+            if k.slab && crate::decay::owner(state, tx, ty).is_some_and(|o| o != player) {
+                return Err(PlaceError::Blocked { x: tx, y: ty });
+            }
         }
+    }
+    if k.slab && (new.y0..=new.y1).all(|ty| (new.x0..=new.x1).all(|tx| crate::decay::owner(state, tx, ty).is_some())) {
+        return Err(PlaceError::Blocked { x: new.x0, y: new.y0 });
     }
     let near = state
         .entities
         .iter()
         .filter(|e| e.owner == player && rules.kind(e.kind).building && !rules.kind(e.kind).wall)
-        .any(|e| footprint(e).gap(new) <= rules.placement.max_gap);
+        .any(|e| footprint(e).gap(new) <= rules.placement.max_gap)
+        || slab_near(map, state, player, new, rules.placement.max_gap);
     if !near {
         return Err(PlaceError::TooFar);
     }

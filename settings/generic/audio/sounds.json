@@ -14,6 +14,7 @@
     "sfx_explode_small": { "files": ["audio/sfx/explode_small_1.wav", "audio/sfx/explode_small_2.wav"] },
     "sfx_explode_large": { "files": ["audio/sfx/explode_large_1.wav", "audio/sfx/explode_large_2.wav"] },
     "sfx_hazard_strike": { "files": ["audio/sfx/hazard_strike_1.wav"] },
+    "sfx_bloom_burst": { "files": ["audio/sfx/bloom_burst_1.wav"] },
     "sfx_hazard_rumble": { "files": ["audio/sfx/hazard_rumble_1.wav"] },
     "sfx_build": { "files": ["audio/sfx/build_1.wav"] },
     "sfx_repair": { "files": ["audio/sfx/repair_1.wav"] },

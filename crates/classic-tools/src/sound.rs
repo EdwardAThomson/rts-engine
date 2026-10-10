@@ -239,6 +239,19 @@ const RECIPES: &[Recipe] = &[
             layer(Noise, 0.0, 0.0, 0.5, 0.4).tone(0.4, 0.1).at(0.8),
         ],
     },
+    // A resource bloom bursting: a dull pop from under the ground, then a long hiss of grit thrown up and falling.
+    Recipe {
+        id: "sfx_bloom_burst",
+        folder: "sfx",
+        seconds: 1.4,
+        takes: 1,
+        drive: 1.5,
+        layers: &[
+            layer(Sine, 90.0, 35.0, 0.18, 1.0),
+            layer(Noise, 0.0, 0.0, 0.12, 0.7).tone(0.3, 0.08),
+            layer(Noise, 0.0, 0.0, 0.5, 0.5).tone(0.5, 0.15).rise(0.1).at(0.08),
+        ],
+    },
     // The hazard moving under the sand: a long low rumble that swells and fades.
     Recipe {
         id: "sfx_hazard_rumble",

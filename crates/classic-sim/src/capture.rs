@@ -108,7 +108,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         };
         let building = state.entities[b].clone();
         if beside(rules, &state.entities[i], &building) {
-            take(state, i, b, events);
+            take(state, rules, i, b, events);
             continue;
         }
         let e = &state.entities[i];
@@ -123,7 +123,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
 }
 
 /// Capturer `u` goes into building `b`, which becomes its owner's.
-fn take(state: &mut GameState, u: usize, b: usize, events: &mut Vec<Event>) {
+fn take(state: &mut GameState, rules: &Rules, u: usize, b: usize, events: &mut Vec<Event>) {
     let tick = state.tick;
     let (by, to) = (state.entities[u].id, state.entities[u].owner);
     let e = &mut state.entities[b];
@@ -140,6 +140,7 @@ fn take(state: &mut GameState, u: usize, b: usize, events: &mut Vec<Event>) {
     e.target = None;
     e.goal = None;
     e.last_attacker = None;
+    crate::decay::captured(state, rules, b);
     state.entities.remove(u);
     // The new owner's units stop shooting what is now theirs.
     for e in state.entities.iter_mut().filter(|e| e.owner == to && e.target == Some(entity)) {

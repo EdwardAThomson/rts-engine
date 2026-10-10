@@ -402,6 +402,9 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
             continue;
         }
         events.push(Event::ProjectileHit { tick, projectile: p.id, weapon: p.weapon, x: p.to_x, y: p.to_y });
+        if !p.air {
+            crate::blooms::shot(state, p.to_x, p.to_y);
+        }
         if w.converts > 0 {
             gas(state, rules, &p, &mut converts);
         } else {
@@ -459,6 +462,7 @@ pub fn tick(pf: &mut Pathfinder, state: &mut GameState, rules: &Rules, events: &
         let e = state.entities.remove(i);
         if rules.kind(e.kind).building {
             world::occupy(pf, rules, &e, false);
+            crate::decay::destroyed(state, rules, &e);
         }
     }
     // Blasts don't hurt those already destroyed this tick; anything they kill goes next tick.
