@@ -45,12 +45,13 @@ cargo run --bin sounds                                        # rewrite the gene
 ```
 
 The desktop player opens on the title screen, where you pick the map (a pack's own maps, else
-`maps/skirmish-01.txt`) and your faction, then you play the computer: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them.
+`maps/skirmish-01.txt`), your faction and how well the computer plays (easy, normal or hard), then you play it: build from the rail, drag to select, right-click to order, ctrl+number for groups, ctrl+X to self-destruct the selected units that can, F to aim your palace's superpower once charged (or click its bar on the rail), H for home, M to mute, Escape to pause. Z sells and C repairs the buildings selected (or the next one clicked); right-click with infantry on a badly damaged enemy building to capture it, and with damaged vehicles on your repair pad to mend them. The pause menu saves the game and loads it again, and the settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the keys. Settings and the save are kept between runs in `~/.config/classic-rts/` (or `$XDG_CONFIG_HOME`, or `%APPDATA%` on Windows), and in the browser in the page's local storage. The end screen shows each player's score.
 
 ```bash
 cargo run --release --bin play                                # --start skips the title, --ai none plays alone, --mute, --seed 3,
                                                               # --map plays one map, --faction 1 starts on the second faction,
-                                                              # --fog on|shroud|off overrides the pack's fog of war
+                                                              # --fog on|shroud|off overrides the pack's fog of war,
+                                                              # --difficulty easy|normal|hard sets the computer's
 xvfb-run -a cargo run --bin play -- --frames 60               # smoke run on a machine with no display
 ```
 
@@ -219,6 +220,15 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   resumes; the end screen comes when someone wins (victory) or the player loses their last building (defeat) and
   offers another game; the menus shade the whole screen and draw nothing while playing, and never change the
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
+- Difficulty: easy, normal and hard are presets of the computer's settings. On `skirmish-01`, over seeds 1 to 6 from
+  both starts, hard beat normal 11 to 1 and normal beat easy 11 to 1 (with aircraft and faction specials; before aircraft,
+  bigger waves alone gave hard 8 to 2, and 7 to 4 once carriers came).
+- Settings, saves and the score: the settings screen steps each bus's volume and the scroll speed (right click steps
+  down), the keys screen puts a key on an action and swaps one that clashes, and the settings file reads back as
+  written and skips lines it can't use, with a warning. A game saved at tick 8000, mid-attack, with a click queued
+  on that tick, loads to the same hash and plays on to tick 14000 exactly as the game that never stopped; a save
+  with a wrong hash, another seed, other rules or another opponent refuses to load. The score's totals match the
+  game's events even when the player clears them between ticks.
 - Pack maps and theme: a pack's `setting.json` lists its maps, each checked to be a text file in the pack; a pack's
   `theme/theme.css` recolours the HUD and menus, and colours it can't read keep the engine's, with a warning. The
   generic pack's theme is the engine's own colours. In the player under a virtual display, with the private pack: the
@@ -325,10 +335,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   bodies that turn before driving yet, and a blocked search returns no partial path.
 - Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two), attacks on the ground, factory upgrades (siege and missile tanks need none yet) or tech levels; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
-- The computer opponent is one "normal" level with numbers in code: no difficulty levels, personalities, data files
+- The computer opponent has three levels (easy, normal, hard) with numbers in code: no brutal level, personalities, data files
   in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. Its memory lives in the `Ai`
-  value, not the hashed game state, so a save would not carry it yet. With the mixed army and factory exits on
+  value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
+  differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
+  three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
   any side (20 seeds, 90 game minutes), two AIs on `skirmish-01` win 8 to 8 with 4 stalls and games last about 40
   minutes; on `mirror-01` (10 seeds) 4 to 4 with 2 stalls. Mixed armies trade evenly, so games run longer than
   with tanks alone, and Twin Plateaus in the private pack still stalls in about 4 games of 10. In the desktop player it was checked only
@@ -362,8 +374,12 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Starport: the computer opponent never builds one or buys from it, prices and stock show only on the starport's
   tab, and the supply ship has no landing or take-off effect or sound. It was checked in tests, not yet by a person
   playing.
-- The menus are the basics: no map, faction or difficulty choice, settings (keys, volume, scroll speed), save or
-  load, or score screen yet, and the end screen was drawn in a test but not reached in a played game. The rail has
+- The menus have one save per setting pack (no slots, autosave, thumbnails or quick keys), and loading replays
+  every tick from the start, which on a long game takes a moment rather than an instant (about 0.2 s for 30 game
+  minutes of two computer players in a native release build; slower in the browser, not measured there). The settings have no
+  master volume, UI scale or display options, and only ten actions can be rebound. A save from an older engine
+  that plays differently refuses to load rather than being upgraded. The settings, keys and end screens were drawn
+  in a test and the player started under a virtual display, but no person has played through them. The rail has
   no tabs by category, pause per item or primary factory choice yet,
   the card's unit chips can't be clicked. The advisor and the units speak in text (the feed, and a subtitle when units
   are selected or ordered) and aloud where a pack has voices for them; the generic pack's placeholder voices speak

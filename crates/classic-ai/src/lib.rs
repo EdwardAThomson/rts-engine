@@ -6,7 +6,8 @@
 //! It is deterministic: integer maths, entities in id order, no clock and no randomness of its own, so the same game
 //! always gets the same orders and two AIs playing each other give the same hash every run.
 //!
-//! This first version is one "normal" opponent with four managers that share a small memory (`Ai`):
+//! The opponent comes in three strengths (`Difficulty`: easy, normal, hard), which are only different `Settings`.
+//! It has four managers that share a small memory (`Ai`):
 //! - the base (`base.rs`): power, a build order of generic ids, where each building goes, and repairing buildings
 //!   once the fighting round them stops;
 //! - production and the economy: harvesters to fill its refineries, then combat units in a weighted mix;
@@ -136,6 +137,96 @@ impl Settings {
             retreat_percent: 30,
             defend_radius: 10,
             rally_distance: 6,
+        }
+    }
+
+    /// A gentler opponent: it thinks half as often, keeps fewer harvesters and a bigger reserve, builds fewer
+    /// turrets, and waits longer before smaller waves that turn back sooner.
+    pub fn easy() -> Settings {
+        let normal = Settings::normal();
+        let order = [
+            ("power_plant", 1),
+            ("refinery", 1),
+            ("light_factory", 1),
+            ("heavy_factory", 1),
+            ("barracks", 1),
+            ("radar", 1),
+            ("refinery", 2),
+            ("gun_turret", 2),
+        ];
+        Settings {
+            think_every: 60,
+            build_order: order.iter().map(|&(id, n)| (id.to_string(), n)).collect(),
+            harvesters_per_refinery: 2,
+            max_harvesters: 4,
+            factory_queue: 1,
+            unit_reserve: 600,
+            first_wave_tick: 15 * 60 * 10,
+            first_wave: 3,
+            wave_growth: 1,
+            wave_cap: 10,
+            retreat_percent: 50,
+            ..normal
+        }
+    }
+
+    /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast, only
+    /// attacks where it would win clearly, and keeps a carrier for every two harvesters. AI-versus-AI runs on the
+    /// skirmish map found that more harvesters, a third refinery or thinking more often made it no stronger; bigger,
+    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0 (11 to 1
+    /// once faction specials came).
+    /// The carriers alone, with normal's waves, lost 4 to 7.
+    pub fn hard() -> Settings {
+        Settings {
+            first_wave: 8,
+            wave_growth: 4,
+            wave_cap: 30,
+            attack_margin: 200,
+            harvesters_per_carrier: 2,
+            ..Settings::normal()
+        }
+    }
+}
+
+/// How strong the computer opponent plays: a name for one of the `Settings` presets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Difficulty {
+    Easy,
+    #[default]
+    Normal,
+    Hard,
+}
+
+impl Difficulty {
+    pub const ALL: [Difficulty; 3] = [Difficulty::Easy, Difficulty::Normal, Difficulty::Hard];
+
+    pub fn settings(self) -> Settings {
+        match self {
+            Difficulty::Easy => Settings::easy(),
+            Difficulty::Normal => Settings::normal(),
+            Difficulty::Hard => Settings::hard(),
+        }
+    }
+
+    /// Its id in saved settings and saved games: `easy`, `normal` or `hard`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "easy",
+            Difficulty::Normal => "normal",
+            Difficulty::Hard => "hard",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Difficulty> {
+        Difficulty::ALL.into_iter().find(|d| d.id() == id)
+    }
+
+    /// The next one up, wrapping from hard to easy.
+    pub fn next(self) -> Difficulty {
+        match self {
+            Difficulty::Easy => Difficulty::Normal,
+            Difficulty::Normal => Difficulty::Hard,
+            Difficulty::Hard => Difficulty::Easy,
         }
     }
 }

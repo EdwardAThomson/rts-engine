@@ -1,5 +1,5 @@
-//! The title, pause and end screens: which screen shows, what each button asks for, and that the menus never
-//! touch the game. The last test draws one (it needs a GPU adapter, a software one will do).
+//! The title, pause, settings, keys and end screens: which screen shows, what each button asks for, and that the
+//! menus never touch the game. One test draws them (it needs a GPU adapter, a software one will do).
 
 use classic_render::Skin;
 use classic_render::menu::{Action, Menu, Screen};
@@ -32,7 +32,7 @@ fn the_title_starts_a_game_and_switches_the_opponents() {
     let items = menu.layout(SCREEN);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     println!("title buttons {labels:?}");
-    assert_eq!(labels, ["START", "OPPONENTS: COMPUTER", "QUIT"]);
+    assert_eq!(labels, ["START", "OPPONENTS: COMPUTER", "DIFFICULTY: NORMAL", "SETTINGS", "QUIT"]);
     // The buttons are centred and don't overlap.
     for w in items.windows(2) {
         assert!(w[0].rect.y + w[0].rect.h < w[1].rect.y);
@@ -42,6 +42,7 @@ fn the_title_starts_a_game_and_switches_the_opponents() {
     assert_eq!(menu.click(SCREEN, centre(button(&menu, Action::Opponents))), Some(Action::Opponents));
     assert!(!menu.opponents);
     assert_eq!(menu.layout(SCREEN)[1].label, "OPPONENTS: NONE");
+    assert!(menu.layout(SCREEN).iter().all(|i| i.action != Action::Difficulty), "no difficulty without opponents");
     assert_eq!(menu.click(SCREEN, (5.0, 5.0)), None, "a click off the buttons does nothing");
     assert_eq!(menu.click(SCREEN, centre(button(&menu, Action::Start))), Some(Action::Start));
 
@@ -59,7 +60,9 @@ fn escape_pauses_and_resumes_but_not_on_the_title() {
     assert!(menu.escape());
     assert_eq!(menu.screen, Screen::Paused);
     let labels: Vec<String> = menu.layout(SCREEN).into_iter().map(|i| i.label).collect();
-    assert_eq!(labels, ["RESUME", "RESTART", "QUIT TO TITLE", "QUIT"]);
+    assert_eq!(labels, ["RESUME", "SAVE GAME", "SETTINGS", "RESTART", "QUIT TO TITLE", "QUIT"]);
+    menu.has_save = true;
+    assert_eq!(menu.layout(SCREEN)[2].label, "LOAD GAME", "a saved game can be loaded from the pause menu");
     assert!(menu.escape());
     assert!(menu.playing());
 }
@@ -119,8 +122,22 @@ fn a_menu_draws_over_the_game_and_nothing_while_playing() {
     menu.screen = Screen::Playing;
     let playing = lit(&mut batch, &menu);
     menu.screen = Screen::Over { won: true };
-    let over = lit(&mut batch, &menu);
-    println!("pixels changed: title {title}, playing {playing}, victory {over}");
+    let plain = lit(&mut batch, &menu);
+    // The end screen with a score table, and the settings and keys screens, for a person to look at.
+    menu.after_step(&game, 0);
+    let mut over = 0;
+    for (screen, name) in [(Screen::Over { won: true }, "over"), (Screen::Settings, "settings"), (Screen::Keys, "keys")]
+    {
+        menu.screen = screen;
+        over = over.max(lit(&mut batch, &menu));
+        batch.fill(Rect::new(0.0, 0.0, SCREEN.0, SCREEN.1), grey);
+        menu.draw(&mut batch, &skin, &game, SCREEN, (0.0, 0.0));
+        let image = batch.draw_to_image(&gpu, w, h, [0, 0, 0, 255]);
+        let out = setting::root().join(format!("target/menu-test-{name}.png"));
+        std::fs::write(&out, classic_tools::art::png::encode(w as usize, h as usize, &image)).unwrap();
+    }
+    println!("pixels changed: title {title}, playing {playing}, victory {plain}");
+    assert_eq!(plain, (w * h) as usize);
     assert_eq!(playing, 0);
     assert_eq!(title, (w * h) as usize, "the whole screen is shaded behind the title");
     assert_eq!(over, (w * h) as usize);
@@ -133,7 +150,8 @@ fn the_title_offers_the_maps_and_factions_when_there_is_a_choice() {
     menu.factions = vec!["Faction A".into(), "Faction B".into(), "Faction C".into()];
     let labels: Vec<String> = menu.layout(SCREEN).into_iter().map(|i| i.label).collect();
     println!("title buttons {labels:?}");
-    assert_eq!(labels, ["START", "MAP: OPEN SANDS", "FACTION: FACTION A", "OPPONENTS: COMPUTER", "QUIT"]);
+    let want = ["START", "MAP: OPEN SANDS", "FACTION: FACTION A", "OPPONENTS: COMPUTER", "DIFFICULTY: NORMAL"];
+    assert_eq!(labels, [&want[..], &["SETTINGS", "QUIT"]].concat());
     assert_eq!(menu.click(SCREEN, centre(button(&menu, Action::Map))), Some(Action::Map));
     assert_eq!(menu.map, 1);
     assert_eq!(menu.click(SCREEN, centre(button(&menu, Action::Map))), Some(Action::Map));
@@ -179,4 +197,100 @@ fn a_pack_theme_recolours_the_menus_and_the_generic_one_matches_the_engine() {
     let generic = classic_render::platform::Files::Dir(setting::root().join("settings/generic"));
     let css = generic.read_text(THEME_FILE).unwrap();
     assert_eq!(Theme::parse(&css, THEME_FILE), (Theme::default(), Vec::new()), "the generic look is the engine's");
+}
+
+#[test]
+fn the_settings_screen_steps_volumes_and_scroll_speed_and_goes_back_where_it_came_from() {
+    let mut menu = Menu::new("Generic");
+    assert_eq!(menu.click(SCREEN, centre(button(&menu, Action::Settings))), Some(Action::Settings));
+    assert_eq!(menu.screen, Screen::Settings);
+    let labels: Vec<String> = menu.layout(SCREEN).into_iter().map(|i| i.label).collect();
+    println!("settings buttons {labels:?}");
+    assert_eq!(
+        labels,
+        ["EFFECTS: 100%", "INTERFACE: 100%", "VOICES: 100%", "MUSIC: 100%", "SCROLL SPEED: 100%", "KEYS", "BACK"]
+    );
+    // A left click steps up, wrapping from 100% to 0; a right click steps down.
+    let music = centre(button(&menu, Action::Volume(3)));
+    assert_eq!(menu.click(SCREEN, music), Some(Action::Volume(3)));
+    assert_eq!(menu.prefs.volume[3], 0);
+    menu.click_with(SCREEN, music, true);
+    assert_eq!(menu.prefs.volume[3], 100);
+    menu.click_with(SCREEN, music, true);
+    assert_eq!(menu.prefs.volume, [100, 100, 100, 90]);
+    let scroll = centre(button(&menu, Action::Scroll));
+    menu.click(SCREEN, scroll);
+    assert_eq!(menu.prefs.scroll, 125);
+    for _ in 0..3 {
+        menu.click_with(SCREEN, scroll, true);
+    }
+    assert_eq!(menu.prefs.scroll, 50);
+    menu.click_with(SCREEN, scroll, true);
+    assert_eq!(menu.prefs.scroll, 200, "round to the fastest");
+    assert!(menu.escape(), "Escape goes back");
+    assert_eq!(menu.screen, Screen::Title);
+
+    // From the pause menu it goes back to the pause menu.
+    menu.screen = Screen::Paused;
+    menu.click(SCREEN, centre(button(&menu, Action::Settings)));
+    menu.click(SCREEN, centre(button(&menu, Action::Back)));
+    assert_eq!(menu.screen, Screen::Paused);
+    // The difficulty switch on the title steps round easy, normal and hard.
+    menu.screen = Screen::Title;
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        menu.click(SCREEN, centre(button(&menu, Action::Difficulty)));
+        seen.push(menu.difficulty());
+    }
+    use classic_ai::Difficulty::*;
+    assert_eq!(seen, [Hard, Easy, Normal]);
+}
+
+#[test]
+fn the_keys_screen_rebinds_a_key_and_swaps_a_clash() {
+    use classic_render::prefs::Bind;
+    let mut menu = Menu::new("Generic");
+    menu.screen = Screen::Settings;
+    menu.click(SCREEN, centre(button(&menu, Action::Keys)));
+    assert_eq!(menu.screen, Screen::Keys);
+    let labels: Vec<String> = menu.layout(SCREEN).into_iter().map(|i| i.label).collect();
+    println!("keys buttons {labels:?}");
+    assert_eq!(labels[0], "SCROLL UP: W");
+    assert_eq!(labels[4], "PAUSE: SPACE");
+    // Every button fits on the screen, even this long one.
+    assert!(menu.layout(SCREEN).iter().all(|i| i.rect.y >= 0.0 && i.rect.y + i.rect.h <= SCREEN.1));
+    assert!(menu.layout((800.0, 480.0)).iter().all(|i| i.rect.y + i.rect.h <= 480.0), "and in a short window");
+
+    assert!(!menu.key("KeyP"), "no key is wanted yet");
+    menu.click(SCREEN, centre(button(&menu, Action::Bind(Bind::Pause))));
+    assert_eq!(menu.layout(SCREEN)[4].label, "PAUSE: PRESS A KEY");
+    assert!(menu.key("KeyP"));
+    assert_eq!(menu.prefs.key(Bind::Pause), "KeyP");
+    // Mute is on M; putting pause there moves mute to pause's old key.
+    menu.click(SCREEN, centre(button(&menu, Action::Bind(Bind::Pause))));
+    assert!(menu.key("KeyM"));
+    assert_eq!((menu.prefs.key(Bind::Pause), menu.prefs.key(Bind::Mute)), ("KeyM", "KeyP"));
+    // Escape gives up waiting and keeps the key.
+    menu.click(SCREEN, centre(button(&menu, Action::Bind(Bind::Base))));
+    assert!(menu.escape());
+    assert_eq!(menu.screen, Screen::Keys, "the first Escape only stops waiting");
+    assert_eq!(menu.prefs.key(Bind::Base), "KeyH");
+    menu.click(SCREEN, centre(button(&menu, Action::ResetKeys)));
+    assert_eq!(menu.prefs.keys, classic_render::prefs::Prefs::default().keys);
+    assert!(menu.escape());
+    assert_eq!(menu.screen, Screen::Settings);
+}
+
+#[test]
+fn the_end_screen_leaves_room_for_the_score() {
+    let mut menu = Menu::new("Generic");
+    let g = game();
+    menu.screen = Screen::Playing;
+    menu.after_step(&g, 0);
+    assert_eq!(menu.score.lines().len(), 2, "a line for each player");
+    menu.screen = Screen::Over { won: true };
+    let first = menu.layout(SCREEN)[0].rect.y;
+    let mut bare = Menu::new("Generic");
+    bare.screen = Screen::Over { won: true };
+    assert!(first > bare.layout(SCREEN)[0].rect.y + 30.0, "the buttons move down under the table");
 }
