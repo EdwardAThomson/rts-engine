@@ -37,10 +37,11 @@ pub const REPLY_EVERY: u32 = TICKS_PER_SECOND / 4;
 const HAZARD_EVERY: u32 = 30 * TICKS_PER_SECOND;
 /// A full store is news at most this often, in ticks, whether it just filled or a harvest was lost to it.
 const STORAGE_EVERY: u32 = 30 * TICKS_PER_SECOND;
-/// Enemy units this close to one of the local player's buildings, in tiles, are coming for the base...
-pub const WAVE_RANGE: i32 = 10;
+/// Armed enemy units the local player can see this close to one of their buildings, in tiles, are coming for the
+/// base...
+pub const WAVE_RANGE: i32 = 12;
 /// ...when there are at least this many of them,
-pub const WAVE_SIZE: usize = 4;
+pub const WAVE_SIZE: usize = 2;
 /// and the warning comes at most this often, in ticks. The feed looks once a second.
 const WAVE_EVERY: u32 = 60 * TICKS_PER_SECOND;
 
@@ -485,7 +486,13 @@ impl Feed {
     }
 }
 
-/// How many of other players' units stand within `WAVE_RANGE` tiles of one of `player`'s buildings.
+/// How many of other players' armed units that `player` can see stand within `WAVE_RANGE` tiles of one of their
+/// buildings. Harvesters, carriers and other unarmed units don't count, nor do units hidden by fog: in AI games the
+/// computer's waves come in strung out, so few of a wave are near at once. In AI games on `skirmish-01` and
+/// `mirror-01` (12 seeds each, normal and hard, the generic pack's fog), 2 units within 12 tiles warned of 62 of 95
+/// waves by 15 seconds after half of the wave was within 10 tiles, with 226 warnings in all; the old 4 units of any
+/// kind within 10 tiles, seen or not, warned of 55 with 134 warnings, and 3 units within 12 tiles of 51 with 189.
+/// Most waves missed stay out of the player's sight until they strike.
 pub fn enemies_near_base(game: &Game, player: u32) -> usize {
     let mine: Vec<_> = game
         .state
@@ -497,7 +504,8 @@ pub fn enemies_near_base(game: &Game, player: u32) -> usize {
     game.state
         .entities
         .iter()
-        .filter(|e| e.owner != player && !game.rules.kind(e.kind).building)
+        .filter(|e| e.owner != player && !game.rules.kind(e.kind).building && game.rules.kind(e.kind).weapon.is_some())
+        .filter(|e| game.visible(player, e.id))
         .filter(|e| {
             let t = e.tile();
             // The distance to the building's footprint, in tiles, counting diagonals as one.
