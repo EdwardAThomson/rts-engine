@@ -50,6 +50,33 @@ fn it_scouts_finds_and_defeats_a_player_who_does_nothing() {
 }
 
 #[test]
+fn it_ends_a_wave_whose_target_slipped_out_of_sight_and_searches_for_buildings_it_never_saw() {
+    for hide in [1, 0] {
+        let r = rules(&format!(r#"{{ "modules": {{ "fog": {{ "hide": {hide} }} }} }}"#));
+        let mut g = game(&r, 1);
+        let plant = g.kind("power_plant").unwrap();
+        let mut ai = [Ai::new(1, Settings::normal())];
+        // When its last building falls, the enemy gets one more in a corner it has never been near: the game goes on
+        // only until it finds that one too.
+        let (mut far, mut unseen) = (None, false);
+        let mut end = None;
+        while g.state.tick < 40_000 && end.is_none() {
+            ai[0].tick(&mut g);
+            g.step(1);
+            let buildings = g.state.entities.iter().filter(|e| e.owner == 0 && g.rules.kind(e.kind).building).count();
+            if far.is_none() && buildings == 0 {
+                unseen = g.tile_view(1, 2, 36) == TileView::Shroud;
+                far = Some(g.spawn(plant, 0, 2, 36));
+            }
+            end = winner(&g).map(|w| (w, g.state.tick));
+        }
+        println!("fog hide {hide}: outlying plant {far:?} unseen when built: {unseen}; winner and tick {end:?}");
+        assert!(far.is_some() && unseen, "the outlying plant came after the base fell, on ground never seen");
+        assert_eq!(end.map(|(w, _)| w), Some(1), "it searched the map, found the plant and destroyed it");
+    }
+}
+
+#[test]
 fn it_never_orders_an_attack_on_what_it_cannot_see() {
     let r = rules("{}");
     let mut g = game(&r, 2);
