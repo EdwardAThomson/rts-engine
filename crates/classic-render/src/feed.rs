@@ -420,6 +420,9 @@ impl Feed {
                 | Event::ProductionResumed { .. }
                 | Event::PrimarySet { .. }
                 | Event::SlabLaid { .. }
+                | Event::BloomSeeded { .. }
+                | Event::BloomBurst { .. }
+                | Event::BloomHurt { .. }
                 | Event::Decayed { .. }
                 | Event::TargetAcquired { .. }
                 | Event::Fired { .. }

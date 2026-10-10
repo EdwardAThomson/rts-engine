@@ -5,6 +5,7 @@ use rts_core::hash::hash_of;
 use rts_core::replay::{CommandQueue, Logged};
 use rts_core::rng::seed_state;
 
+use crate::blooms;
 use crate::capture;
 use crate::hazard::{self, Hazards};
 use crate::map::{MapData, Tile, parse_map};
@@ -100,6 +101,7 @@ impl Game {
             deliveries: Vec::new(),
             strikes: Vec::new(),
             slabs: None,
+            blooms: blooms::start(&map, &rules),
         };
         // Each player starts with a construction yard on its start tile, a power plant beside it, a refinery
         // beside them both on the side towards the middle of the map (below a start in the top half, above one in

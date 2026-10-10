@@ -8,6 +8,7 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::rng::random_int;
 
 use crate::air::{self, Ferry};
+use crate::blooms::{self, Blooms};
 use crate::capture;
 use crate::combat::{self, Projectile, ProjectileCanon};
 use crate::decay::{self, Slabs};
@@ -291,6 +292,8 @@ pub struct GameState {
     pub strikes: Vec<Strike>,
     /// Whose concrete slab lies on each tile; set when the first slab is laid (the `decay` module).
     pub slabs: Option<Slabs>,
+    /// Resource blooms on the map and those to come; set while the `blooms` module is on.
+    pub blooms: Option<Blooms>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -306,6 +309,8 @@ impl Canon for GameState {
         // The market and starport orders are written only once they exist, so a game without a starport hashes as
         // it did before them.
         w.object()
+            // Written only while blooms are on, so a game without them hashes as it did before.
+            .opt("blooms", self.blooms.as_ref())
             .opt("deliveries", (!deliveries.is_empty()).then_some(&deliveries))
             .array("entities", &entities)
             // Written only when the hazard is on, so a game without it hashes as it did before.
@@ -522,6 +527,26 @@ pub enum Event {
         tick: u32,
         factory: u32,
         kind: Kind,
+    },
+    /// A bloom appeared on tile (x, y).
+    BloomSeeded {
+        tick: u32,
+        x: i32,
+        y: i32,
+    },
+    /// A bloom on tile (x, y) burst, adding `added` resource round it.
+    BloomBurst {
+        tick: u32,
+        x: i32,
+        y: i32,
+        added: i64,
+    },
+    /// A bloom's burst hurt a unit beside it. Not an attack.
+    BloomHurt {
+        tick: u32,
+        unit: u32,
+        damage: i64,
+        health: i64,
     },
     /// A player laid a slab of kind `kind` with its top-left tile at (x, y); `tiles` were new.
     SlabLaid {
@@ -909,6 +934,9 @@ impl Event {
             Event::ProductionPaused { .. } => "production_paused",
             Event::ProductionHeld { .. } => "production_held",
             Event::SlabLaid { .. } => "slab_laid",
+            Event::BloomSeeded { .. } => "bloom_seeded",
+            Event::BloomBurst { .. } => "bloom_burst",
+            Event::BloomHurt { .. } => "bloom_hurt",
             Event::Decayed { .. } => "decayed",
             Event::ProductionResumed { .. } => "production_resumed",
             Event::PrimarySet { .. } => "primary_set",
@@ -974,6 +1002,9 @@ impl Event {
             | Event::ProductionPaused { tick, .. }
             | Event::ProductionHeld { tick, .. }
             | Event::SlabLaid { tick, .. }
+            | Event::BloomSeeded { tick, .. }
+            | Event::BloomBurst { tick, .. }
+            | Event::BloomHurt { tick, .. }
             | Event::Decayed { tick, .. }
             | Event::ProductionResumed { tick, .. }
             | Event::PrimarySet { tick, .. }
@@ -1298,7 +1329,7 @@ pub fn step(
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
     // commands, combat, movement, aircraft, crush (not built yet), the hazard, capture, repair, selling, decay, economy,
-    // world;
+    // world (regrowth or blooms);
     // then each player's sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
@@ -1314,7 +1345,11 @@ pub fn step(
     sell::tick(pf, state, rules, events);
     decay::tick(state, rules, events);
     economy(map, pf, state, rules, events);
-    regrow(map, pf, state, rules, events);
+    // Blooms replace the slow regrowth beside fields while they are on.
+    if rules.blooms.is_none() {
+        regrow(map, pf, state, rules, events);
+    }
+    blooms::tick(map, state, rules, events);
     vision::tick(state, rules);
     report_power(state, rules, &power_before, events);
     state.tick += 1;

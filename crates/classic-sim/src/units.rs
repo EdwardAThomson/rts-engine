@@ -369,6 +369,27 @@ pub struct SellRules {
     pub ticks: u32,
 }
 
+/// Resource blooms (rules-world.md, section 6; the `blooms` module). Distances are in tiles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BloomRules {
+    /// How far a burst spreads resource.
+    pub radius: i32,
+    /// Resource added at the centre, and how much less on each ring out.
+    pub centre: i64,
+    pub per_tile: i64,
+    /// Health taken from every ground unit on the bloom's tile and the 8 round it.
+    pub damage: i64,
+    /// The range of the random wait before a burst bloom is replaced.
+    pub reseed_min: u32,
+    pub reseed_max: u32,
+    /// How far from the old point the new one may be.
+    pub reseed_range: i32,
+    /// The wait before trying again when no tile was free.
+    pub retry: u32,
+    /// A bloom bursts on its own this long after it appeared.
+    pub max_age: u32,
+}
+
 /// Buildings wearing down off concrete (rules-base-building-power.md, "Foundations and decay"; the `decay` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecayRules {
@@ -423,6 +444,8 @@ pub struct Rules {
     pub radar: bool,
     /// Set when a setting pack turns decay on, which brings slabs too.
     pub decay: Option<DecayRules>,
+    /// Set when a setting pack turns blooms on, which replace regrowth.
+    pub blooms: Option<BloomRules>,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -599,6 +622,23 @@ impl Rules {
             step_div: module("decay", "step_div")?.max(1),
             floor_percent: module("decay", "floor_percent")?.clamp(0, 100),
         });
+        let bl = |name: &str| module("blooms", name);
+        let blooms = if bl("on")? != 0 {
+            let reseed_min = bl("reseed_min_ticks")? as u32;
+            Some(BloomRules {
+                radius: bl("radius")? as i32,
+                centre: bl("centre")?,
+                per_tile: bl("per_tile")?,
+                damage: bl("burst_damage")?,
+                reseed_min,
+                reseed_max: (bl("reseed_max_ticks")? as u32).max(reseed_min),
+                reseed_range: bl("reseed_range")? as i32,
+                retry: (bl("retry_ticks")? as u32).max(1),
+                max_age: (bl("max_age_ticks")? as u32).max(1),
+            })
+        } else {
+            None
+        };
         let sp = |name: &str| module("starport", name);
         let starport = if sp("on")? != 0 {
             Some(StarportRules {
@@ -708,6 +748,7 @@ impl Rules {
             sell,
             capture,
             decay,
+            blooms,
             starport,
             superpowers,
             radar: module("radar", "on")? != 0,
