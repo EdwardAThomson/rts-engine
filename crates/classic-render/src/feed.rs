@@ -416,6 +416,9 @@ impl Feed {
                 | Event::BuildingPlaced { .. }
                 | Event::ProductionQueued { .. }
                 | Event::ProductionCancelled { .. }
+                | Event::ProductionHeld { .. }
+                | Event::ProductionResumed { .. }
+                | Event::PrimarySet { .. }
                 | Event::TargetAcquired { .. }
                 | Event::Fired { .. }
                 | Event::ProjectileSpawned { .. }

@@ -1,6 +1,7 @@
 /target/
-# The private setting pack is a separate private repository, cloned here. Never commit it.
-settings-private/
+# The private setting pack is a separate private repository, cloned (or symlinked) here. Never commit it.
+# No trailing slash, so a symlink is ignored as well as a folder.
+/settings-private
 *.log
 __pycache__/
 # The browser player's generated bindings and WebAssembly (wasm-bindgen output).

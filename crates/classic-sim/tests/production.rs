@@ -291,3 +291,72 @@ fn production_replays_from_the_command_log() {
     assert!(live.events.iter().any(|e| matches!(e, Event::UnitBuilt { .. })));
     assert_eq!(replay.hash(), live.hash());
 }
+
+#[test]
+fn the_primary_factory_takes_orders_and_sends_out_the_units() {
+    let rules = tuned(r#"{ "modules": { "production": { "instant_build": 1 } } }"#);
+    let mut g = game(Some(&rules));
+    let first = base(&mut g, 10_000);
+    let second = g.spawn(kind(&g, "heavy_factory"), 0, 8, 5);
+    // Naming a building that makes nothing, or one that isn't there, changes nothing.
+    let plant = g.state.entities.iter().find(|e| g.rules.kind(e.kind).id == "power_plant").unwrap().id;
+    g.order(0, &[plant, 999], CommandOrder::Primary);
+    g.step(1);
+    assert!(g.state.entities.iter().all(|e| !e.primary), "nothing was picked");
+    g.order(0, &[second], CommandOrder::Primary);
+    produce(&mut g, "battle_tank");
+    g.step(3);
+    let made: Vec<u32> = g
+        .events
+        .iter()
+        .filter_map(|e| if let Event::UnitBuilt { factory, .. } = *e { Some(factory) } else { None })
+        .collect();
+    println!("primary {second}, built at {made:?}");
+    assert_eq!(made, vec![second], "the tank came out of the primary factory");
+    assert!(g.events.iter().any(|e| matches!(*e, Event::PrimarySet { entity, .. } if entity == second)));
+    // Picking the first again moves the flag; only one of a kind is ever primary.
+    g.order(0, &[first], CommandOrder::Primary);
+    g.step(1);
+    let primaries: Vec<u32> = g.state.entities.iter().filter(|e| e.primary).map(|e| e.id).collect();
+    assert_eq!(primaries, vec![first]);
+}
+
+#[test]
+fn an_entry_on_hold_stops_its_queue_until_resumed_and_can_still_be_cancelled() {
+    let mut g = game(None);
+    let f = base(&mut g, 10_000);
+    produce(&mut g, "battle_tank");
+    produce(&mut g, "battle_tank");
+    g.step(90);
+    let tank = kind(&g, "battle_tank");
+    g.order(0, &[], CommandOrder::Hold { kind: tank, on: true });
+    g.step(1);
+    let held = queue(&g, f);
+    let spent = credits(&g);
+    println!("held {held:?}");
+    assert_eq!(held[0].1, EntryState::Held);
+    assert_eq!(held[1].1, EntryState::Waiting);
+    g.step(300);
+    assert_eq!(queue(&g, f), held, "no progress and no payment while held");
+    assert_eq!(credits(&g), spent);
+    // Resuming carries on from where it stopped.
+    g.order(0, &[], CommandOrder::Hold { kind: tank, on: false });
+    g.step(2);
+    let q = queue(&g, f);
+    assert_eq!(q[0].1, EntryState::Building);
+    assert!(q[0].2 > held[0].2);
+    // Held again, then cancelled: everything paid comes back.
+    g.order(0, &[], CommandOrder::Hold { kind: tank, on: true });
+    g.step(1);
+    let paid: i64 = queue(&g, f).iter().map(|q| q.3).sum();
+    let c = credits(&g);
+    g.order(0, &[], CommandOrder::Cancel { kind: tank });
+    g.order(0, &[], CommandOrder::Cancel { kind: tank });
+    g.step(1);
+    assert!(queue(&g, f).is_empty());
+    assert_eq!(credits(&g), c + paid);
+    // Resuming what isn't held is refused.
+    g.order(0, &[], CommandOrder::Hold { kind: tank, on: false });
+    g.step(1);
+    assert_eq!(rejections(&g).last(), Some(&ProduceError::NotQueued));
+}
