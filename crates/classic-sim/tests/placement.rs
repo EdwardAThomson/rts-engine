@@ -53,7 +53,7 @@ fn give_ready(g: &mut Game, player: u32, id: &str) {
         g.spawn(yard, player, w - 2, h - 2);
     }
     let y = g.state.entities.iter_mut().find(|e| e.owner == player && e.kind == yard).unwrap();
-    y.queue.push(QueueEntry { item, state: EntryState::Ready, progress: 0, paid: 0 });
+    y.queue.push(QueueEntry { state: EntryState::Ready, ..QueueEntry::new(item) });
 }
 
 /// Order a placement of a ready building, run the tick, and return what happened to it.

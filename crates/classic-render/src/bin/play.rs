@@ -1,11 +1,13 @@
 //! The desktop player: a window onto a skirmish.
 //!   cargo run --release --bin play -- [--setting generic] [--map maps/skirmish-01.txt] [--seed 1] [--player 0]
-//!     [--ai 1 | --ai none] [--fog on | shroud | off] [--start]
+//!     [--ai 1 | --ai none] [--fog on | shroud | off] [--tech 1-8] [--start]
 //!
 //! It opens on the title screen, with the map waiting behind it: Start plays, and the opponents switch says whether
 //! every other player is a computer opponent (`--ai` lists which ones, or says `none`), and the difficulty switch how
 //! well they play (easy, normal or hard; `--difficulty` sets it). `--start` skips the title. When someone wins, or
-//! you lose your last building, the end screen shows the score and offers another game or the title.
+//! you lose your last building, the end screen shows the score and offers another game or the title. `--tech` sets
+//! the game's tech level, which limits what anyone may build and how far factories may be upgraded (8, everything,
+//! when it is left out).
 //!
 //! The settings screen (from the title or the pause menu) sets the volume of each sound bus, the scroll speed and the
 //! keys; they are kept between runs, in the user's settings folder or the browser's storage for the page. The pause
@@ -1278,5 +1280,7 @@ fn new_game(pack: &classic_data::Pack, map: &str, seed: i32, fog: Option<&str>) 
         }
     }
     let rules = Rules::from_table(&table).expect("pack rules match the simulation");
-    Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map")
+    let mut game = Game::new(GameOptions { map, seed, players: None, rules: Some(&rules) }).expect("valid map");
+    game.set_tech_level(arg("tech").and_then(|t| t.parse().ok()));
+    game
 }

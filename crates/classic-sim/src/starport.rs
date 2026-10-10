@@ -111,7 +111,7 @@ impl Canon for DeliveryCanon<'_> {
 /// Why a starport order was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StarportError {
-    /// The module is off, or the kind isn't in the catalogue.
+    /// The module is off, the kind isn't in the catalogue, or the game's tech level is below the kind's.
     NotSold,
     /// The player has no starport (or the one named isn't theirs).
     NoStarport,
@@ -190,6 +190,9 @@ pub fn add(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], kind:
     let result = (|| {
         let Some(sp) = rules.starport.as_ref() else { return Err(StarportError::NotSold) };
         item(rules, kind).ok_or(StarportError::NotSold)?;
+        if state.tech_level.is_some_and(|t| rules.kind(kind).tech_level > t) {
+            return Err(StarportError::NotSold);
+        }
         let port = starport_for(state, rules, player, ids).ok_or(StarportError::NoStarport)?;
         match state.deliveries.iter().position(|d| d.starport == port) {
             Some(d) if state.deliveries[d].stage != Stage::Open => Err(StarportError::Busy),

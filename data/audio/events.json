@@ -23,6 +23,7 @@
     { "event": "production_held", "local": true, "sound": "ui_order" },
     { "event": "production_resumed", "local": true, "sound": "ui_order" },
     { "event": "primary_set", "local": true, "sound": "ui_order" },
+    { "event": "upgrade_completed", "local": true, "sound": "ui_ready" },
     { "event": "delivered", "local": true, "sound": "ui_credits" },
     { "event": "power_changed", "local": true, "power": "short", "sound": "ui_power_down" },
     { "event": "power_changed", "local": true, "power": "restored", "sound": "ui_power_up" },
