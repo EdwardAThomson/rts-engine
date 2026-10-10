@@ -147,6 +147,8 @@ pub struct Entity {
     pub expires: Option<u32>,
     /// Fighting on its own for its owner, who can't order it, around this tile: a palace power's guerrillas.
     pub autonomous: Option<Tile>,
+    /// Factories only: picked by its owner as the one of its kind that takes orders naming no factory.
+    pub primary: bool,
 }
 
 impl Entity {
@@ -203,6 +205,8 @@ impl Canon for EntityCanon<'_> {
             .field("order", &e.order)
             .field("owner", &e.owner)
             .array("path", &e.path)
+            // Written only when set, so a game where no one picks a primary factory hashes as it did before.
+            .opt("primary", e.primary.then_some(&true))
             // Written only while something is queued, so a game with no production hashes as it did before.
             .opt("queue", (!queue.is_empty()).then_some(&queue))
             .opt("reload", (e.reload != 0).then_some(&e.reload))
@@ -335,7 +339,7 @@ pub enum CommandOrder {
         y: i32,
     },
     /// Add an item to the end of a factory's queue: the building in `ids` if one is given, otherwise the player's
-    /// primary (first built) building that makes it.
+    /// primary building that makes it (the one they picked, else the first built).
     Produce {
         kind: Kind,
     },
@@ -347,6 +351,14 @@ pub enum CommandOrder {
     Cancel {
         kind: Kind,
     },
+    /// Put the first entry of this kind still being built in the same factory's queue on hold (`on`), or resume the
+    /// first held one. A held entry at the head stops that queue, paying nothing.
+    Hold {
+        kind: Kind,
+        on: bool,
+    },
+    /// Make the first factory in `ids` its owner's primary one of its kind.
+    Primary,
     /// Turn repair on or off for the buildings in `ids`.
     Repair {
         on: bool,
@@ -501,6 +513,25 @@ pub enum Event {
         tick: u32,
         factory: u32,
         kind: Kind,
+    },
+    /// Its owner put an entry on hold.
+    ProductionHeld {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+    },
+    /// Its owner took an entry off hold.
+    ProductionResumed {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+    },
+    /// A player picked `entity` as their primary factory of its kind.
+    PrimarySet {
+        tick: u32,
+        entity: u32,
+        kind: Kind,
+        owner: u32,
     },
     ProductionCancelled {
         tick: u32,
@@ -850,6 +881,9 @@ impl Event {
             Event::ProductionQueued { .. } => "production_queued",
             Event::ProductionRejected { .. } => "production_rejected",
             Event::ProductionPaused { .. } => "production_paused",
+            Event::ProductionHeld { .. } => "production_held",
+            Event::ProductionResumed { .. } => "production_resumed",
+            Event::PrimarySet { .. } => "primary_set",
             Event::ProductionCancelled { .. } => "production_cancelled",
             Event::BuildingReady { .. } => "building_ready",
             Event::UnitBuilt { .. } => "unit_built",
@@ -910,6 +944,9 @@ impl Event {
             | Event::ProductionQueued { tick, .. }
             | Event::ProductionRejected { tick, .. }
             | Event::ProductionPaused { tick, .. }
+            | Event::ProductionHeld { tick, .. }
+            | Event::ProductionResumed { tick, .. }
+            | Event::PrimarySet { tick, .. }
             | Event::ProductionCancelled { tick, .. }
             | Event::BuildingReady { tick, .. }
             | Event::UnitBuilt { tick, .. }
@@ -1002,6 +1039,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         fuse: None,
         expires,
         autonomous: None,
+        primary: false,
     });
     id
 }
@@ -1091,6 +1129,10 @@ pub fn apply_command(
     match cmd.order {
         CommandOrder::Produce { kind } => return production::produce(state, rules, cmd.player, &cmd.ids, kind, events),
         CommandOrder::Cancel { kind } => return production::cancel(state, rules, cmd.player, &cmd.ids, kind, events),
+        CommandOrder::Hold { kind, on } => {
+            return production::hold(state, rules, cmd.player, &cmd.ids, kind, on, events);
+        }
+        CommandOrder::Primary => return production::set_primary(state, rules, cmd.player, &cmd.ids, events),
         CommandOrder::Repair { on } => return repair::order(state, rules, cmd.player, &cmd.ids, on, events),
         CommandOrder::Sell => return sell::order(state, rules, cmd.player, &cmd.ids, events),
         CommandOrder::Capture { target } => {
@@ -1190,6 +1232,8 @@ pub fn apply_command(
             | CommandOrder::Place { .. }
             | CommandOrder::Produce { .. }
             | CommandOrder::Cancel { .. }
+            | CommandOrder::Hold { .. }
+            | CommandOrder::Primary
             | CommandOrder::Repair { .. }
             | CommandOrder::Sell
             | CommandOrder::Capture { .. }

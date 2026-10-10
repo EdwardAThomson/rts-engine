@@ -73,7 +73,7 @@ const EVENTS: &str = include_str!("../../../data/audio/events.json");
 
 /// Every event the simulation emits, by `Event::name`. `facts` matches on the event exhaustively, so a new event
 /// stops the build there; add its name here and to `data/audio/events.json` (a rule, or `silent`) at the same time.
-pub const EVENT_NAMES: [&str; 55] = [
+pub const EVENT_NAMES: [&str; 58] = [
     "harvester_idle",
     "delivered",
     "regrowth",
@@ -83,6 +83,9 @@ pub const EVENT_NAMES: [&str; 55] = [
     "production_queued",
     "production_rejected",
     "production_paused",
+    "production_held",
+    "production_resumed",
+    "primary_set",
     "production_cancelled",
     "building_ready",
     "unit_built",
@@ -397,6 +400,8 @@ fn facts(ev: &Event, game: &Game) -> Facts {
         Event::Hit { target, .. } => Facts { owner: owner_of(target), at: at_of(target), ..none },
         Event::ProductionQueued { factory, .. }
         | Event::ProductionPaused { factory, .. }
+        | Event::ProductionHeld { factory, .. }
+        | Event::ProductionResumed { factory, .. }
         | Event::ProductionCancelled { factory, .. } => Facts { owner: owner_of(factory), ..none },
         Event::ProjectileSpawned { x, y, .. } => Facts { at: Some((x, y)), ..none },
         Event::HarvesterIdle { unit, .. }
@@ -442,6 +447,9 @@ fn facts(ev: &Event, game: &Game) -> Facts {
             Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
         }
         Event::UnitRepaired { unit, owner, .. } => Facts { owner: Some(owner), at: at_of(unit), ..none },
+        Event::PrimarySet { entity, owner, .. } => {
+            Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
+        }
         Event::SellStarted { entity, owner, .. } => {
             Facts { owner: Some(owner), building: Some(true), at: centre_of(entity), ..none }
         }

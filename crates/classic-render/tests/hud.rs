@@ -120,6 +120,37 @@ fn shift_click_queues_five_and_right_clicks_cancel_with_refunds() {
 }
 
 #[test]
+fn ctrl_click_holds_and_resumes_and_the_rail_shows_the_primary_factorys_queue() {
+    let (mut game, mut hud) = game();
+    let v = view();
+    let plant = game.kind("power_plant").unwrap();
+    let at = centre(icon(&game, &hud, "power_plant").rect);
+    hud.click(&mut game, &v, at, Button::Left, false);
+    game.step(10);
+    hud.click_with(&mut game, &v, at, Button::Left, false, true);
+    game.step(1);
+    assert!(matches!(icon(&game, &hud, "power_plant").status.head, Some((EntryState::Held, _))));
+    let held = game.state.players[0].credits;
+    game.step(30);
+    assert_eq!(game.state.players[0].credits, held, "nothing is paid while on hold");
+    assert_eq!(queued(&game, plant), 1, "holding queues nothing more");
+    hud.click_with(&mut game, &v, at, Button::Left, false, true);
+    game.step(1);
+    assert!(matches!(icon(&game, &hud, "power_plant").status.head, Some((EntryState::Building, _))));
+    assert!(game.state.players[0].credits < held, "paying again");
+
+    // A second yard made primary: the rail's queue is its queue, and new orders go there.
+    let yard = game.kind("construction_yard").unwrap();
+    let second = game.spawn(yard, 0, 30, 30);
+    game.order(0, &[second], classic_sim::CommandOrder::Primary);
+    game.step(1);
+    hud.click(&mut game, &v, at, Button::Left, false);
+    game.step(1);
+    assert_eq!(game.state.entity(second).unwrap().queue.len(), 1, "the order went to the primary yard");
+    assert_eq!(hud.layout(&game, SCREEN).queue.len(), 1, "the rail shows the primary yard's queue");
+}
+
+#[test]
 fn the_starport_tab_is_a_market_that_orders_and_sends() {
     let (mut game, mut hud) = game();
     let v = view();

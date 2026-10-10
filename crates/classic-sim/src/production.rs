@@ -5,6 +5,11 @@
 //! second. An entry its owner can't pay for pauses, losing no progress, and resumes by itself. Cancelling refunds
 //! what was paid. A finished building waits at its yard, `ready`, until the player places it; a finished unit leaves
 //! by its factory's exit tile, or waits `blocked` while that tile and its 8 neighbours are all taken.
+//!
+//! A player picks which of their factories of a kind is primary, the one that takes orders naming no factory (and so
+//! where new units come out); with none picked it is the first built. An entry can be put on hold, which stops its
+//! factory's queue there, paying nothing, until the player resumes or cancels it (rules-economy-production.md,
+//! section 8).
 
 use rts_core::hash::{Canon, CanonHasher};
 
@@ -27,6 +32,8 @@ pub enum EntryState {
     Ready,
     /// A finished unit with no free exit tile.
     Blocked,
+    /// Put on hold by its owner: no progress and no payment until resumed. At the head it holds up the queue.
+    Held,
 }
 
 impl EntryState {
@@ -37,6 +44,7 @@ impl EntryState {
             EntryState::Paused => "paused",
             EntryState::Ready => "ready",
             EntryState::Blocked => "blocked",
+            EntryState::Held => "held",
         }
     }
 }
@@ -80,7 +88,7 @@ pub enum ProduceError {
     QueueFull,
     /// Only other factions build this kind.
     Faction,
-    /// Cancel: no such entry in the queue.
+    /// Cancel, hold or resume: no such entry in the queue (none still building, for hold; none held, for resume).
     NotQueued,
 }
 
@@ -118,8 +126,19 @@ pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> R
     Ok(())
 }
 
+/// The index of `player`'s primary building of kind `factory`: the one they picked, else the first built (lowest id).
+/// A building being sold is never primary.
+pub fn primary(state: &GameState, player: u32, factory: Kind) -> Option<usize> {
+    let fits = |i: &usize| {
+        let e = &state.entities[*i];
+        e.owner == player && e.kind == factory && e.selling == 0
+    };
+    let first = (0..state.entities.len()).find(fits)?;
+    Some((0..state.entities.len()).filter(fits).find(|&i| state.entities[i].primary).unwrap_or(first))
+}
+
 /// The index of the building that takes `player`'s orders for `item`: the one named in `ids` if it is theirs and
-/// makes it, otherwise their primary one, the first built (lowest id).
+/// makes it, otherwise their primary one.
 fn factory_for(state: &GameState, rules: &Rules, player: u32, ids: &[u32], item: Kind) -> Option<usize> {
     let maker = rules.kinds.get(item.0 as usize)?.built_at?;
     let fits = |i: &usize| {
@@ -128,8 +147,25 @@ fn factory_for(state: &GameState, rules: &Rules, player: u32, ids: &[u32], item:
     };
     match ids.first() {
         Some(&id) => state.entities.binary_search_by_key(&id, |e| e.id).ok().filter(fits),
-        None => (0..state.entities.len()).find(fits),
+        None => primary(state, player, maker),
     }
+}
+
+/// Make the first of `ids` that is `player`'s and makes something their primary building of its kind.
+pub fn set_primary(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], events: &mut Vec<Event>) {
+    let Some(i) = ids.iter().find_map(|&id| {
+        let i = state.entities.binary_search_by_key(&id, |e| e.id).ok()?;
+        let e = &state.entities[i];
+        let makes = rules.kinds.iter().any(|k| k.built_at == Some(e.kind));
+        (e.owner == player && makes && e.selling == 0).then_some(i)
+    }) else {
+        return;
+    };
+    let (kind, entity) = (state.entities[i].kind, state.entities[i].id);
+    for e in state.entities.iter_mut().filter(|e| e.owner == player && e.kind == kind) {
+        e.primary = e.id == entity;
+    }
+    events.push(Event::PrimarySet { tick: state.tick, entity, kind, owner: player });
 }
 
 /// Add `item` to the end of a factory's queue.
@@ -165,6 +201,44 @@ pub fn cancel(state: &mut GameState, rules: &Rules, player: u32, ids: &[u32], it
             let factory = state.entities[i].id;
             credit(state, player, entry.paid);
             events.push(Event::ProductionCancelled { tick, factory, kind: item, refund: entry.paid });
+        }
+        Err(reason) => events.push(Event::ProductionRejected { tick, player, kind: item, reason }),
+    }
+}
+
+/// Put the first entry for `item` still being worked on (waiting, building or paused for funds) in a factory's queue
+/// on hold, or with `on` false resume the first held one. A held entry keeps what it has paid and its progress.
+pub fn hold(
+    state: &mut GameState,
+    rules: &Rules,
+    player: u32,
+    ids: &[u32],
+    item: Kind,
+    on: bool,
+    events: &mut Vec<Event>,
+) {
+    let tick = state.tick;
+    let open = |q: &QueueEntry| {
+        q.item == item
+            && if on {
+                matches!(q.state, EntryState::Waiting | EntryState::Building | EntryState::Paused)
+            } else {
+                q.state == EntryState::Held
+            }
+    };
+    let found = factory_for(state, rules, player, ids, item)
+        .ok_or(ProduceError::NoFactory)
+        .and_then(|i| Ok((i, state.entities[i].queue.iter().position(open).ok_or(ProduceError::NotQueued)?)));
+    match found {
+        Ok((i, at)) => {
+            let f = &mut state.entities[i];
+            f.queue[at].state = if on { EntryState::Held } else { EntryState::Waiting };
+            let factory = f.id;
+            events.push(if on {
+                Event::ProductionHeld { tick, factory, kind: item }
+            } else {
+                Event::ProductionResumed { tick, factory, kind: item }
+            });
         }
         Err(reason) => events.push(Event::ProductionRejected { tick, player, kind: item, reason }),
     }
@@ -256,8 +330,8 @@ pub fn tick(map: &MapData, pf: &mut Pathfinder, state: &mut GameState, rules: &R
     let factors: Vec<i64> = Power::all(state, rules).iter().map(|p| p.factor(rules)).collect();
     for i in 0..state.entities.len() {
         let Some(&head) = state.entities[i].queue.first() else { continue };
-        // A factory being sold stops work; its queue is refunded when it goes.
-        if state.entities[i].selling > 0 {
+        // A factory being sold stops work; its queue is refunded when it goes. A held head holds up the queue.
+        if state.entities[i].selling > 0 || head.state == EntryState::Held {
             continue;
         }
         let (factory, owner) = (state.entities[i].id, state.entities[i].owner);

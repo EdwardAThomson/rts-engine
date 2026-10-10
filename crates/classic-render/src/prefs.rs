@@ -31,10 +31,12 @@ pub enum Bind {
     NextTab,
     Sell,
     Repair,
+    /// Make the selected factory the primary one of its kind.
+    Primary,
 }
 
 impl Bind {
-    pub const ALL: [Bind; 10] = [
+    pub const ALL: [Bind; 11] = [
         Bind::ScrollUp,
         Bind::ScrollDown,
         Bind::ScrollLeft,
@@ -45,6 +47,7 @@ impl Bind {
         Bind::NextTab,
         Bind::Sell,
         Bind::Repair,
+        Bind::Primary,
     ];
 
     /// Its name in the settings file.
@@ -60,6 +63,7 @@ impl Bind {
             Bind::NextTab => "next_tab",
             Bind::Sell => "sell",
             Bind::Repair => "repair",
+            Bind::Primary => "primary",
         }
     }
 
@@ -76,6 +80,7 @@ impl Bind {
             Bind::NextTab => "NEXT TAB",
             Bind::Sell => "SELL",
             Bind::Repair => "REPAIR",
+            Bind::Primary => "PRIMARY FACTORY",
         }
     }
 
@@ -92,6 +97,7 @@ impl Bind {
             Bind::NextTab => "Tab",
             Bind::Sell => "KeyZ",
             Bind::Repair => "KeyC",
+            Bind::Primary => "KeyP",
         }
     }
 }
@@ -118,7 +124,7 @@ pub struct Prefs {
     /// Scroll speed in percent of the normal speed.
     pub scroll: u32,
     /// The key for each `Bind`, in `Bind::ALL` order.
-    pub keys: [String; 10],
+    pub keys: [String; Bind::ALL.len()],
     /// The opponent's strength for the next game.
     pub difficulty: Difficulty,
 }
