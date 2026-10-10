@@ -509,3 +509,45 @@ fn with_credits_it_has_no_use_for_near_its_storage_it_builds_a_silo_first() {
     assert!(!at_start.is_empty() && !at_start.contains(&"silo".to_string()));
     assert_eq!(rich, ["silo"]);
 }
+
+#[test]
+fn rebuilds_a_lost_yard_from_a_base_builder() {
+    let mut g = game(4);
+    let mut ai = [Ai::new(0, Settings::normal())];
+    play(&mut g, &mut ai, 6000);
+    // Give it the repair pad its build order leaves out and credits to spare, then take its yard away.
+    let pad = g.kind("repair_pad").unwrap();
+    let plant = g.state.entities.iter().find(|e| e.owner == 0 && Some(e.kind) == g.kind("power_plant")).unwrap();
+    let t = plant.tile();
+    let spot = (0..12)
+        .flat_map(|r| (-r..=r).flat_map(move |dy| (-r..=r).map(move |dx| (t.x + dx, t.y + dy))))
+        .find(|&(x, y)| g.can_place(0, pad, x, y).is_ok())
+        .expect("room for a repair pad");
+    g.spawn(pad, 0, spot.0, spot.1);
+    g.state.players[0].credits += 2000;
+    let yard = g.kind("construction_yard").unwrap();
+    let i = g.state.entities.iter().position(|e| e.owner == 0 && e.kind == yard).unwrap();
+    let e = g.state.entities.remove(i);
+    let t = e.tile();
+    g.pathfinder.set_blocked(t.x, t.y, 2, 2, false);
+    assert_eq!(count(&g, 0, "construction_yard"), 0);
+    let from = g.events.len();
+    play(&mut g, &mut ai, 15 * 240);
+    let mcv = g.kind("mcv").unwrap();
+    let built = g.events[from..].iter().find_map(|e| match *e {
+        Event::UnitBuilt { kind, tick, .. } if kind == mcv => Some(tick),
+        _ => None,
+    });
+    let at: Vec<u32> = g.events[from..]
+        .iter()
+        .filter_map(|e| match *e {
+            Event::Deployed { owner: 0, tick, .. } => Some(tick),
+            _ => None,
+        })
+        .collect();
+    let deployed = at.len();
+    println!("yard lost at tick 6000: base builder built at {built:?}, deployed at {at:?}");
+    assert_eq!(deployed, 1);
+    assert_eq!(count(&g, 0, "construction_yard"), 1);
+    assert_eq!(count(&g, 0, "mcv"), 0);
+}

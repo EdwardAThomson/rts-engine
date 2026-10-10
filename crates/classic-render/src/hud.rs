@@ -1039,6 +1039,7 @@ impl Hud {
             (Order::Attack, _) => ("ATTACKING".to_string(), self.theme.warn),
             (Order::Capture, _) => ("CAPTURING".to_string(), self.theme.warn),
             (Order::Repair, _) => ("TO REPAIR".to_string(), self.theme.text),
+            (Order::Deploy, _) => ("DEPLOYING".to_string(), self.theme.text),
             (Order::Idle, _) if e.target.is_some() => ("FIRING".to_string(), self.theme.warn),
             (Order::Idle, _) => ("GUARDING".to_string(), self.theme.dim),
         }

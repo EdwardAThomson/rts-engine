@@ -1,5 +1,5 @@
 {
-  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number takes that number's default (the hazard, fog, decay and blooms off, selling and capture on) unless a pack's setting.json \"features\" says otherwise; the pack loader sets `on` from it. `superpowers`' `by_faction` gives each pack faction its palace power (`power_missile`, `power_guerrillas` or `power_saboteur`); a player with no faction has none.",
+  "about": "The mechanics a setting pack can switch on or off in setting.json's \"features\", and each module's own tunable numbers (tuning.json addresses them by module id, as it does entities). Built modules run today; planned ones are accepted in a pack and do nothing until they are written. A module with an `on` number takes that number's default (the hazard, fog, decay and blooms off, selling and capture on) unless a pack's setting.json \"features\" says otherwise; the pack loader sets `on` from it. `superpowers`' `by_faction` gives each pack faction its palace power (`power_missile`, `power_guerrillas` or `power_saboteur`); a player with no faction has none. `deploy` turns a unit with `deploys_into` into that building where it stands; `wait_ticks` is how long it waits for its own units to clear the ground.",
   "modules": {
     "harvesting": { "status": "built" },
     "regrowth": { "status": "built" },
@@ -156,6 +156,12 @@
       "numbers": {
         "on": { "default": 1, "min": 0, "max": 1 },
         "below_percent": { "default": 25, "min": 1, "max": 100 }
+      }
+    },
+    "deploy": {
+      "status": "built",
+      "numbers": {
+        "wait_ticks": { "default": 45, "min": 1, "max": 600 }
       }
     },
     "blooms": {

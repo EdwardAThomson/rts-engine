@@ -11,6 +11,7 @@ pub mod blooms;
 pub mod capture;
 pub mod combat;
 pub mod decay;
+pub mod deploy;
 pub mod game;
 pub mod hazard;
 pub mod map;
@@ -39,8 +40,8 @@ pub use production::{EntryState, ProduceError, QueueEntry};
 pub use starport::{Delivery, Market, StarportError};
 pub use superpower::{Strike, SuperpowerError};
 pub use units::{
-    AirRules, BloomRules, CaptureRules, DecayRules, FogRules, HazardRules, Kind, RepairRules, Rules, SellRules,
-    Superpower, WeaponId,
+    AirRules, BloomRules, CaptureRules, DecayRules, DeployRules, FogRules, HazardRules, Kind, RepairRules, Rules,
+    SellRules, Superpower, WeaponId,
 };
 pub use vision::{Ghost, TileView, Vision};
 pub use world::{CaptureError, Command, CommandOrder, Entity, Event, GameState, MoveEnd, Order, Task};

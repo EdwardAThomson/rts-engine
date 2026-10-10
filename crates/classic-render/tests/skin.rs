@@ -2,7 +2,7 @@
 
 use classic_render::platform::Files;
 use classic_render::skin::{self, Pointer, SkinFiles, Style};
-use classic_sim::{Game, GameOptions, Rules, Terrain};
+use classic_sim::{CommandOrder, Game, GameOptions, Rules, Terrain};
 use classic_tools::setting;
 
 const MAP: &str = include_str!("../../../maps/skirmish-01.txt");
@@ -114,7 +114,13 @@ fn a_pack_without_a_theme_falls_back_and_its_own_entries_win() {
 fn the_cursor_shows_what_a_click_would_do() {
     let pack = setting::load("generic").unwrap();
     let rules = Rules::from_table(&pack.rules).unwrap();
-    let game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    let mut game = Game::new(GameOptions { map: MAP, seed: 1, players: None, rules: Some(&rules) }).unwrap();
+    // A base builder beside player 0's tank, spawned before the closures below borrow the game.
+    let tank_at = game.state.entities.iter().find(|e| e.owner == 0 && game.rules.kind(e.kind).weapon.is_some());
+    let tank_at = tank_at.map(|e| e.tile()).unwrap();
+    let mcv_kind = game.kind("mcv").unwrap();
+    let mcv = game.spawn(mcv_kind, 0, tank_at.x, tank_at.y + 1);
+    let game = game;
     let mine = |building: bool, armed: bool, owner: u32| {
         game.state
             .entities
@@ -153,4 +159,9 @@ fn the_cursor_shows_what_a_click_would_do() {
     assert_eq!(pick(&[], Pointer { edge: (0, 1), over_hud: true, ..at(None, open) }), "scroll_s");
     // An enemy's unit selected gives no orders.
     assert_eq!(pick(&[enemy], at(None, open)), "default");
+    // A selected unit that deploys, pointed at itself, deploys; pointed at by another unit's selection, selects.
+    assert_eq!(pick(&[tank, mcv], at(Some(mcv), open)), "deploy");
+    assert_eq!(pick(&[tank], at(Some(mcv), open)), "select");
+    let (special, rest) = skin::special_orders(&game, 0, &[tank, mcv], Some(mcv));
+    assert_eq!((special, rest), (vec![(vec![mcv], CommandOrder::Deploy)], vec![tank]));
 }

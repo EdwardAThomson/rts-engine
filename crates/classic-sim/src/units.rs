@@ -148,6 +148,8 @@ pub struct KindRules {
     pub storage: i64,
     /// Owning one, with power enough, gives its owner the minimap (the `radar` module).
     pub radar: bool,
+    /// The building it turns into when its owner deploys it (the `deploy` module); `None` for kinds that can't.
+    pub deploys_into: Option<Kind>,
     /// The lowest game tech level that lets it be built (rules-economy-production.md, section 11).
     pub tech_level: u32,
     /// The level its factory must have been upgraded to (section 9).
@@ -370,6 +372,13 @@ pub struct RepairRules {
     pub pad_step: i64,
 }
 
+/// Units that turn into a building where they stand (the `deploy` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeployRules {
+    /// Ticks a deploying unit waits for units to clear its building's footprint before it gives up.
+    pub wait_ticks: u32,
+}
+
 /// Selling buildings back (rules-base-building-power.md, "Selling"; the `sell` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SellRules {
@@ -446,6 +455,7 @@ pub struct Rules {
     /// Set while the superpowers module is on and the rules have a palace.
     pub superpowers: Option<SuperpowerRules>,
     pub repair: RepairRules,
+    pub deploy: DeployRules,
     /// Set unless a setting pack turns selling off.
     pub sell: Option<SellRules>,
     /// Set unless a setting pack turns capture off.
@@ -525,6 +535,7 @@ impl Rules {
                 noise: t.number(id, "noise").unwrap_or(0),
                 storage: t.number(id, "storage").unwrap_or(0),
                 radar: t.number(id, "radar").unwrap_or(0) != 0,
+                deploys_into: None,
                 tech_level: t.number(id, "tech_level").unwrap_or(1) as u32,
                 factory_level: t.number(id, "factory_level").unwrap_or(0) as u32,
                 max_level: t.number(id, "max_level").unwrap_or(0) as u32,
@@ -541,16 +552,23 @@ impl Rules {
         }
         // What builds each kind and what it requires, as kinds. The rules table has checked they are built buildings.
         let index = |id: &str| kinds.binary_search_by(|k| k.id.as_str().cmp(id)).ok().map(|i| Kind(i as u16));
-        let links: Vec<(Option<Kind>, Vec<Kind>)> = kinds
+        type Links = (Option<Kind>, Vec<Kind>, Option<Kind>);
+        let links: Vec<Links> = kinds
             .iter()
             .map(|k| {
                 let e = &t.entities[&k.id];
-                (e.built_at.as_deref().and_then(index), e.requires.iter().filter_map(|r| index(r)).collect())
+                let built_at = e.built_at.as_deref().and_then(index);
+                (
+                    built_at,
+                    e.requires.iter().filter_map(|r| index(r)).collect(),
+                    e.deploys_into.as_deref().and_then(index),
+                )
             })
             .collect();
-        for (k, (built_at, requires)) in kinds.iter_mut().zip(links) {
+        for (k, (built_at, requires, deploys_into)) in kinds.iter_mut().zip(links) {
             k.built_at = built_at;
             k.requires = requires;
+            k.deploys_into = deploys_into;
         }
         let mut weapons = Vec::new();
         for (id, w) in &t.weapons {
@@ -630,6 +648,7 @@ impl Rules {
             pad_every: (module("repair", "pad_every_ticks")? as u32).max(1),
             pad_step: module("repair", "pad_step")?.max(1),
         };
+        let deploy = DeployRules { wait_ticks: (module("deploy", "wait_ticks")? as u32).max(1) };
         let sell = (module("sell", "on")? != 0).then_some(SellRules {
             refund_percent: module("sell", "refund_percent")?,
             ticks: (module("sell", "ticks")? as u32).max(1),
@@ -764,6 +783,7 @@ impl Rules {
             hazard,
             fog,
             repair,
+            deploy,
             sell,
             capture,
             decay,
