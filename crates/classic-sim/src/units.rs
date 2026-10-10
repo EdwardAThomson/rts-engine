@@ -83,6 +83,9 @@ pub struct KindRules {
     pub refinery: bool,
     /// Kinds with the `wall` role block movement but don't extend their owner's building area.
     pub wall: bool,
+    /// Kinds with the `slab` role are laid as concrete under the footprint rather than standing as a building (the
+    /// `decay` module).
+    pub slab: bool,
     /// Kinds with the `air` role fly (the air module): straight over any tile, with no ground collision.
     pub air: bool,
     /// Kinds with the `carrier` role lift their owner's harvesters on long trips.
@@ -366,6 +369,17 @@ pub struct SellRules {
     pub ticks: u32,
 }
 
+/// Buildings wearing down off concrete (rules-base-building-power.md, "Foundations and decay"; the `decay` module).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecayRules {
+    /// A building takes a step every this many ticks, staggered by id.
+    pub every: u32,
+    /// A step is `max(1, max_health / step_div)` health.
+    pub step_div: i64,
+    /// The percent of its maximum health a building with no slab under it decays down to.
+    pub floor_percent: i64,
+}
+
 /// Infantry taking enemy buildings (rules-base-building-power.md, "Capture"; the `capture` module).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CaptureRules {
@@ -407,6 +421,8 @@ pub struct Rules {
     pub capture: Option<CaptureRules>,
     /// Set when a setting pack turns the radar rule on: the minimap needs a powered radar building.
     pub radar: bool,
+    /// Set when a setting pack turns decay on, which brings slabs too.
+    pub decay: Option<DecayRules>,
     /// The rules table's hash, for replays to check they run under the same numbers.
     pub hash: String,
 }
@@ -442,6 +458,7 @@ impl Rules {
                 harvester,
                 refinery: role("refinery"),
                 wall: role("wall"),
+                slab: building && role("slab"),
                 air: role("air"),
                 carrier: role("carrier"),
                 targetable: !role("untargetable"),
@@ -577,6 +594,11 @@ impl Rules {
         });
         let capture = (module("capture", "on")? != 0)
             .then_some(CaptureRules { below_percent: module("capture", "below_percent")?.max(1) });
+        let decay = (module("decay", "on")? != 0).then_some(DecayRules {
+            every: (module("decay", "every_ticks")? as u32).max(1),
+            step_div: module("decay", "step_div")?.max(1),
+            floor_percent: module("decay", "floor_percent")?.clamp(0, 100),
+        });
         let sp = |name: &str| module("starport", name);
         let starport = if sp("on")? != 0 {
             Some(StarportRules {
@@ -685,6 +707,7 @@ impl Rules {
             repair,
             sell,
             capture,
+            decay,
             starport,
             superpowers,
             radar: module("radar", "on")? != 0,

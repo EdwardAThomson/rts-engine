@@ -213,6 +213,23 @@ impl Scene {
                 }
             }
         }
+        // Concrete slabs on the ground, in their owner's colours, under the buildings.
+        if let Some(slabs) = &game.state.slabs {
+            for ty in y0..y1 {
+                for tx in x0..x1 {
+                    let o = slabs.tiles[(ty * game.map.width + tx) as usize];
+                    if o == 0 {
+                        continue;
+                    }
+                    let (sx, sy) = cam.to_screen(tx as f32 * tile, ty as f32 * tile);
+                    let dst = Rect::new(sx, sy, tile * cam.zoom, tile * cam.zoom);
+                    match art.sprite("slab", o - 1) {
+                        Some(s) => batch.sprite(s.tex, s.facing_frame(0, 0), dst, [255; 4]),
+                        None => batch.fill(dst, [150, 150, 150, 255]),
+                    }
+                }
+            }
+        }
         // Buildings, then units in screen order (higher up first), then shells.
         let at = |e: &Entity| -> (f32, f32) {
             let (ox, oy) = self.prev.get(&e.id).copied().unwrap_or((e.x, e.y));

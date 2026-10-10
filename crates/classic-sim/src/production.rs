@@ -109,7 +109,8 @@ impl ProduceError {
 /// and they own every building it requires. (Tech levels and factory upgrades come later.)
 pub fn can_build(state: &GameState, rules: &Rules, player: u32, item: Kind) -> Result<(), ProduceError> {
     let k = rules.kinds.get(item.0 as usize).ok_or(ProduceError::NotBuildable)?;
-    if k.built_at.is_none() {
+    // Slabs only mean something while buildings decay.
+    if k.built_at.is_none() || (k.slab && !crate::decay::on(rules)) {
         return Err(ProduceError::NotBuildable);
     }
     if !k.factions.is_empty() {

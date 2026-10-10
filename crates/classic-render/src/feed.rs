@@ -419,6 +419,8 @@ impl Feed {
                 | Event::ProductionHeld { .. }
                 | Event::ProductionResumed { .. }
                 | Event::PrimarySet { .. }
+                | Event::SlabLaid { .. }
+                | Event::Decayed { .. }
                 | Event::TargetAcquired { .. }
                 | Event::Fired { .. }
                 | Event::ProjectileSpawned { .. }
