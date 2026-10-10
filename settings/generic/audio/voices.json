@@ -27,6 +27,12 @@
         "power_restored": [
           "audio/voices/advisor/power_restored_1.wav"
         ],
+        "radar_online": [
+          "audio/voices/advisor/radar_online_1.wav"
+        ],
+        "radar_offline": [
+          "audio/voices/advisor/radar_offline_1.wav"
+        ],
         "base_attacked": [
           "audio/voices/advisor/base_attacked_1.wav"
         ],
@@ -186,6 +192,12 @@
         ],
         "power_restored": [
           "audio/voices/advisor/power_restored_1.wav"
+        ],
+        "radar_online": [
+          "audio/voices/advisor/radar_online_1.wav"
+        ],
+        "radar_offline": [
+          "audio/voices/advisor/radar_offline_1.wav"
         ],
         "base_attacked": [
           "audio/voices/advisor/base_attacked_1.wav"

@@ -107,6 +107,12 @@
         "start_explored": { "default": 0, "min": 0, "max": 1 }
       }
     },
+    "radar": {
+      "status": "built",
+      "numbers": {
+        "on": { "default": 0, "min": 0, "max": 1 }
+      }
+    },
     "hazard": {
       "status": "built",
       "numbers": {

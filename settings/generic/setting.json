@@ -13,6 +13,6 @@
       "ramp": "red"
     }
   ],
-  "features": { "fog": true },
+  "features": { "fog": true, "radar": true },
   "entities": "all"
 }

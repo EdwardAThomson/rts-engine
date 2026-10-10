@@ -456,6 +456,7 @@ impl App {
                 self.centre_on(x, y);
             }
             Click::Order { x, y } => self.order_at(None, (x, y)),
+            Click::Mode(mode) => self.building_key(mode),
             Click::Taken | Click::World => {}
         }
         taken
@@ -816,6 +817,7 @@ impl App {
         let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.scene.draw(&mut run.batch, &run.art, &self.game, &self.cam, (w, h), alpha);
         let world = View { cam: self.cam, screen: (w, h), tile: run.art.tile };
+        self.hud.mode = self.mode;
         self.hud.draw(&mut run.batch, &run.art, &run.skin, &self.game, &world, self.mouse, &self.scene.selected);
         self.menu.draw(&mut run.batch, &run.skin, &self.game, (w, h), self.mouse);
         if let Some(from) = self.drag {

@@ -23,7 +23,7 @@ use crate::fog;
 use crate::lines::Lines;
 use crate::platform::{Files, Rect, SpriteBatch};
 use crate::scene::Camera;
-use crate::skin::{Skin, Style};
+use crate::skin::{ButtonState, Mode, Skin, Style};
 use crate::theme::Theme;
 
 /// The rail's width, at UI scale 1.
@@ -42,6 +42,8 @@ const POWER_H: f32 = 16.0;
 const MINIMAP: f32 = 192.0;
 /// The selection card's height, above the queue.
 const CARD_H: f32 = 64.0;
+/// The sell and repair buttons' height.
+const MODE_H: f32 = 20.0;
 /// Units shown one by one on the card for a group; the rest are counted.
 const CHIPS: usize = 10;
 /// The most a shift-click queues at once.
@@ -80,6 +82,8 @@ pub enum Click {
     Centre { x: f32, y: f32 },
     /// A right click on the minimap: give the selected units their default order at this tile.
     Order { x: i32, y: i32 },
+    /// The sell or repair button: sell or repair the own buildings selected, or wait for a click on one.
+    Mode(Mode),
 }
 
 impl Click {
@@ -134,6 +138,8 @@ pub struct Layout {
     pub send: Option<Rect>,
     /// The palace power's charge, and the button that aims it once charged, while the player has a power.
     pub power: Option<Rect>,
+    /// The sell and repair buttons above the card, each with its mode; sell only when the rules allow selling.
+    pub modes: Vec<(Mode, Rect)>,
 }
 
 /// A building being placed: where its top-left tile would go, and whether the simulation would take it there.
@@ -163,6 +169,10 @@ pub struct Hud {
     pub theme: Theme,
     names: BTreeMap<String, String>,
     unused: BTreeSet<String>,
+    /// Each player's faction id, in player order, for their emblem.
+    factions: Vec<String>,
+    /// The sell or repair mode the player program is in, shown as a pressed button.
+    pub mode: Option<Mode>,
 }
 
 impl Hud {
@@ -174,6 +184,9 @@ impl Hud {
         let names: BTreeMap<String, String> = ids.clone().map(|id| (id.clone(), pack.name(&id).to_string())).collect();
         let factions: Vec<String> = pack.factions.iter().map(|f| f.id.clone()).collect();
         let speech = Lines::load(pack_files, &factions, factions.get(faction).map(String::as_str));
+        let players = game.state.players.len();
+        let owners = crate::art::player_factions(factions.len(), players, player as usize, faction);
+        let owner_factions = owners.into_iter().filter_map(|f| factions.get(f).cloned()).collect();
         Hud {
             player,
             scale: 1.0,
@@ -185,6 +198,8 @@ impl Hud {
             theme: Theme::load(pack_files).0,
             names,
             unused: ids.filter(|id| !pack.uses(id)).collect(),
+            factions: owner_factions,
+            mode: None,
         }
     }
 
@@ -325,11 +340,26 @@ impl Hud {
         let queue_top = minimap.y - (QUEUE_H + 10.0) * s;
         // The card sits above the queue's label.
         let card = Rect::new(x0 + 4.0 * s, queue_top - (12.0 + CARD_H) * s, rail.w - 8.0 * s, CARD_H * s);
+        // Sell and repair, side by side over the card, as the classic sidebars had them.
+        let wanted: Vec<Mode> = [(Mode::Sell, game.rules.sell.is_some()), (Mode::Repair, true)]
+            .into_iter()
+            .filter(|m| m.1)
+            .map(|m| m.0)
+            .collect();
+        let bw = (card.w - 4.0 * s * (wanted.len() as f32 - 1.0)) / wanted.len().max(1) as f32;
+        let modes: Vec<(Mode, Rect)> = wanted
+            .into_iter()
+            .enumerate()
+            .map(|(i, m)| {
+                (m, Rect::new(card.x + i as f32 * (bw + 4.0 * s), card.y - (MODE_H + 4.0) * s, bw, MODE_H * s))
+            })
+            .collect();
+        let card_top = modes.first().map_or(card.y, |m| m.1.y);
         let mut icons = Vec::new();
         let mut queue = Vec::new();
         let mut send = None;
         if let Some(factory) = open {
-            let rows_fit = (((card.y - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
+            let rows_fit = (((card_top - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
             let items = self.items(game, factory);
             let rows = items.len().div_ceil(2);
             let skip = self.scroll.min(rows.saturating_sub(rows_fit));
@@ -363,7 +393,7 @@ impl Hud {
                 }
             }
         }
-        Layout { rail, tabs, open, icons, queue, readout, card, minimap, send, power }
+        Layout { rail, tabs, open, icons, queue, readout, card, minimap, send, power, modes }
     }
 
     /// Whether a screen point is on the HUD rather than the world.
@@ -372,10 +402,12 @@ impl Hud {
         l.rail.contains(x, y) || l.readout.contains(x, y)
     }
 
-    /// The map point under a screen point on the minimap, in tiles.
+    /// The map point under a screen point on the minimap, in tiles; nothing without radar, when the minimap is
+    /// blank.
     pub fn minimap_point(&self, l: &Layout, game: &Game, x: f32, y: f32) -> Option<(f32, f32)> {
         let m = l.minimap;
-        m.contains(x, y).then(|| ((x - m.x) / m.w * game.map.width as f32, (y - m.y) / m.h * game.map.height as f32))
+        (m.contains(x, y) && game.radar(self.player))
+            .then(|| ((x - m.x) / m.w * game.map.width as f32, (y - m.y) / m.h * game.map.height as f32))
     }
 
     /// Where the ready building on the cursor would go with the cursor at (x, y).
@@ -434,6 +466,9 @@ impl Hud {
                     Button::Left => Click::Centre { x: mx, y: my },
                     Button::Right => Click::Order { x: mx.floor() as i32, y: my.floor() as i32 },
                 };
+            }
+            if let Some(&(mode, _)) = l.modes.iter().find(|(_, r)| r.contains(x, y)) {
+                return if button == Button::Left { Click::Mode(mode) } else { Click::Taken };
             }
             if let Some(t) = l.tabs.iter().find(|t| t.rect.contains(x, y)) {
                 self.tab = Some(t.factory);
@@ -780,6 +815,23 @@ impl Hud {
         }
 
         self.draw_card(batch, art, skin, game, selected, l.card);
+        for &(mode, r) in &l.modes {
+            let state = if self.mode == Some(mode) {
+                ButtonState::Pressed
+            } else if r.contains(mouse.0, mouse.1) {
+                ButtonState::Hover
+            } else {
+                ButtonState::Normal
+            };
+            skin.button(batch, r, state, s);
+            let label = match mode {
+                Mode::Sell => "SELL",
+                Mode::Repair => "REPAIR",
+            };
+            let lx = r.x + (r.w - skin.width(Style::Small, label, s)) / 2.0;
+            let ly = r.y + (r.h - skin.line(Style::Small, s)) / 2.0;
+            skin.text(batch, Style::Small, label, lx, ly, s, self.theme.text);
+        }
         self.draw_minimap(batch, art, skin, game, view, l.minimap);
         self.draw_readout(batch, skin, game, l.readout);
         self.draw_clock(batch, skin, game, view.screen);
@@ -811,7 +863,13 @@ impl Hud {
             batch.fill(pic, [0, 0, 0, 120]);
             picture(batch, art, &k.id, e.owner, pic, [255; 4]);
             let x = pic.x + pic.w + pad;
-            let w = r.x + r.w - pad - x;
+            let mut w = r.x + r.w - pad - x;
+            // Whose it is: their faction's emblem in the top right corner, and the name keeps clear of it.
+            let side = skin.line(Style::Body, s);
+            let corner = Rect::new(r.x + r.w - pad - side, r.y + pad, side, side);
+            if self.factions.get(e.owner as usize).is_some_and(|f| skin.emblem(batch, f, corner)) {
+                w -= side + 4.0 * s;
+            }
             let name = self.name(game, e.kind);
             // The name in large letters when it fits, else small.
             let size = if skin.width(Style::Body, &name, s) <= w { Style::Body } else { Style::Small };
@@ -978,6 +1036,10 @@ impl Hud {
             [0, 0, 0, 255],
         );
         let (bw, bh) = (m.w / game.map.width as f32, m.h / game.map.height as f32);
+        if !game.radar(self.player) {
+            self.draw_no_signal(batch, skin, game, m);
+            return;
+        }
         let ground = |id: &str, fallback: [u8; 3]| {
             let [r, g, b] = art.terrain(id).map_or(fallback, |t| t.colour);
             [r, g, b, 255]
@@ -1055,6 +1117,34 @@ impl Hud {
         batch.outline(Rect::new(ax, ay, (bx - ax).max(2.0), (by - ay).max(2.0)), s.max(1.0), self.theme.text);
     }
 
+    /// The minimap without radar: grey static that changes a few times a second, and the words saying why.
+    fn draw_no_signal(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, m: Rect) {
+        let s = self.scale;
+        let cell = 3.0 * s;
+        let (cols, rows) = ((m.w / cell).ceil() as u32, (m.h / cell).ceil() as u32);
+        let frame = game.state.tick / 3;
+        for row in 0..rows {
+            for col in 0..cols {
+                // A small integer hash of the cell and the frame: the same picture for the same tick.
+                let mut v =
+                    (col.wrapping_mul(73_856_093) ^ row.wrapping_mul(19_349_663) ^ frame.wrapping_mul(83_492_791))
+                        .wrapping_mul(2_654_435_761);
+                v ^= v >> 15;
+                let g = 24 + (v % 40) as u8;
+                let x = m.x + col as f32 * cell;
+                let y = m.y + row as f32 * cell;
+                let r = Rect::new(x, y, cell.min(m.x + m.w - x), cell.min(m.y + m.h - y));
+                batch.fill(r, [g, g, g, 255]);
+            }
+        }
+        let text = "NO RADAR";
+        let (tw, th) = (skin.width(Style::Body, text, s), skin.line(Style::Body, s));
+        let back =
+            Rect::new(m.x + (m.w - tw) / 2.0 - 6.0 * s, m.y + (m.h - th) / 2.0 - 3.0 * s, tw + 12.0 * s, th + 6.0 * s);
+        batch.fill(back, [0, 0, 0, 200]);
+        skin.text(batch, Style::Body, text, back.x + 6.0 * s, back.y + 3.0 * s, s, self.theme.dim);
+    }
+
     /// The game clock in hours, minutes and seconds, on a small panel at the top middle of the world, where it has
     /// room for any length of game.
     fn draw_clock(&self, batch: &mut SpriteBatch, skin: &Skin, game: &Game, screen: (f32, f32)) {
@@ -1073,6 +1163,15 @@ impl Hud {
         skin.frame(batch, "panel", 0, r, s, self.theme.panel);
         let credits = game.state.players.iter().find(|p| p.id == self.player).map_or(0, |p| p.credits);
         let (x, mut y) = (r.x + 10.0 * s, r.y + 8.0 * s);
+        // The player's faction emblem at the right of the power rows, when the pack's skin has one; the power
+        // numbers and gauge keep to its left, and the credits keep the panel's width.
+        let line = skin.line(Style::Heading, s) + 2.0 * s;
+        let side = (2.0 * line).min(r.y + r.h - 6.0 * s - (y + line));
+        let emblem = Rect::new(r.x + r.w - 8.0 * s - side, y + line, side, side);
+        let room = match self.factions.get(self.player as usize) {
+            Some(f) if skin.emblem(batch, f, emblem) => r.w - 20.0 * s - side - 6.0 * s,
+            _ => r.w - 20.0 * s,
+        };
         // Credits out of storage, in the warning colour once harvests have nowhere to go; the label gives way to the
         // numbers when both don't fit.
         let cap = game.storage(self.player);
@@ -1088,7 +1187,7 @@ impl Hud {
         let colour = if short { self.theme.bad } else { self.theme.text };
         skin.text(batch, Style::Heading, &format!("POWER {}/{}", power.supply, power.demand), x, y, s, colour);
         y += skin.line(Style::Heading, s) + 2.0 * s;
-        let bar = Rect::new(x, y + (skin.line(Style::Heading, s) - 8.0 * s) / 2.0, r.w - 20.0 * s, 8.0 * s);
+        let bar = Rect::new(x, y + (skin.line(Style::Heading, s) - 8.0 * s) / 2.0, room, 8.0 * s);
         batch.fill(bar, [0, 0, 0, 255]);
         let top = power.supply.max(power.demand).max(1) as f32;
         let fill = Rect::new(bar.x, bar.y, bar.w * power.supply as f32 / top, bar.h);

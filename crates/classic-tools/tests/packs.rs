@@ -30,7 +30,7 @@ fn replace(dir: &Path, file: &str, from: &str, to: &str) {
 }
 
 /// The generic pack's features, as its setting.json spells them.
-const FEATURES: &str = "\"features\": { \"fog\": true }";
+const FEATURES: &str = "\"features\": { \"fog\": true, \"radar\": true }";
 
 /// A short game under a pack's rules, stopped while the tank is still on its way; returns the state hash.
 fn play(pack: &Pack) -> String {
@@ -55,6 +55,7 @@ fn the_generic_pack_names_every_id_and_loads_cleanly() {
     // No tuning: the engine's own numbers, with the features it turns on.
     let mut expect = rules.clone();
     expect.modules.get_mut("fog").unwrap().numbers.get_mut("on").unwrap().value = 1;
+    expect.modules.get_mut("radar").unwrap().numbers.get_mut("on").unwrap().value = 1;
     assert_eq!(pack.rules, expect, "the generic pack has no tuning");
 }
 
