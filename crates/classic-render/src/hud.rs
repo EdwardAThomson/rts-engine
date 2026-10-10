@@ -98,10 +98,19 @@ impl Click {
 pub struct Status {
     /// A building the player still needs before this can be ordered.
     pub needs: Option<Kind>,
+    /// The level its factory must be upgraded to before this can be ordered.
+    pub level: Option<u32>,
     /// Entries for it in the queues.
     pub queued: usize,
     /// The state of the first entry for it that heads a queue, and how far along it is (0 to 1).
     pub head: Option<(EntryState, f32)>,
+}
+
+impl Status {
+    /// Whether it can't be ordered yet: a building or a factory upgrade is missing.
+    pub fn locked(&self) -> bool {
+        self.needs.is_some() || self.level.is_some()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -116,6 +125,8 @@ pub struct Icon {
     pub item: Kind,
     pub rect: Rect,
     pub status: Status,
+    /// The upgrade of the open tab's primary factory (`item` is the factory's kind), not an item to build.
+    pub upgrade: bool,
 }
 
 /// Every widget's place on screen this frame, worked out from the game and the screen size alone, so tests and
@@ -127,7 +138,7 @@ pub struct Layout {
     /// The factory kind whose items the grid shows.
     pub open: Option<Kind>,
     pub icons: Vec<Icon>,
-    /// The open tab's primary factory queue, in order.
+    /// The open tab's primary factory queue, in order; an upgrade of the factory shows as the factory's kind.
     pub queue: Vec<(Kind, Rect)>,
     pub readout: Rect,
     /// The selection card: what is selected, its health and what it is doing.
@@ -212,11 +223,12 @@ impl Hud {
     pub fn status(&self, game: &Game, item: Kind) -> Status {
         if game.rules.kind(item).built_at.is_none() || self.market(game).contains(&item) && self.tab_is_market(game) {
             let queued = self.order(game).map_or(0, |o| o.items.iter().filter(|(k, _)| *k == item).count());
-            return Status { needs: None, queued, head: None };
+            return Status { needs: None, level: None, queued, head: None };
         }
-        let needs = match game.can_build(self.player, item) {
-            Err(ProduceError::Requires { kind }) => Some(kind),
-            _ => None,
+        let (needs, level) = match game.can_build(self.player, item) {
+            Err(ProduceError::Requires { kind }) => (Some(kind), None),
+            Err(ProduceError::FactoryLevel { level }) => (None, Some(level)),
+            _ => (None, None),
         };
         let mut queued = 0;
         let mut head = None;
@@ -225,15 +237,26 @@ impl Hud {
         let owned = game.state.entities.iter().enumerate().filter(|(_, e)| e.owner == self.player);
         let (front, rest): (Vec<_>, Vec<_>) = owned.partition(|&(i, _)| Some(i) == first);
         for (_, e) in front.into_iter().chain(rest) {
-            queued += e.queue.iter().filter(|q| q.item == item).count();
-            if let Some(q) = e.queue.first().filter(|q| q.item == item)
+            queued += e.queue.iter().filter(|q| q.item == item && !q.upgrade).count();
+            if let Some(q) = e.queue.first().filter(|q| q.item == item && !q.upgrade)
                 && head.is_none()
             {
-                let total = (game.rules.kind(item).build_ticks * 100).max(1);
-                head = Some((q.state, (q.progress as f32 / total as f32).min(1.0)));
+                head = Some((q.state, share(game, q)));
             }
         }
-        Status { needs, queued, head }
+        Status { needs, level, queued, head }
+    }
+
+    /// Where the upgrade of `player`'s primary factory of kind `factory` stands, if it has one that can go higher or
+    /// has an upgrade queued: the upgrades queued and the one under way.
+    pub fn upgrade_status(&self, game: &Game, factory: Kind) -> Option<Status> {
+        let f = &game.state.entities[production::primary(&game.state, self.player, factory)?];
+        let queued = f.queue.iter().filter(|q| q.upgrade).count();
+        if queued == 0 && f.level >= game.level_cap(factory) {
+            return None;
+        }
+        let head = f.queue.first().filter(|q| q.upgrade).map(|q| (q.state, share(game, q)));
+        Some(Status { needs: None, level: None, queued, head })
     }
 
     /// The factory kinds this player owns that make something the pack uses, in kind order.
@@ -269,10 +292,12 @@ impl Hud {
         game.rules.kind(factory).id == "starport" && game.rules.starport.is_some()
     }
 
-    /// What the starport sells that the pack uses.
+    /// What the starport sells that the pack uses and the game's tech level allows.
     fn market(&self, game: &Game) -> Vec<Kind> {
         let catalogue = game.rules.starport.as_ref().map_or(&[][..], |s| &s.catalogue[..]);
-        catalogue.iter().copied().filter(|&k| !self.unused.contains(&game.rules.kind(k).id)).collect()
+        let tech = game.state.tech_level.unwrap_or(u32::MAX);
+        let offered = |k: Kind| !self.unused.contains(&game.rules.kind(k).id) && game.rules.kind(k).tech_level <= tech;
+        catalogue.iter().copied().filter(|&k| offered(k)).collect()
     }
 
     /// The local player's starport order, if they have one: its stage and what it holds.
@@ -298,6 +323,8 @@ impl Hud {
                     game.state.entities.iter().any(|e| e.owner == self.player && e.kind == r)
                         || game.can_build(self.player, r).is_ok()
                 }),
+                // Locked until the factory is upgraded, if the game's tech level lets it go that high.
+                Err(ProduceError::FactoryLevel { level }) => level <= game.level_cap(factory),
                 Err(_) => false,
             })
             .collect()
@@ -361,7 +388,8 @@ impl Hud {
         if let Some(factory) = open {
             let rows_fit = (((card_top - 6.0 * s - grid_top) / ((CELL_H + GAP) * s)).floor() as usize).max(1);
             let items = self.items(game, factory);
-            let rows = items.len().div_ceil(2);
+            let upgradable = !self.is_market(game, factory) && self.upgrade_status(game, factory).is_some();
+            let rows = (items.len() + upgradable as usize).div_ceil(2);
             let skip = self.scroll.min(rows.saturating_sub(rows_fit));
             for (i, &item) in items.iter().enumerate().skip(skip * 2).take(rows_fit * 2) {
                 let (col, row) = ((i % 2) as f32, (i / 2 - skip) as f32);
@@ -371,7 +399,24 @@ impl Hud {
                     CELL_W * s,
                     CELL_H * s,
                 );
-                icons.push(Icon { item, rect, status: self.status(game, item) });
+                icons.push(Icon { item, rect, status: self.status(game, item), upgrade: false });
+            }
+            // The primary factory's upgrade, after its items, while it can go higher (rules-economy-production.md
+            // section 11).
+            let upgrade = if self.is_market(game, factory) { None } else { self.upgrade_status(game, factory) };
+            if let Some(status) = upgrade {
+                let i = items.len();
+                let row = i / 2;
+                if row >= skip && row < skip + rows_fit {
+                    let (col, row) = ((i % 2) as f32, (row - skip) as f32);
+                    let rect = Rect::new(
+                        x0 + (2.0 + col * (CELL_W + GAP)) * s,
+                        grid_top + row * (CELL_H + GAP) * s,
+                        CELL_W * s,
+                        CELL_H * s,
+                    );
+                    icons.push(Icon { item: factory, rect, status, upgrade: true });
+                }
             }
             // The queue of the primary factory, the one orders go to; at the starport, its order.
             let slot =
@@ -483,9 +528,17 @@ impl Hud {
                 } else {
                     self.click_icon(game, icon, button, shift, ctrl);
                 }
-            } else if let Some(&(item, _)) = l.queue.iter().find(|(_, r)| r.contains(x, y)) {
+            } else if let Some(at) = l.queue.iter().position(|(_, r)| r.contains(x, y)) {
+                let item = l.queue[at].0;
+                let upgrade = l
+                    .open
+                    .and_then(|f| production::primary(&game.state, self.player, f))
+                    .and_then(|i| game.state.entities[i].queue.get(at))
+                    .is_some_and(|q| q.upgrade);
                 if l.open.is_some_and(|f| self.is_market(game, f)) {
                     game.order(self.player, &[], CommandOrder::StarportRemove { kind: item });
+                } else if upgrade {
+                    game.order(self.player, &[], CommandOrder::Upgrade { kind: item, on: false });
                 } else {
                     game.order(self.player, &[], CommandOrder::Cancel { kind: item });
                 }
@@ -529,6 +582,11 @@ impl Hud {
 
     fn click_icon(&mut self, game: &mut Game, icon: &Icon, button: Button, shift: bool, ctrl: bool) {
         let item = icon.item;
+        // The factory's upgrade: a left click queues it, a right click takes it back out.
+        if icon.upgrade {
+            game.order(self.player, &[], CommandOrder::Upgrade { kind: item, on: button == Button::Left });
+            return;
+        }
         match button {
             Button::Right if self.placing == Some(item) => self.placing = None,
             Button::Right => game.order(self.player, &[], CommandOrder::Cancel { kind: item }),
@@ -536,7 +594,7 @@ impl Hud {
                 let on = !matches!(icon.status.head, Some((EntryState::Held, _)));
                 game.order(self.player, &[], CommandOrder::Hold { kind: item, on });
             }
-            Button::Left if icon.status.needs.is_some() => {}
+            Button::Left if icon.status.locked() => {}
             Button::Left
                 if game.rules.kind(item).building && matches!(icon.status.head, Some((EntryState::Ready, _))) =>
             {
@@ -678,12 +736,10 @@ impl Hud {
             // Progress of whatever this kind of factory is making, and a pulse when something is ready.
             let mut best: Option<(EntryState, f32)> = None;
             for e in game.state.entities.iter().filter(|e| e.owner == self.player && e.kind == t.factory) {
-                if let Some(q) = e.queue.first() {
-                    let total = (game.rules.kind(q.item).build_ticks * 100).max(1);
-                    let share = (q.progress as f32 / total as f32).min(1.0);
-                    if best.is_none_or(|(st, _)| st != EntryState::Ready) {
-                        best = Some((q.state, share));
-                    }
+                if let Some(q) = e.queue.first()
+                    && best.is_none_or(|(st, _)| st != EntryState::Ready)
+                {
+                    best = Some((q.state, share(game, q)));
                 }
             }
             match best {
@@ -709,7 +765,7 @@ impl Hud {
             // At the starport: today's price along the bottom, and the icon dimmed when none are left to buy.
             let market = l.open.is_some_and(|f| self.is_market(game, f));
             let sold_out = market && starport::stock(&game.state, &game.rules, self.player, icon.item) == 0;
-            let tint = if st.needs.is_some() || sold_out { [90, 90, 90, 255] } else { [255; 4] };
+            let tint = if st.locked() || sold_out { [90, 90, 90, 255] } else { [255; 4] };
             self.picture(batch, art, id, r, tint);
             if market {
                 let (text, colour) = match starport::price(&game.state, &game.rules, icon.item) {
@@ -755,7 +811,13 @@ impl Hud {
                 Some((EntryState::Blocked, _)) => batch.outline(r, 2.0 * s, self.theme.warn),
                 _ => {}
             }
-            if st.needs.is_some() {
+            if icon.upgrade && st.head.is_none() {
+                let band = Rect::new(r.x, r.y + r.h - 11.0 * s, r.w, 11.0 * s);
+                batch.fill(band, [0, 0, 0, 160]);
+                let w = skin.width(Style::Small, "UPGRADE", s);
+                skin.text(batch, Style::Small, "UPGRADE", r.x + (r.w - w) / 2.0, band.y + 2.0 * s, s, self.theme.good);
+            }
+            if st.locked() {
                 let w = skin.width(Style::Small, "LOCKED", s);
                 skin.text(
                     batch,
@@ -937,9 +999,8 @@ impl Hud {
                 return ("REPAIRING".to_string(), self.theme.good);
             }
             if let Some(q) = e.queue.first() {
-                let total = (game.rules.kind(q.item).build_ticks * 100).max(1);
-                let share = (q.progress * 100 / total).min(100);
-                let name = self.name(game, q.item);
+                let share = (q.progress * 100 / (q.ticks(&game.rules) * 100)).min(100);
+                let name = if q.upgrade { "UPGRADE".to_string() } else { self.name(game, q.item) };
                 return match q.state {
                     EntryState::Ready => (format!("{name} READY"), self.theme.good),
                     EntryState::Paused => (format!("{name}: NO CREDITS"), self.theme.warn),
@@ -1221,7 +1282,14 @@ impl Hud {
         let k = game.rules.kind(icon.item);
         let st = icon.status;
         let mut lines = vec![(self.name(game, icon.item), self.theme.text)];
-        if self.tab_is_market(game)
+        if icon.upgrade {
+            let level = game.state.entities
+                [production::primary(&game.state, self.player, icon.item).expect("an upgrade icon has its factory")]
+            .level;
+            lines[0].0 = format!("UPGRADE {}", lines[0].0);
+            lines.push((format!("COST {}", k.upgrade_cost), self.theme.dim));
+            lines.push((format!("LEVEL {} OF {}", level, game.level_cap(icon.item)), self.theme.dim));
+        } else if self.tab_is_market(game)
             && let Some(p) = starport::price(&game.state, &game.rules, icon.item)
         {
             let left = starport::stock(&game.state, &game.rules, self.player, icon.item);
@@ -1232,6 +1300,7 @@ impl Hud {
         }
         let state = match (st.needs, st.head) {
             (Some(need), _) => Some((format!("NEEDS {}", self.name(game, need)), self.theme.warn)),
+            _ if st.level.is_some() => Some(("NEEDS FACTORY UPGRADE".to_string(), self.theme.warn)),
             (_, Some((EntryState::Building, share))) => {
                 Some((format!("BUILDING {}%", (share * 100.0) as i32), self.theme.good))
             }
@@ -1253,6 +1322,11 @@ impl Hud {
             skin.text(batch, Style::Body, t, x + 6.0 * s, y + 6.0 * s + i as f32 * line, s, *colour);
         }
     }
+}
+
+/// How far along a queue entry is, from 0 to 1.
+fn share(game: &Game, q: &classic_sim::QueueEntry) -> f32 {
+    (q.progress as f32 / (q.ticks(&game.rules) * 100) as f32).min(1.0)
 }
 
 /// A game time as hours, minutes and seconds: `0:04:12`.

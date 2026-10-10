@@ -153,6 +153,8 @@ pub struct Entity {
     pub primary: bool,
     /// Buildings only: how many of its footprint tiles held its owner's slab when it was placed (the `decay` module).
     pub foundation: u32,
+    /// Producing buildings only: how many times it has been upgraded.
+    pub level: u32,
 }
 
 impl Entity {
@@ -207,6 +209,8 @@ impl Canon for EntityCanon<'_> {
             .opt("homeId", e.home_id.as_ref())
             .field("id", &e.id)
             .opt("lastAttacker", attacker.as_ref())
+            // Written only once upgraded, so a game without upgrades hashes as it did before them.
+            .opt("level", (e.level != 0).then_some(&e.level))
             .opt("noise", (e.noise != 0).then_some(&e.noise))
             .field("order", &e.order)
             .field("owner", &e.owner)
@@ -294,6 +298,9 @@ pub struct GameState {
     pub slabs: Option<Slabs>,
     /// Resource blooms on the map and those to come; set while the `blooms` module is on.
     pub blooms: Option<Blooms>,
+    /// The game's tech level, 1 to 8, which limits what can be built and how far buildings can be upgraded; `None`
+    /// limits nothing (rules-economy-production.md, section 11).
+    pub tech_level: Option<u32>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -325,6 +332,8 @@ impl Canon for GameState {
             .opt("slabs", self.slabs.as_ref())
             // Written only while a palace power is on its way.
             .opt("strikes", (!self.strikes.is_empty()).then_some(&self.strikes))
+            // Written only when set, so a game with no tech level hashes as it did before them.
+            .opt("techLevel", self.tech_level.as_ref())
             .field("tick", &self.tick)
             // Written only when fog is on, so a game without it hashes as it did before.
             .opt("vision", self.vision.as_ref().map(|v| VisionCanon(v, &self.kind_ids)).as_ref())
@@ -373,6 +382,12 @@ pub enum CommandOrder {
     },
     /// Make the first factory in `ids` its owner's primary one of its kind.
     Primary,
+    /// Queue an upgrade of the building in `ids`, else the player's primary building of this kind (`on`), or take the
+    /// last queued one back out with a refund.
+    Upgrade {
+        kind: Kind,
+        on: bool,
+    },
     /// Turn repair on or off for the buildings in `ids`.
     Repair {
         on: bool,
@@ -564,6 +579,13 @@ pub enum Event {
         owner: u32,
         damage: i64,
         health: i64,
+    },
+    /// A building's upgrade finished: it is now at `level`.
+    UpgradeCompleted {
+        tick: u32,
+        factory: u32,
+        kind: Kind,
+        level: u32,
     },
     /// Its owner put an entry on hold.
     ProductionHeld {
@@ -934,6 +956,7 @@ impl Event {
             Event::ProductionPaused { .. } => "production_paused",
             Event::ProductionHeld { .. } => "production_held",
             Event::SlabLaid { .. } => "slab_laid",
+            Event::UpgradeCompleted { .. } => "upgrade_completed",
             Event::BloomSeeded { .. } => "bloom_seeded",
             Event::BloomBurst { .. } => "bloom_burst",
             Event::BloomHurt { .. } => "bloom_hurt",
@@ -1002,6 +1025,7 @@ impl Event {
             | Event::ProductionPaused { tick, .. }
             | Event::ProductionHeld { tick, .. }
             | Event::SlabLaid { tick, .. }
+            | Event::UpgradeCompleted { tick, .. }
             | Event::BloomSeeded { tick, .. }
             | Event::BloomBurst { tick, .. }
             | Event::BloomHurt { tick, .. }
@@ -1102,6 +1126,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         autonomous: None,
         primary: false,
         foundation: 0,
+        level: 0,
     });
     id
 }
@@ -1195,6 +1220,9 @@ pub fn apply_command(
             return production::hold(state, rules, cmd.player, &cmd.ids, kind, on, events);
         }
         CommandOrder::Primary => return production::set_primary(state, rules, cmd.player, &cmd.ids, events),
+        CommandOrder::Upgrade { kind, on } => {
+            return production::upgrade(state, rules, cmd.player, &cmd.ids, kind, on, events);
+        }
         CommandOrder::Repair { on } => return repair::order(state, rules, cmd.player, &cmd.ids, on, events),
         CommandOrder::Sell => return sell::order(state, rules, cmd.player, &cmd.ids, events),
         CommandOrder::Capture { target } => {
@@ -1303,6 +1331,7 @@ pub fn apply_command(
             | CommandOrder::Cancel { .. }
             | CommandOrder::Hold { .. }
             | CommandOrder::Primary
+            | CommandOrder::Upgrade { .. }
             | CommandOrder::Repair { .. }
             | CommandOrder::Sell
             | CommandOrder::Capture { .. }
