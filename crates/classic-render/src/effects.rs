@@ -128,6 +128,7 @@ impl Effects {
                     | Event::BeamFired { .. }
                     | Event::MissileLaunched { .. }
                     | Event::MissileImpact { .. }
+                    | Event::BloomBurst { .. }
             ) {
                 self.pending.push(ev.clone());
             }
@@ -220,6 +221,17 @@ impl Effects {
                         let (fx, fy) = (self.random() - 0.5, self.random() - 0.5);
                         let spread = TILE as f32 * 6.0;
                         self.burst("explosion_large", cx + fx * spread, cy + fy * spread, tick + 1 + i, 1.0);
+                    }
+                }
+                // A bloom goes up in a puff in the middle and a ring of dust thrown out over the new field.
+                Event::BloomBurst { tick, x, y, .. } => {
+                    let half = TILE as f32 / 2.0;
+                    let (cx, cy) = (x as f32 * TILE as f32 + half, y as f32 * TILE as f32 + half);
+                    self.burst("explosion_small", cx, cy, tick, 1.4);
+                    for i in 0..8u32 {
+                        let (fx, fy) = (self.random() - 0.5, self.random() - 0.5);
+                        let spread = TILE as f32 * 5.0;
+                        self.burst("smoke_puff", cx + fx * spread, cy + fy * spread, tick + 1 + i, 1.6);
                     }
                 }
                 Event::Destroyed { tick, entity, x, y, .. } if self.fused.remove(&entity) => {

@@ -8,8 +8,10 @@ use rts_core::hash::{Canon, CanonHasher};
 use rts_core::rng::random_int;
 
 use crate::air::{self, Ferry};
+use crate::blooms::{self, Blooms};
 use crate::capture;
 use crate::combat::{self, Projectile, ProjectileCanon};
+use crate::decay::{self, Slabs};
 use crate::deploy;
 use crate::hazard::{self, Hazards, LeftReason};
 use crate::map::{MapData, RESOURCE_PER_TILE, TILE, Terrain, Tile};
@@ -153,6 +155,8 @@ pub struct Entity {
     pub autonomous: Option<Tile>,
     /// Factories only: picked by its owner as the one of its kind that takes orders naming no factory.
     pub primary: bool,
+    /// Buildings only: how many of its footprint tiles held its owner's slab when it was placed (the `decay` module).
+    pub foundation: u32,
     /// Deploying: the tick it gives up if units still stand where its building would go.
     pub deploy_by: Option<u32>,
 }
@@ -201,6 +205,8 @@ impl Canon for EntityCanon<'_> {
             .opt("deployBy", e.deploy_by.as_ref())
             .opt("expires", e.expires.as_ref())
             .opt("facing", (e.facing != 0).then_some(&e.facing))
+            // Written only when set, so a game without slabs hashes as it did before them.
+            .opt("foundation", (e.foundation != 0).then_some(&e.foundation))
             .opt("ferry", e.ferry.as_ref())
             .opt("fuse", e.fuse.as_ref())
             // Repair, sell and capture fields are written only when set, so a game without them hashes as before.
@@ -292,6 +298,10 @@ pub struct GameState {
     pub deliveries: Vec<Delivery>,
     /// Palace powers on their way: missiles in flight and guerrillas about to arrive, in launch order.
     pub strikes: Vec<Strike>,
+    /// Whose concrete slab lies on each tile; set when the first slab is laid (the `decay` module).
+    pub slabs: Option<Slabs>,
+    /// Resource blooms on the map and those to come; set while the `blooms` module is on.
+    pub blooms: Option<Blooms>,
     /// Each kind's generic id, in kind order (`Rules::kind_ids`), so the hash can spell kinds. Not hashed itself.
     pub kind_ids: Arc<[String]>,
     /// Each weapon's generic id, in weapon order, likewise.
@@ -307,6 +317,8 @@ impl Canon for GameState {
         // The market and starport orders are written only once they exist, so a game without a starport hashes as
         // it did before them.
         w.object()
+            // Written only while blooms are on, so a game without them hashes as it did before.
+            .opt("blooms", self.blooms.as_ref())
             .opt("deliveries", (!deliveries.is_empty()).then_some(&deliveries))
             .array("entities", &entities)
             // Written only when the hazard is on, so a game without it hashes as it did before.
@@ -317,6 +329,8 @@ impl Canon for GameState {
             .opt("projectiles", (!projectiles.is_empty()).then_some(&projectiles))
             .field("resource", &self.resource)
             .field("rng", &self.rng)
+            // Written only once a slab is laid, so a game without them hashes as it did before.
+            .opt("slabs", self.slabs.as_ref())
             // Written only while a palace power is on its way.
             .opt("strikes", (!self.strikes.is_empty()).then_some(&self.strikes))
             .field("tick", &self.tick)
@@ -523,6 +537,43 @@ pub enum Event {
         tick: u32,
         factory: u32,
         kind: Kind,
+    },
+    /// A bloom appeared on tile (x, y).
+    BloomSeeded {
+        tick: u32,
+        x: i32,
+        y: i32,
+    },
+    /// A bloom on tile (x, y) burst, adding `added` resource round it.
+    BloomBurst {
+        tick: u32,
+        x: i32,
+        y: i32,
+        added: i64,
+    },
+    /// A bloom's burst hurt a unit beside it. Not an attack.
+    BloomHurt {
+        tick: u32,
+        unit: u32,
+        damage: i64,
+        health: i64,
+    },
+    /// A player laid a slab of kind `kind` with its top-left tile at (x, y); `tiles` were new.
+    SlabLaid {
+        tick: u32,
+        kind: Kind,
+        owner: u32,
+        x: i32,
+        y: i32,
+        tiles: u32,
+    },
+    /// A building off concrete wore down by `damage` (the `decay` module). Not an attack.
+    Decayed {
+        tick: u32,
+        entity: u32,
+        owner: u32,
+        damage: i64,
+        health: i64,
     },
     /// Its owner put an entry on hold.
     ProductionHeld {
@@ -909,6 +960,11 @@ impl Event {
             Event::ProductionRejected { .. } => "production_rejected",
             Event::ProductionPaused { .. } => "production_paused",
             Event::ProductionHeld { .. } => "production_held",
+            Event::SlabLaid { .. } => "slab_laid",
+            Event::BloomSeeded { .. } => "bloom_seeded",
+            Event::BloomBurst { .. } => "bloom_burst",
+            Event::BloomHurt { .. } => "bloom_hurt",
+            Event::Decayed { .. } => "decayed",
             Event::ProductionResumed { .. } => "production_resumed",
             Event::PrimarySet { .. } => "primary_set",
             Event::ProductionCancelled { .. } => "production_cancelled",
@@ -974,6 +1030,11 @@ impl Event {
             | Event::ProductionRejected { tick, .. }
             | Event::ProductionPaused { tick, .. }
             | Event::ProductionHeld { tick, .. }
+            | Event::SlabLaid { tick, .. }
+            | Event::BloomSeeded { tick, .. }
+            | Event::BloomBurst { tick, .. }
+            | Event::BloomHurt { tick, .. }
+            | Event::Decayed { tick, .. }
             | Event::ProductionResumed { tick, .. }
             | Event::PrimarySet { tick, .. }
             | Event::ProductionCancelled { tick, .. }
@@ -1071,6 +1132,7 @@ pub fn spawn(state: &mut GameState, rules: &Rules, kind: Kind, owner: u32, tx: i
         expires,
         autonomous: None,
         primary: false,
+        foundation: 0,
         deploy_by: None,
     });
     id
@@ -1183,9 +1245,16 @@ pub fn apply_command(
         let tick = state.tick;
         let ready = if production::has_ready(state, cmd.player, kind) { Ok(()) } else { Err(PlaceError::NotReady) };
         match ready.and_then(|()| placement::check(map, state, rules, cmd.player, kind, x, y)) {
+            Ok(()) if rules.kind(kind).slab => {
+                production::take_ready(state, cmd.player, kind);
+                let tiles = decay::lay(map, state, rules, cmd.player, kind, x, y);
+                events.push(Event::SlabLaid { tick, kind, owner: cmd.player, x, y, tiles });
+            }
             Ok(()) => {
                 production::take_ready(state, cmd.player, kind);
+                let foundation = decay::foundation(state, rules, cmd.player, kind, x, y);
                 let entity = spawn(state, rules, kind, cmd.player, x, y);
+                state.entities.last_mut().expect("just spawned").foundation = foundation;
                 occupy(pf, rules, state.entities.last().expect("just spawned"), true);
                 reroute_around_new_building(pf, state, rules);
                 events.push(Event::BuildingPlaced { tick, entity, kind, owner: cmd.player, x, y });
@@ -1300,7 +1369,7 @@ pub fn step(
 ) {
     // The tick runs in phases, each over entities in id order (rules-movement.md, "Moving within a tick"):
     // commands, combat, movement, aircraft, crush (not built yet), the hazard, deploying, capture, repair, selling,
-    // economy, world;
+    // decay, economy, world (regrowth or blooms);
     // then each player's sight.
     let power_before = Power::all(state, rules);
     for cmd in commands {
@@ -1315,8 +1384,13 @@ pub fn step(
     capture::tick(pf, state, rules, events);
     repair::tick(pf, state, rules, events);
     sell::tick(pf, state, rules, events);
+    decay::tick(state, rules, events);
     economy(map, pf, state, rules, events);
-    regrow(map, pf, state, rules, events);
+    // Blooms replace the slow regrowth beside fields while they are on.
+    if rules.blooms.is_none() {
+        regrow(map, pf, state, rules, events);
+    }
+    blooms::tick(map, state, rules, events);
     vision::tick(state, rules);
     report_power(state, rules, &power_before, events);
     state.tick += 1;

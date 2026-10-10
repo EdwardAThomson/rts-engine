@@ -76,7 +76,7 @@ pub const ARMOURS: [&str; 6] = ["infantry", "light", "heavy", "building", "wall"
 pub const WARHEADS: [&str; 6] = ["bullet", "shell", "rocket", "sonic", "blast", "crush"];
 const KINDS: [&str; 5] = ["building", "unit", "power", "feature", "terrain"];
 /// Roles the simulation has code for. A new role is an engine change first.
-pub const ROLES: [&str; 11] = [
+pub const ROLES: [&str; 12] = [
     "harvester",
     "refinery",
     "wall",
@@ -88,6 +88,7 @@ pub const ROLES: [&str; 11] = [
     "repair_pad",
     "unconvertible",
     "sapper",
+    "slab",
 ];
 
 /// The numbers every weapon has.

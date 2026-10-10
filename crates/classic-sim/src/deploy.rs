@@ -144,8 +144,11 @@ fn deploy(
 ) {
     let tick = state.tick;
     let unit = state.entities.remove(i);
+    // Its owner's slabs under it count as foundation, as for a placed building (the `decay` module).
+    let foundation = crate::decay::foundation(state, rules, unit.owner, b, at.x, at.y);
     let entity = world::spawn(state, rules, b, unit.owner, at.x, at.y);
     let building = state.entities.last_mut().expect("just spawned");
+    building.foundation = foundation;
     // The same share of its health as the unit had, at least 1.
     let (full, was) = (rules.kind(b).max_health, rules.kind(unit.kind).max_health);
     building.health = (full * unit.health.max(0) / was.max(1)).clamp(1, full);
