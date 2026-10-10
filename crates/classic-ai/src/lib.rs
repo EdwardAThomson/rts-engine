@@ -78,7 +78,9 @@ pub struct Settings {
     pub stage_ticks: u32,
     /// With nothing delivered for this many ticks and too few credits for a combat unit, every unit attacks.
     pub broke_ticks: u32,
-    /// A wave that falls below this percent of the units it set out with comes home.
+    /// A wave that falls below this percent of the units it set out with comes home. 0 on normal and hard: a wave
+    /// sent with the odds still turns back when the fight turns against it, but losses alone don't send it home,
+    /// which in our runs ended more games than coming home at 30%.
     pub retreat_percent: usize,
     /// Enemy armed units this many tiles from one of its buildings draw out the defenders.
     pub defend_radius: i32,
@@ -137,7 +139,7 @@ impl Settings {
             wave_cap: 20,
             stage_ticks: 15 * 30,
             broke_ticks: 15 * 120,
-            retreat_percent: 30,
+            retreat_percent: 0,
             defend_radius: 10,
             rally_distance: 6,
         }

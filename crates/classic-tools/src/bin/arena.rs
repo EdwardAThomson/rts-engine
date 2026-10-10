@@ -1,10 +1,12 @@
 //! One computer-against-computer game, with a summary of what each side built, lost and destroyed, for balance work:
 //!   cargo run --release --bin arena -- --setting <pack> --map <map> --seed 1 [--minutes 90] [--factions a,b]
-//!     [--every 5] [--tech 1-8]
-//! Every player goes to the computer. Prints a JSON line every `--every` game minutes (armies and bases) and one at
-//! the end: the winner (null for a game still going), and for each player the units built, lost and still alive by
-//! kind, and the value each of its kinds destroyed (damage dealt, as a share of the target's health, times the
-//! target's cost). Nothing it prints feeds back into the game.
+//!     [--every 5] [--tech 1-8] [--waves] [--set wave_cap=30,retreat_percent=0,...]
+//! Every player goes to the computer. Prints a JSON line every `--every` game minutes (armies, bases, credits,
+//! deliveries and resource left) and one at the end: the winner (null for a game still going), and for each player
+//! the units built, the units and buildings lost and what is still alive by kind, and the value each of its kinds
+//! destroyed (damage dealt, as a share of the target's health, times the target's cost). `--waves` adds a line as
+//! each wave sets out and ends, with the credits' worth each player lost while it was out; `--set` overrides the
+//! normal opponent's wave numbers for experiments. Nothing it prints feeds back into the game.
 
 use std::collections::BTreeMap;
 
@@ -16,6 +18,7 @@ use classic_tools::setting;
 #[derive(Default)]
 struct Side {
     built: BTreeMap<String, u32>,
+    /// Units and buildings lost, by kind.
     lost: BTreeMap<String, u32>,
     /// Credits' worth of enemy destroyed, by the kind that did it.
     value: BTreeMap<String, i64>,
@@ -39,7 +42,23 @@ fn main() {
         game.set_factions(&f.split(',').map(str::trim).collect::<Vec<_>>());
     }
     let players: Vec<u32> = game.state.players.iter().map(|p| p.id).collect();
-    let mut ais: Vec<Ai> = players.iter().map(|&p| Ai::new(p, Settings::normal())).collect();
+    // Experiments: `--set name=value,...` overrides the normal opponent's wave numbers.
+    let mut settings = Settings::normal();
+    for kv in arg("set").iter().flat_map(|s| s.split(',')).filter(|s| !s.is_empty()) {
+        let (k, v) = kv.split_once('=').expect("name=value");
+        let n: i64 = v.parse().expect("a number");
+        match k {
+            "wave_cap" => settings.wave_cap = n as usize,
+            "first_wave" => settings.first_wave = n as usize,
+            "wave_growth" => settings.wave_growth = n as usize,
+            "attack_margin" => settings.attack_margin = n,
+            "retreat_percent" => settings.retreat_percent = n as usize,
+            "broke_ticks" => settings.broke_ticks = n as u32,
+            "stage_ticks" => settings.stage_ticks = n as u32,
+            _ => panic!("no setting {k}"),
+        }
+    }
+    let mut ais: Vec<Ai> = players.iter().map(|&p| Ai::new(p, settings.clone())).collect();
     let mut sides: BTreeMap<u32, Side> = players.iter().map(|&p| (p, Side::default())).collect();
     // Every entity seen, by id: its kind and owner (an owner can change by capture or conversion; the last seen wins).
     let mut known: BTreeMap<u32, (Kind, u32)> = BTreeMap::new();
@@ -47,6 +66,9 @@ fn main() {
     let mut winner = None;
     let waves = args.iter().any(|a| a == "--waves");
     let mut last_wave: Vec<Option<(u32, usize)>> = vec![None; ais.len()];
+    // Credits' worth each player has lost so far, and the totals when each player's wave set out.
+    let mut lost_value: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut at_launch: Vec<BTreeMap<u32, i64>> = vec![BTreeMap::new(); ais.len()];
     let id = |k: Kind| game_kind_id(&rules, k);
     while game.state.tick < minutes * 900 && winner.is_none() {
         for ai in &mut ais {
@@ -63,7 +85,14 @@ fn main() {
                         *s.built.entry(id(kind)).or_default() += 1;
                     }
                 }
+                Event::Destroyed { kind, owner, .. } if rules.kind(kind).building => {
+                    *lost_value.entry(owner).or_default() += rules.kind(kind).cost;
+                    if let Some(s) = sides.get_mut(&owner) {
+                        *s.lost.entry(id(kind)).or_default() += 1;
+                    }
+                }
                 Event::Destroyed { kind, owner, .. } if !rules.kind(kind).building => {
+                    *lost_value.entry(owner).or_default() += rules.kind(kind).cost;
                     if let Some(s) = sides.get_mut(&owner) {
                         *s.lost.entry(id(kind)).or_default() += 1;
                     }
@@ -90,11 +119,18 @@ fn main() {
                 let now = ai.wave.as_ref().map(|w| (w.launched_at, w.units.len()));
                 if now.map(|w| w.0) != last_wave[n].map(|w| w.0) {
                     if let Some((at, left)) = last_wave[n] {
+                        let lost: Vec<i64> = players
+                            .iter()
+                            .map(|p| {
+                                lost_value.get(p).copied().unwrap_or(0) - at_launch[n].get(p).copied().unwrap_or(0)
+                            })
+                            .collect();
                         println!(
-                            "{{\"wave_end\":{},\"launched_at\":{at},\"left\":{left},\"tick\":{}}}",
+                            "{{\"wave_end\":{},\"launched_at\":{at},\"left\":{left},\"tick\":{},\"lost\":{lost:?}}}",
                             ai.player, game.state.tick
                         );
                     }
+                    at_launch[n] = lost_value.clone();
                     if let Some(w) = &ai.wave {
                         let obj = game.state.entity(w.objective).map_or("?".into(), |e| rules.kind(e.kind).id.clone());
                         println!(
@@ -188,11 +224,19 @@ fn sample(game: &Game, rules: &Rules, players: &[u32]) -> String {
             let armed = mine().filter(|e| !rules.kind(e.kind).building && rules.kind(e.kind).weapon.is_some());
             let (n, value) = armed.fold((0, 0), |(n, v), e| (n + 1, v + rules.kind(e.kind).cost));
             let buildings = mine().filter(|e| rules.kind(e.kind).building).count();
-            let credits = game.state.players.iter().find(|q| q.id == p).map_or(0, |q| q.credits);
-            format!("{{\"p\":{p},\"army\":{n},\"army_value\":{value},\"buildings\":{buildings},\"credits\":{credits}}}")
+            let pl = game.state.players.iter().find(|q| q.id == p);
+            let (credits, delivered) = pl.map_or((0, 0), |q| (q.credits, q.delivered));
+            format!(
+                "{{\"p\":{p},\"army\":{n},\"army_value\":{value},\"buildings\":{buildings},\"credits\":{credits},\"delivered\":{delivered}}}"
+            )
         })
         .collect();
-    format!("{{\"tick\":{},\"sides\":[{}]}}", game.state.tick, parts.join(","))
+    format!(
+        "{{\"tick\":{},\"resource_left\":{},\"sides\":[{}]}}",
+        game.state.tick,
+        game.snapshot().resource_left,
+        parts.join(",")
+    )
 }
 
 fn map<V: std::fmt::Display>(m: &BTreeMap<String, V>) -> String {

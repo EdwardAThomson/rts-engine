@@ -10,7 +10,8 @@
 //! out of reach of the objective's defenders, waiting there for its slowest unit, so it arrives together instead of
 //! in a column, then attacks, fast units waiting for slow ones until something can shoot at them: armed
 //! enemies near it first, then the objective, then the nearest enemy building. A wave that falls below
-//! `retreat_percent` of its starting size comes home, and the next one waits for `wave_growth` more units.
+//! `retreat_percent` of its starting size (none on normal and hard) comes home, and the next one waits for
+//! `wave_growth` more units.
 //!
 //! **Last stand.** When its income has stopped (nothing delivered for `broke_ticks`, and too few credits for a combat
 //! unit), nothing will get better by waiting, so every unit at home goes at once.
