@@ -63,8 +63,8 @@ fn info() -> SaveInfo {
 
 #[test]
 fn a_save_loads_into_the_same_game_and_plays_on_the_same() {
-    const SAVED: u32 = 8000;
-    const END: u32 = 14_000;
+    const SAVED: u32 = 10_000;
+    const END: u32 = 16_000;
     // Uninterrupted: the player and a hard opponent play to the end.
     // Each side has its faction, which the load gives out again into a fresh game that has none, and the game has a
     // tech level, which the load sets again too.

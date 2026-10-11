@@ -41,6 +41,9 @@ cargo test                                                    # every check, abo
 cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-minute game in a few ms
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
+cargo run --release --bin arena -- --map maps/skirmish-01.txt --seed 1   # one computer game: what each side built, lost and destroyed
+                                             # (--difficulty easy,hard, --waves, --set and --mix for experiments)
+cargo run --release --bin duel                                # every armed kind against every other, cost for cost
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 ```
 
@@ -108,7 +111,7 @@ as `?setting=settings-private/packs/<pack>`.
 | `crates/classic-sim/src/world.rs` | The game state and the fixed tick: commands, movement, the harvester loop (find field, mine, return, unload into credits), resource regrowth. |
 | `crates/classic-sim/src/vision.rs` | Fog of war, when a pack turns the `fog` module on (the generic pack does): each player's explored tiles and a count of their sight sources over each tile, kept up to date by adding and removing discs as entities appear, move tile and die, from a building's edges. Fog hides enemy units out of sight and keeps a ghost of each enemy building as last seen (or, with `hide` off, shroud only: explored ground shows everything, as the original did). Targets must be in their owner's sight, attack orders need a target in sight or a ghost, and a unit that fires is shown to the player it fires at for a moment. Hashed while on. |
 | `crates/classic-sim/src/game.rs` | The game API: `step`, `order`, `spawn`, `snapshot`, `hash`, `command_log`. |
-| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (battle, siege and missile tanks, quads, scout and raider bikes, single infantry and rocket infantry, and infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. With its construction yard lost it builds a base builder where it can and deploys it near home, as it deploys any base builder it owns. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target leaves the wave), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Under fog it reads only what its side can see, guesses the other players' start positions and sends its fastest idle fighter to look at the nearest one it hasn't explored. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
+| `crates/classic-ai` | The computer opponent: a player without a mouse that reads the game and issues the same commands a player does. Builds a base from a build order of generic ids (power first when short), places each building with the placement check while keeping factory exits and refinery docks clear, fills its refineries with harvesters, makes a weighted mix of every armed unit its factories can build (battle, siege and missile tanks, quads, scout and raider bikes, single infantry and rocket infantry, and infantry and rocket squads by default) from what is left over once the base and harvesters are paid for, gathers them at a rally point and defends its base and harvesters. With its construction yard lost it builds a base builder where it can and deploys it near home, as it deploys any base builder it owns. It attacks only where its waiting units would beat the defenders (health times damage rate, from the rules' own numbers), gathers each wave out of the defenders' reach before going in (waiting for its slowest units), keeps fast units in step with slow ones on the way in (a unit that can't reach its target, or falls 20 tiles behind the rest, leaves the wave), goes only for what some of its units can shoot (never for an aircraft in flight with only ground guns), turns back when the odds turn, raids harvesters, and sends everything when its income has stopped. Under fog it reads only what its side can see, guesses the other players' start positions and sends its fastest idle fighter to look at the nearest one it hasn't explored; knowing no enemy building once they are all explored, it searches with one fighter in four (up to eight), ground it has never seen first. Distances run from exact footprint centres and ties go to the side nearer the middle of the map, so it plays a mirrored map the same way round from either side. One "normal" opponent so far. |
 | `crates/classic-tools` | The headless CLI, the bench, and the seeded bench scene they and the golden tests share. |
 | `crates/classic-render` | The wgpu renderer and the player, on the desktop and in the browser: the pack's art in faction colours, the map, buildings, units, effects (`effects.rs`: muzzle flashes, shells and rockets, smoke trails, explosions, smoke and fire on damaged things), selection and orders, and computer opponents for every other player. `hud` is the production rail on the right (credits and power readout, a tab per factory kind, build grid, selection card, queue, minimap) and placing buildings; `menu` is the title, pause and end screens, where the player picks the map (the pack's own, listed in its `setting.json`, else the engine's) and their faction; `fog` draws the local player's shroud and fog with soft edges, the minimap shows them too, enemies out of sight are hidden and enemy buildings in fog drawn as last seen, and sounds from the world play only where the player can see; `feed` is the message feed, worded by `data/ui/messages.json` unless the pack rewords it; `theme` reads the pack's colours from its `theme/theme.css`. `platform` is the genre-neutral part (GPU, textures, sprite batcher, pixel font, sound mixer and device, WAV files, clock, files, the browser page), shared with the 3D engine as the `rts-platform` crate in the `rts-core` repository and pinned by commit. `sound.rs` turns the game's events into sounds, by the rules in `data/audio/`; `web.rs` fetches a game's files in the browser. |
 | `crates/classic-wasm` | The WebAssembly build's interface; `web/check.mjs` runs it in Node. `view.rs` holds the read-only functions the viewer draws from. |
@@ -246,8 +249,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   offers another game; the menus shade the whole screen and draw nothing while playing, and never change the
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
 - Difficulty: easy, normal and hard are presets of the computer's settings. On `skirmish-01`, over seeds 1 to 6 from
-  both starts, hard beat normal 11 to 1 and normal beat easy 11 to 1 (with aircraft and faction specials; before aircraft,
-  bigger waves alone gave hard 8 to 2, and 7 to 4 once carriers came).
+  both starts, hard beat normal 10 to 2 and normal beat easy 9 to 1 (with the 600-credit gun turret; before it, 11 to 1
+  each, and before aircraft bigger waves alone gave hard 8 to 2, and 7 to 4 once carriers came).
 - Settings, saves and the score: the settings screen steps each bus's volume and the scroll speed (right click steps
   down), the keys screen puts a key on an action and swaps one that clashes, and the settings file reads back as
   written and skips lines it can't use, with a warning. A game saved at tick 8000, mid-attack, with a click queued
@@ -278,7 +281,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   from its command log with the AI switched off to the same hash; thinking never changes the game's hash; a power
   plant removed at tick 3,000 is rebuilt within 90 seconds; an enemy tank beside its base draws an attack order
   and takes hits within 20 seconds. Three tanks don't attack eight gun turrets and are all kept, but do attack the
-  same base without them; with its income gone for `broke_ticks` it sends every unit at once; with its last
+  same base without them; a wave's tank put back at home leaves the wave and the rest go on; four tanks destroy a
+  yard with an enemy gunship flying beside it, which they can't hit; with its income gone for `broke_ticks` it sends every unit at once; with its last
   harvester lost while its factories wait on tanks it can't pay for, it cancels them and builds a harvester.
 - Fairness (`crates/classic-sim/tests/mirror.rs`, `crates/classic-ai/tests/skirmish.rs`, on `mirror-01`): the two
   starting bases are mirror images; paths, including the way round a unit in the way, are mirror images; with
@@ -293,7 +297,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   firing showing the shooter, the `start_explored` switch, and the running counts equal to a fresh count every 50
   ticks of a game. Two computer opponents under fog play the same game every run, every attack order they give names
   a target they know, and one finds and beats a player who does nothing by tick 8,714 with fog and with shroud only
-  (`crates/classic-ai/tests/fog.rs`). The renderer test draws a fogged map and checks the enemy base is black and the
+  (`crates/classic-ai/tests/fog.rs`); eight tanks find a lone power plant on a never-seen corner, out of sight of
+  every point of the old six-tile search grid, by tick 4,544. The renderer test draws a fogged map and checks the enemy base is black and the
   player's own lit; a sound test checks a fight in the shroud is silent for the player who can't see it.
 - Aircraft (`crates/classic-sim/tests/air.rs`, the `air` module): no aircraft in any golden game, so every golden
   hash is unchanged. An aircraft climbs before it moves, flies a straight line over a cliff wall a ground unit
@@ -375,12 +380,14 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
 - Combat has single infantry and rocket infantry, infantry squads, rocket squads, scout and raider bikes, quads, siege tanks and missile tanks (our own first numbers, from `rules-combat.md` and `rules-movement.md` where they give them; a unit whose weapon has a minimum range, the missile tank, backs off to a tile it can fire from), but no crushing, bursts (the missile tank and `super_h` fire one shot for the doc's two) or attacks on the ground; non-turreted units still fire on the move, and squads don't share tiles, and guards don't chase or return yet; sight is
   a stand-in until vision exists, and the weapon numbers are first guesses.
 - The computer opponent has three levels (easy, normal, hard) with numbers in code: no brutal level, personalities, data files
-  in `data/ai/`, scouting beyond one unit sent to the nearest unexplored start position under fog, retreat by
+  in `data/ai/`, scouting beyond the search for buildings it has never seen, retreat by
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. It upgrades a factory when the
   next unit its mix calls for needs the upgrade, and never the construction yard. Its memory lives in the `Ai`
   value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
-  differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
-  three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
+  differs from normal in its waves (twice the size, surer odds), in a carrier for every two harvesters, not
+  three, and in four harvesters a refinery, up to twelve: thinking more often made it no stronger, and more harvesters
+  only mattered once the gun turret cost 600 (32 to 21 without them over 60 games, 52 to 4 with). Waves on normal and
+  hard no longer come home at 30% of their size; they turn back only on the odds. With the mixed army and factory exits on
   any side (20 seeds, 90 game minutes), two AIs on `skirmish-01` win 8 to 8 with 4 stalls and games last about 40
   minutes; on `mirror-01` (10 seeds) 4 to 4 with 2 stalls. Mixed armies trade evenly, so games run longer than
   with tanks alone, and Twin Plateaus in the private pack still stalls in about 4 games of 10. In the desktop player it was checked only

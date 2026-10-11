@@ -24,7 +24,8 @@ fn duel(seed: i32, a: Difficulty, b: Difficulty, ticks: u32) -> Option<(u32, u32
 
 /// Over six seeds, from both starts, the stronger of each pair wins at least half of the twelve games and more than
 /// twice as many as it loses; the rest run out of resources in a stalemate. Our own runs, when the presets were
-/// last set (with aircraft and faction specials): hard against normal won 11, lost 1; normal against easy won 11, lost 1.
+/// last set (the 600-credit gun turret, issue #79): hard against normal won 10, lost 2; normal against easy won 9,
+/// lost 1.
 #[test]
 fn a_stronger_opponent_beats_a_weaker_one_from_either_start() {
     use Difficulty::*;

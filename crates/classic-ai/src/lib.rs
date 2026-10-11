@@ -78,7 +78,9 @@ pub struct Settings {
     pub stage_ticks: u32,
     /// With nothing delivered for this many ticks and too few credits for a combat unit, every unit attacks.
     pub broke_ticks: u32,
-    /// A wave that falls below this percent of the units it set out with comes home.
+    /// A wave that falls below this percent of the units it set out with comes home. 0 on normal and hard: a wave
+    /// sent with the odds still turns back when the fight turns against it, but losses alone don't send it home,
+    /// which in our runs ended more games than coming home at 30%.
     pub retreat_percent: usize,
     /// Enemy armed units this many tiles from one of its buildings draw out the defenders.
     pub defend_radius: i32,
@@ -137,7 +139,7 @@ impl Settings {
             wave_cap: 20,
             stage_ticks: 15 * 30,
             broke_ticks: 15 * 120,
-            retreat_percent: 30,
+            retreat_percent: 0,
             defend_radius: 10,
             rally_distance: 6,
         }
@@ -174,17 +176,21 @@ impl Settings {
     }
 
     /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast, only
-    /// attacks where it would win clearly, and keeps a carrier for every two harvesters. AI-versus-AI runs on the
-    /// skirmish map found that more harvesters, a third refinery or thinking more often made it no stronger; bigger,
-    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0 (11 to 1
-    /// once faction specials came).
-    /// The carriers alone, with normal's waves, lost 4 to 7.
+    /// attacks where it would win clearly, keeps a carrier for every two harvesters, and runs four harvesters a
+    /// refinery, up to twelve. AI-versus-AI runs on the skirmish map found that more harvesters, a third refinery or
+    /// thinking more often made it no stronger; bigger, surer waves did (8 won to 2 before aircraft, 7 to 4 after),
+    /// and the extra carriers on top of them won 12 to 0 (11 to 1 once faction specials came). The carriers alone,
+    /// with normal's waves, lost 4 to 7. Once the gun turret cost 600 (issue #79) and waves stopped coming home at
+    /// 30%, those won only 32 to 21 over 60 games on the engine's own rules; the extra harvesters brought it back to
+    /// 52 to 4 (and 31 to 9 on a two-player pack map, from 26 to 14).
     pub fn hard() -> Settings {
         Settings {
             first_wave: 8,
             wave_growth: 4,
             wave_cap: 30,
             attack_margin: 200,
+            harvesters_per_refinery: 4,
+            max_harvesters: 12,
             harvesters_per_carrier: 2,
             ..Settings::normal()
         }
@@ -253,8 +259,8 @@ pub struct Ai {
     pub waves_sent: u32,
     /// Thinks so far, for the managers that think less often.
     thinks: u32,
-    /// The unit it sent to find the enemy under fog, while it is on its way.
-    scout: Option<u32>,
+    /// The units it sent to find the enemy under fog, while they are on their way, each with the point it went to look at.
+    scouts: Vec<(u32, Tile)>,
     /// Under fog, knowing no enemy building once every start is explored: the search points it has had in sight
     /// since the search began, as (y, x).
     searched: BTreeSet<(i32, i32)>,
@@ -273,7 +279,7 @@ impl Ai {
             wave_size,
             waves_sent: 0,
             thinks: 0,
-            scout: None,
+            scouts: Vec::new(),
             searched: BTreeSet::new(),
             delivered: 0,
             delivered_at: 0,

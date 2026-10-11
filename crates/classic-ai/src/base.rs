@@ -247,7 +247,9 @@ pub(crate) fn produce(ai: &Ai, game: &Game, view: &View, out: &mut Orders) {
         if made_here.is_empty() && locked.is_empty() {
             continue;
         }
+        // Dry with harvesters still working, the field is spent: another harvester would bring nothing in.
         if harvesters < want
+            && (!dry || starving(game, view))
             && let Some(&h) = made_here.iter().find(|&&k| is_harvester(k))
         {
             harvesters += 1;
