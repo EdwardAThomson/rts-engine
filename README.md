@@ -42,6 +42,7 @@ cargo run --release --bin cli -- --seed 1 --ticks 9000 --every 1500     # a 10-m
 cargo run --release --bin cli -- --map maps/skirmish-01.txt --ai 0,1 --ticks 40000   # two computer opponents play it out
 cargo run --release --bin bench                               # performance on a 128 x 128 map, up to 500 units
 cargo run --release --bin arena -- --map maps/skirmish-01.txt --seed 1   # one computer game: what each side built, lost and destroyed
+                                             # (--difficulty easy,hard, --waves, --set and --mix for experiments)
 cargo run --release --bin duel                                # every armed kind against every other, cost for cost
 cargo run --bin sounds                                        # rewrite the generic pack's placeholder sounds from their recipes
 ```
@@ -248,8 +249,8 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   offers another game; the menus shade the whole screen and draw nothing while playing, and never change the
   game's hash. In the player under a virtual display: start with no opponents, pause, back to the title, quit.
 - Difficulty: easy, normal and hard are presets of the computer's settings. On `skirmish-01`, over seeds 1 to 6 from
-  both starts, hard beat normal 11 to 1 and normal beat easy 11 to 1 (with aircraft and faction specials; before aircraft,
-  bigger waves alone gave hard 8 to 2, and 7 to 4 once carriers came).
+  both starts, hard beat normal 10 to 2 and normal beat easy 9 to 1 (with the 600-credit gun turret; before it, 11 to 1
+  each, and before aircraft bigger waves alone gave hard 8 to 2, and 7 to 4 once carriers came).
 - Settings, saves and the score: the settings screen steps each bus's volume and the scroll speed (right click steps
   down), the keys screen puts a key on an action and swaps one that clashes, and the settings file reads back as
   written and skips lines it can't use, with a warning. A game saved at tick 8000, mid-attack, with a click queued
@@ -383,8 +384,10 @@ The rules for working in this repository are in [CLAUDE.md](CLAUDE.md).
   exchange, counter-composition, target scoring, slabs, superpowers or remnant mode. It upgrades a factory when the
   next unit its mix calls for needs the upgrade, and never the construction yard. Its memory lives in the `Ai`
   value, not the hashed game state; a save leaves it out and loading rebuilds it by playing the game forward. Hard
-  differs from normal in its waves (twice the size, surer odds) and in a carrier for every two harvesters, not
-  three: in our runs more harvesters or thinking more often made it no stronger. With the mixed army and factory exits on
+  differs from normal in its waves (twice the size, surer odds), in a carrier for every two harvesters, not
+  three, and in four harvesters a refinery, up to twelve: thinking more often made it no stronger, and more harvesters
+  only mattered once the gun turret cost 600 (32 to 21 without them over 60 games, 52 to 4 with). Waves on normal and
+  hard no longer come home at 30% of their size; they turn back only on the odds. With the mixed army and factory exits on
   any side (20 seeds, 90 game minutes), two AIs on `skirmish-01` win 8 to 8 with 4 stalls and games last about 40
   minutes; on `mirror-01` (10 seeds) 4 to 4 with 2 stalls. Mixed armies trade evenly, so games run longer than
   with tanks alone, and Twin Plateaus in the private pack still stalls in about 4 games of 10. In the desktop player it was checked only

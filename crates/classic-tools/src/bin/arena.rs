@@ -1,16 +1,18 @@
 //! One computer-against-computer game, with a summary of what each side built, lost and destroyed, for balance work:
-//!   cargo run --release --bin arena -- --setting <pack> --map <map> --seed 1 [--minutes 90] [--factions a,b]
-//!     [--every 5] [--tech 1-8] [--waves] [--set wave_cap=30,retreat_percent=0,...]
+//!   cargo run --release --bin arena -- --setting <pack, or none> --map <map> --seed 1 [--minutes 90] [--factions a,b]
+//!     [--every 5] [--tech 1-8] [--waves] [--difficulty easy,hard] [--set wave_cap=30,...] [--mix battle_tank=3,...] [--only 0]
 //! Every player goes to the computer. Prints a JSON line every `--every` game minutes (armies, bases, credits,
 //! deliveries and resource left) and one at the end: the winner (null for a game still going), and for each player
 //! the units built, the units and buildings lost and what is still alive by kind, and the value each of its kinds
 //! destroyed (damage dealt, as a share of the target's health, times the target's cost). `--waves` adds a line as
-//! each wave sets out and ends, with the credits' worth each player lost while it was out; `--set` overrides the
-//! normal opponent's wave numbers for experiments. Nothing it prints feeds back into the game.
+//! each wave sets out and ends, with the credits' worth each player lost while it was out; `--difficulty` picks
+//! each player's preset (normal by default), and `--set` and `--mix` override wave numbers and the army mix for
+//! experiments (`--only` for one player). Nothing it prints feeds back into the game.
 
 use std::collections::BTreeMap;
 
-use classic_ai::{Ai, Settings};
+use classic_ai::{Ai, Difficulty, Settings};
+use classic_data::RulesTable;
 use classic_sim::world::Event;
 use classic_sim::{Game, GameOptions, Kind, Rules};
 use classic_tools::setting;
@@ -31,8 +33,12 @@ fn main() {
     let seed = num("seed", 1) as i32;
     let minutes = num("minutes", 90);
     let every = num("every", 5).max(1) * 900;
-    let pack = setting::load(&arg("setting").unwrap_or_else(|| "generic".into())).expect("a setting pack");
-    let rules = Rules::from_table(&pack.rules).expect("pack rules match the simulation");
+    // `--setting none`: the engine's own rules, as the tests play them.
+    let table = match arg("setting").unwrap_or_else(|| "generic".into()) {
+        name if name == "none" => RulesTable::builtin(),
+        name => setting::load(&name).expect("a setting pack").rules,
+    };
+    let rules = Rules::from_table(&table).expect("pack rules match the simulation");
     let text = std::fs::read_to_string(arg("map").expect("--map")).expect("a map file");
     let mut game = Game::new(GameOptions { map: &text, seed, players: None, rules: Some(&rules) }).expect("valid map");
     if let Some(t) = arg("tech") {
@@ -42,23 +48,21 @@ fn main() {
         game.set_factions(&f.split(',').map(str::trim).collect::<Vec<_>>());
     }
     let players: Vec<u32> = game.state.players.iter().map(|p| p.id).collect();
-    // Experiments: `--set name=value,...` overrides the normal opponent's wave numbers.
-    let mut settings = Settings::normal();
-    for kv in arg("set").iter().flat_map(|s| s.split(',')).filter(|s| !s.is_empty()) {
-        let (k, v) = kv.split_once('=').expect("name=value");
-        let n: i64 = v.parse().expect("a number");
-        match k {
-            "wave_cap" => settings.wave_cap = n as usize,
-            "first_wave" => settings.first_wave = n as usize,
-            "wave_growth" => settings.wave_growth = n as usize,
-            "attack_margin" => settings.attack_margin = n,
-            "retreat_percent" => settings.retreat_percent = n as usize,
-            "broke_ticks" => settings.broke_ticks = n as u32,
-            "stage_ticks" => settings.stage_ticks = n as u32,
-            _ => panic!("no setting {k}"),
+    // `--difficulty easy,hard` gives the players those presets in turn (normal for any left over). Experiments:
+    // `--set name=value,...` overrides wave numbers and `--mix id=weight,...` army mix weights, for every player or,
+    // with `--only 0`, for that one.
+    let levels: Vec<Difficulty> = arg("difficulty")
+        .map(|l| l.split(',').map(|d| Difficulty::from_id(d.trim()).expect("easy, normal or hard")).collect())
+        .unwrap_or_default();
+    let only: Option<u32> = arg("only").map(|p| p.parse().expect("a player"));
+    let mut ais: Vec<Ai> = Vec::new();
+    for (n, &p) in players.iter().enumerate() {
+        let mut settings = levels.get(n).map_or_else(Settings::normal, |d| d.settings());
+        if only.is_none_or(|o| o == p) {
+            tweak(&mut settings, arg("set").as_deref(), arg("mix").as_deref());
         }
+        ais.push(Ai::new(p, settings));
     }
-    let mut ais: Vec<Ai> = players.iter().map(|&p| Ai::new(p, settings.clone())).collect();
     let mut sides: BTreeMap<u32, Side> = players.iter().map(|&p| (p, Side::default())).collect();
     // Every entity seen, by id: its kind and owner (an owner can change by capture or conversion; the last seen wins).
     let mut known: BTreeMap<u32, (Kind, u32)> = BTreeMap::new();
@@ -202,6 +206,35 @@ fn main() {
     }
     out += "]}";
     println!("{out}");
+}
+
+fn tweak(settings: &mut Settings, set: Option<&str>, mix: Option<&str>) {
+    for kv in set.iter().flat_map(|s| s.split(',')).filter(|s| !s.is_empty()) {
+        let (k, v) = kv.split_once('=').expect("name=value");
+        let n: i64 = v.parse().expect("a number");
+        match k {
+            "wave_cap" => settings.wave_cap = n as usize,
+            "first_wave" => settings.first_wave = n as usize,
+            "wave_growth" => settings.wave_growth = n as usize,
+            "attack_margin" => settings.attack_margin = n,
+            "retreat_percent" => settings.retreat_percent = n as usize,
+            "broke_ticks" => settings.broke_ticks = n as u32,
+            "stage_ticks" => settings.stage_ticks = n as u32,
+            "harvesters_per_refinery" => settings.harvesters_per_refinery = n as usize,
+            "max_harvesters" => settings.max_harvesters = n as usize,
+            "unit_reserve" => settings.unit_reserve = n,
+            "think_every" => settings.think_every = n as u32,
+            _ => panic!("no setting {k}"),
+        }
+    }
+    for kv in mix.iter().flat_map(|s| s.split(',')).filter(|s| !s.is_empty()) {
+        let (k, v) = kv.split_once('=').expect("id=weight");
+        let n: usize = v.parse().expect("a weight");
+        match settings.unit_mix.iter_mut().find(|m| m.0 == k) {
+            Some(m) => m.1 = n,
+            None => settings.unit_mix.push((k.to_string(), n)),
+        }
+    }
 }
 
 fn game_kind_id(rules: &Rules, k: Kind) -> String {

@@ -176,17 +176,21 @@ impl Settings {
     }
 
     /// A tougher opponent: it waits for twice the units before each wave, grows its waves twice as fast, only
-    /// attacks where it would win clearly, and keeps a carrier for every two harvesters. AI-versus-AI runs on the
-    /// skirmish map found that more harvesters, a third refinery or thinking more often made it no stronger; bigger,
-    /// surer waves did (8 won to 2 before aircraft, 7 to 4 after), and the extra carriers on top of them won 12 to 0 (11 to 1
-    /// once faction specials came).
-    /// The carriers alone, with normal's waves, lost 4 to 7.
+    /// attacks where it would win clearly, keeps a carrier for every two harvesters, and runs four harvesters a
+    /// refinery, up to twelve. AI-versus-AI runs on the skirmish map found that more harvesters, a third refinery or
+    /// thinking more often made it no stronger; bigger, surer waves did (8 won to 2 before aircraft, 7 to 4 after),
+    /// and the extra carriers on top of them won 12 to 0 (11 to 1 once faction specials came). The carriers alone,
+    /// with normal's waves, lost 4 to 7. Once the gun turret cost 600 (issue #79) and waves stopped coming home at
+    /// 30%, those won only 32 to 21 over 60 games on the engine's own rules; the extra harvesters brought it back to
+    /// 52 to 4 (and 31 to 9 on a two-player pack map, from 26 to 14).
     pub fn hard() -> Settings {
         Settings {
             first_wave: 8,
             wave_growth: 4,
             wave_cap: 30,
             attack_margin: 200,
+            harvesters_per_refinery: 4,
+            max_harvesters: 12,
             harvesters_per_carrier: 2,
             ..Settings::normal()
         }

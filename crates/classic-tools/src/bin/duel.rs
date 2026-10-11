@@ -1,5 +1,5 @@
 //! Cost-for-cost fights between two kinds, for balance work:
-//!   cargo run --release --bin duel -- [--setting <pack>] [--credits 3000] [--seeds 6] [--kinds a,b,c]
+//!   cargo run --release --bin duel -- [--setting <pack>] [--tuning <file>] [--credits 3000] [--seeds 6] [--kinds a,b,c]
 //! For every pair of armed kinds (units, and the armed buildings as defenders), each side gets as many as its credits
 //! buy (at least one), set out in a block on open rock eight tiles from the other; units go for the nearest enemy
 //! they can hit, buildings stand. Half the seeds swap the sides. Prints, for each pair, the wins of each, the
@@ -24,6 +24,12 @@ fn main() {
         None => RulesTable::builtin(),
     };
     table.apply_tuning(&json::parse(r#"{"modules":{"fog":{"on":0}}}"#).expect("json"));
+    // Experiments: a tuning file over the rules, in the pack format.
+    if let Some(path) = arg("tuning") {
+        let errors =
+            table.apply_tuning(&json::parse(&std::fs::read_to_string(path).expect("a tuning file")).expect("json"));
+        assert!(errors.is_empty(), "{errors:?}");
+    }
     let rules = Rules::from_table(&table).expect("rules match the simulation");
     let mut map = String::new();
     for y in 0..H {
